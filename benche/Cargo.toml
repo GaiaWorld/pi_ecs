@@ -1,0 +1,25 @@
+[package]
+name = "benches"
+version = "0.1.0"
+authors = ["suncy <suncy@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+cgmath = { version = "0.17", feature = ["serde"] }
+criterion = "0.3"
+bevy_5_ecs = {version="0.5", package="bevy_ecs"}
+pi_ecs = {path="../"}
+wy_rng = {path="../../pi_lib/wy_rng"}
+bevy_ecs = "0.4"
+rand = "0.8"
+# im = "*"
+
+# [dependencies.web-sys]
+# version = "*"
+# features = [
+# 	"console",
+# ]
+
+[[bench]]
+name = "benchmarks"
+harness = false
