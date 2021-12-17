@@ -18,12 +18,16 @@ time = {path="../pi_lib/time"}
 share = {path="../pi_lib/share"}
 wy_rng = {path="../pi_lib/wy_rng"}
 debug_info = {path="../pi_lib/debug_info"}
+graph = {path="../pi_lib/graph"}
+async_graph = {path="../pi_lib/async_graph"}
+async = {path="../pi_lib/async"}
 pi_ecs_macros = { path = "macros"}
 paste = "0.1"
 lazy_static = "*"
 log = "*"
 rand = "*"
 thiserror = "1.0"
+
 
 # im = "*"
 
