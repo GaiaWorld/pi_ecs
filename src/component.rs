@@ -1,9 +1,11 @@
 /// 组件
 
-use std::any::{TypeId, Any};
+use std::any::{TypeId, type_name};
+use std::collections::hash_map::Entry;
 
 use thiserror::Error;
 use hash::XHashMap;
+
 
 use crate::storage::{Local, Offset};
 
@@ -16,22 +18,27 @@ pub type ComponentId = Local;
 pub struct ComponentInfo {
 	pub(crate) storage_type: StorageType,
 	pub(crate) id: ComponentId,
+	pub(crate) name: &'static str,
 }
 
 impl ComponentInfo {
-	pub fn get_storage_type(&self) -> StorageType {
+	pub fn storage_type(&self) -> StorageType {
 		self.storage_type
 	}
 
-	pub fn get_id(&self) -> ComponentId {
+	pub fn id(&self) -> ComponentId {
 		self.id
+	}
+
+	pub fn name(&self) -> &'static str {
+		self.name
 	}
 }
 
 pub struct Components {
     pub(crate) infos: Vec<ComponentInfo>,
     indices: XHashMap<TypeId, usize>,
-    resource_indices: XHashMap<TypeId, usize>,
+    resource_indices: XHashMap<TypeId, ComponentId>,
 }
 
 #[derive(Debug, Error)]
@@ -70,9 +77,31 @@ impl Components {
 		}
 	}
 
+	#[inline]
+    pub(crate) fn get_or_insert_resource_id<T: Component>(&mut self) -> ComponentId {
+		match self.resource_indices.entry(TypeId::of::<T>()) {
+			Entry::Occupied(r) => *r.get(),
+			Entry::Vacant(r) =>  {
+				let index = self.infos.len();
+				let index = ComponentId::new(index);
+				self.infos.push(ComponentInfo{
+					id: index, 
+					storage_type: StorageType::Table,
+					name: type_name::<T>(),
+				});
+				r.insert(index);
+				index
+			}
+		}
+    }
+
+	pub(crate) fn get_resource_id<T: Component>(&self) -> Option<&ComponentId> {
+		self.resource_indices.get(&TypeId::of::<T>())
+	}
+
     #[inline]
     pub fn get_or_insert_id<T: Component>(&mut self) -> ComponentId {
-        self.get_or_insert_with(TypeId::of::<T>())
+        self.get_or_insert_with(TypeId::of::<T>(), std::any::type_name::<T>())
     }
 
     #[inline]
@@ -111,46 +140,19 @@ impl Components {
     }
 
     #[inline]
-    pub fn get_resource_id(&self, type_id: TypeId) -> Option<ComponentId> {
-        self.resource_indices
-            .get(&type_id)
-            .map(|index| ComponentId::new(*index))
-    }
-
-    #[inline]
-    pub fn get_or_insert_resource_id<T: Component>(&mut self) -> ComponentId {
-        self.get_or_insert_resource_with(TypeId::of::<T>())
-    }
-
-    #[inline]
-    pub fn get_or_insert_non_send_resource_id<T: Any>(&mut self) -> ComponentId {
-        self.get_or_insert_resource_with(TypeId::of::<T>())
-    }
-
-    #[inline]
-    fn get_or_insert_resource_with(
-        &mut self,
-        type_id: TypeId
-    ) -> ComponentId {
-        let components = &mut self.infos;
-        let index = self.resource_indices.entry(type_id).or_insert_with(|| {
-            let index = components.len();
-            components.push(ComponentInfo{id: ComponentId::new(index), storage_type: StorageType::Table});
-            index
-        });
-
-        ComponentId::new(*index)
-    }
-
-    #[inline]
     pub(crate) fn get_or_insert_with(
         &mut self,
         type_id: TypeId,
+		name: &'static str,
     ) -> ComponentId {
         let components = &mut self.infos;
         let index = self.indices.entry(type_id).or_insert_with(|| {
             let index = components.len();
-            components.push(ComponentInfo{id: ComponentId::new(index), storage_type: StorageType::Table});
+            components.push(ComponentInfo{
+				id: ComponentId::new(index), 
+				storage_type: StorageType::Table,
+				name,
+			});
             index
         });
 

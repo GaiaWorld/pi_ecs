@@ -1,10 +1,5 @@
-use std::convert::From;
 use crate::storage::LocalVersion;
 use crate::archetype::ArchetypeId;
-
-// 实体
-
-// pub struct Entity(u64);
 
 #[derive(Clone)]
 pub struct Entity {

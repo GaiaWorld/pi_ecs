@@ -1,115 +1,105 @@
+use std::marker::PhantomData;
+use std::any::TypeId;
+
 use crate::{
-    archetype::{Archetype, ArchetypeComponentId, ArchetypeGeneration, ArchetypeId},
+    archetype::{ArchetypeId, ArchetypeIdent, ArchetypeComponentId},
     component::ComponentId,
     entity::Entity,
     query::{
-        Access, Fetch, FetchState, FilterFetch, FilteredAccess, QueryIter, ReadOnlyFetch,
+        Fetch, FetchState, FilterFetch, Access, FilteredAccess, QueryIter, ReadOnlyFetch,
         WorldQuery,EntityState
     },
 	storage::Offset,
     world::{World, WorldId},
 };
-use fixedbitset::FixedBitSet;
 use thiserror::Error;
 
-pub struct QueryState<Q: WorldQuery, F: WorldQuery = ()>
+pub struct QueryState<A: ArchetypeIdent, Q: WorldQuery, F: WorldQuery = ()>
 where
     F::Fetch: FilterFetch,
 {
     world_id: WorldId,
-    pub(crate) archetype_generation: ArchetypeGeneration,
-    // pub(crate) matched_tables: FixedBitSet,
-    pub(crate) matched_archetypes: FixedBitSet,
-	pub(crate) matched_archetype_ids: Vec<ArchetypeId>,
-    // pub(crate) archetype_component_access: Access<ArchetypeComponentId>,
-    pub(crate) component_access: FilteredAccess<ComponentId>,
-    // // NOTE: we maintain both a TableId bitset and a vec because iterating the vec is faster
-    // pub(crate) matched_table_ids: Vec<TableId>,
-    // // NOTE: we maintain both a ArchetypeId bitset and a vec because iterating the vec is faster
+	pub(crate) archetype_id: ArchetypeId, // A对应的实体id
+	pub(crate) component_access: FilteredAccess<ComponentId>,
+    pub(crate) archetype_component_access: Access<ArchetypeComponentId>,
     pub(crate) fetch_state: Q::State,
     pub(crate) filter_state: F::State,
+	pub(crate) fetch_fetch: Q::Fetch,
+	pub(crate) filter_fetch: F::Fetch,
+
 	pub(crate) entity_state: EntityState,
+
+	pub(crate) matchs: bool,
+
+	mark: PhantomData<A>,
 }
 
-impl<Q: WorldQuery, F: WorldQuery> QueryState<Q, F>
+impl<A: ArchetypeIdent, Q: WorldQuery, F: WorldQuery> QueryState<A, Q, F>
 where
     F::Fetch: FilterFetch,
 {
     pub fn new(world: &mut World) -> Self {
+		let archetype_id = match world.archetypes().get_id_by_ident(TypeId::of::<A>()) {
+			Some(r) => r.clone(),
+			None => panic!(),
+		};
         let fetch_state = <Q::State as FetchState>::init(world);
         let filter_state = <F::State as FetchState>::init(world);
 		let entity_state = <EntityState as FetchState>::init(world) ;
+		let fetch_fetch =
+            unsafe{ <Q::Fetch as Fetch>::init(world, &fetch_state) };
+        let filter_fetch =
+			unsafe{ <F::Fetch as Fetch>::init(world, &filter_state)};
+
         let mut component_access = Default::default();
-        fetch_state.update_component_access(&mut component_access);
+		fetch_state.update_component_access(&mut component_access);
         filter_state.update_component_access(&mut component_access);
+
         let mut state = Self {
+			matchs: false,
             world_id: world.id(),
-            archetype_generation: ArchetypeGeneration::new(usize::MAX),
-            // matched_table_ids: Vec::new(),
-            matched_archetype_ids: Vec::new(),
+			archetype_id,
             fetch_state,
             filter_state,
+			fetch_fetch,
+			filter_fetch,
 			entity_state,
-            component_access,
-            // matched_tables: Default::default(),
-            matched_archetypes: Default::default(),
-            // archetype_component_access: Default::default(),
+			component_access: component_access,
+            archetype_component_access: Default::default(),
+			mark: PhantomData
         };
-        state.validate_world_and_update_archetypes(world);
+		state.validate_world_and_update_archetypes(world);
         state
     }
 
-    pub fn validate_world_and_update_archetypes(&mut self, world: &World) {
+	pub fn validate_world_and_update_archetypes(&mut self, world: &World) {
         if world.id() != self.world_id {
             panic!("Attempted to use {} with a mismatched World. QueryStates can only be used with the World they were created from.",
                 std::any::type_name::<Self>());
         }
         let archetypes = world.archetypes();
-        let old_generation = self.archetype_generation;
-        let archetype_index_range = if old_generation == archetypes.generation() {
-            0..0
-        } else {
-            self.archetype_generation = archetypes.generation();
-            if old_generation.value() == usize::MAX {
-                0..archetypes.len()
-            } else {
-                old_generation.value()..archetypes.len()
-            }
-        };
-        for archetype_index in archetype_index_range {
-            self.new_archetype(&archetypes[ArchetypeId::new(archetype_index)]);
-        }
-    }
+		let archetype = &archetypes[self.archetype_id];
 
-    pub fn new_archetype(&mut self, archetype: &Archetype) {
-        if self.fetch_state.matches_archetype(archetype)
-            && self.filter_state.matches_archetype(archetype)
-        {
-            // self.fetch_state
-            //     .update_archetype_component_access(archetype, &mut self.archetype_component_access);
-            // self.filter_state
-            //     .update_archetype_component_access(archetype, &mut self.archetype_component_access);
-            let archetype_index = archetype.id().offset();
-            if !self.matched_archetypes.contains(archetype_index) {
-                self.matched_archetypes.grow(archetype_index + 1);
-                self.matched_archetypes.set(archetype_index, true);
-                self.matched_archetype_ids.push(archetype.id());
-            }
-            // let table_index = archetype.table_id().offset();
-            // if !self.matched_tables.contains(table_index) {
-            //     self.matched_tables.grow(table_index + 1);
-            //     self.matched_tables.set(table_index, true);
-            //     self.matched_table_ids.push(archetype.table_id());
-            // }
-        }
-    }
+		self.fetch_state.update_archetype_component_access(archetype, &mut self.archetype_component_access);
+        self.filter_state.update_archetype_component_access(archetype, &mut self.archetype_component_access);
+
+		self.matchs = 
+			self.fetch_state.matches_archetype(archetype, world) &&
+			self.filter_state.matches_archetype(archetype, world) &&
+			self.entity_state.matches_archetype(archetype, world);
+		
+		if self.matchs {
+			unsafe{ self.fetch_fetch.set_archetype(&self.fetch_state, archetype, world)};
+			unsafe{ self.filter_fetch.set_archetype(&self.filter_state, archetype, world)};
+		}
+	}
 
     #[inline]
     pub fn get<'w>(
-        &mut self,
+        &self,
         world: &'w World,
         entity: Entity,
-    ) -> Result<Option<<Q::Fetch as Fetch<'w>>::Item>, QueryEntityError>
+    ) -> Option<<Q::Fetch as Fetch<'w>>::Item>
     where
         Q::Fetch: ReadOnlyFetch,
     {
@@ -122,7 +112,7 @@ where
         &mut self,
         world: &'w mut World,
         entity: Entity,
-    ) -> Result<Option<<Q::Fetch as Fetch<'w>>::Item>, QueryEntityError> {
+    ) -> Option<<Q::Fetch as Fetch<'w>>::Item> {
         // SAFE: query has unique world access
         unsafe { self.get_unchecked(world, entity) }
     }
@@ -132,11 +122,11 @@ where
     /// have unique access to the components they query.
     #[inline]
     pub unsafe fn get_unchecked<'w>(
-        &mut self,
+        &self,
         world: &'w World,
         entity: Entity,
-    ) -> Result<Option<<Q::Fetch as Fetch<'w>>::Item>, QueryEntityError> {
-        self.validate_world_and_update_archetypes(world);
+    ) -> Option<<Q::Fetch as Fetch<'w>>::Item> {
+        // self.validate_world_and_update_archetypes(world);
         self.get_unchecked_manual(
             world,
             entity,
@@ -148,40 +138,32 @@ where
     /// # Safety
     /// This does not check for mutable query correctness. To be safe, make sure mutable queries
     /// have unique access to the components they query.
+	#[allow(mutable_transmutes)]
     pub unsafe fn get_unchecked_manual<'w>(
         &self,
-        world: &'w World,
+        _world: &'w World,
         entity: Entity,
-        last_change_tick: u32,
-        change_tick: u32,
-    ) -> Result<Option<<Q::Fetch as Fetch<'w>>::Item>, QueryEntityError> {
+        _last_change_tick: u32,
+        _change_tick: u32,
+    ) -> Option<<Q::Fetch as Fetch<'w>>::Item> {
+		if !self.matchs || entity.archetype_id() != self.archetype_id {
+			return None;
+		}
         // let location = world
         //     .entities
         //     .get(entity)
         //     .ok_or(QueryEntityError::NoSuchEntity)?;
-        if !self
-            .matched_archetypes
-            .contains(entity.archetype_id().offset())
-        {
-            return Err(QueryEntityError::QueryDoesNotMatch);
-        }
-        let archetype = &world.archetypes[entity.archetype_id()];
-        let mut fetch =
-            <Q::Fetch as Fetch>::init(world, &self.fetch_state);
-        let mut filter =
-            <F::Fetch as Fetch>::init(world, &self.filter_state);
 
-        fetch.set_archetype(&self.fetch_state, archetype);
-        filter.set_archetype(&self.filter_state, archetype);
-        if filter.archetype_filter_fetch(entity.local().offset()) {
-            Ok(fetch.archetype_fetch(entity.local().offset()))
+        // let archetype = &world.archetypes[entity.archetype_id()];
+        if std::mem::transmute::<&F::Fetch, &mut F::Fetch>(&self.filter_fetch).archetype_filter_fetch(entity.local().offset()) {
+            std::mem::transmute::<&Q::Fetch, &mut Q::Fetch>(&self.fetch_fetch).archetype_fetch(entity.local().offset())
         } else {
-            Err(QueryEntityError::QueryDoesNotMatch)
+            None
         }
     }
 
     #[inline]
-    pub fn iter<'w, 's>(&'s mut self, world: &'w World) -> QueryIter<'w, 's, Q, F>
+    pub fn iter<'w, 's>(&'s mut self, world: &'w World) -> QueryIter<'w, 's, A, Q, F>
     where
         Q::Fetch: ReadOnlyFetch,
     {
@@ -190,7 +172,7 @@ where
     }
 
     #[inline]
-    pub fn iter_mut<'w, 's>(&'s mut self, world: &'w mut World) -> QueryIter<'w, 's, Q, F> {
+    pub fn iter_mut<'w, 's>(&'s mut self, world: &'w mut World) -> QueryIter<'w, 's, A, Q, F> {
         // SAFE: query has unique world access
         unsafe { self.iter_unchecked(world) }
     }
@@ -202,8 +184,8 @@ where
     pub unsafe fn iter_unchecked<'w, 's>(
         &'s mut self,
         world: &'w World,
-    ) -> QueryIter<'w, 's, Q, F> {
-        self.validate_world_and_update_archetypes(world);
+    ) -> QueryIter<'w, 's, A, Q, F> {
+        // self.validate_world_and_update_archetypes(world);
         self.iter_unchecked_manual(world, world.last_change_tick(), world.read_change_tick())
     }
 
@@ -218,7 +200,7 @@ where
         world: &'w World,
         last_change_tick: u32,
         change_tick: u32,
-    ) -> QueryIter<'w, 's, Q, F> {
+    ) -> QueryIter<'w, 's, A, Q, F> {
         QueryIter::new(world, self, last_change_tick, change_tick)
     }
 

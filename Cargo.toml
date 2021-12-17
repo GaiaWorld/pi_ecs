@@ -11,7 +11,6 @@ slab = {path="../pi_lib/slab"}
 atom = {path="../pi_lib/atom"}
 map = {path="../pi_lib/map"}
 any = {path="../pi_lib/any"}
-pointer = {path="../pi_lib/pointer"}
 listener = {path="../pi_lib/listener"}
 hash = {path="../pi_lib/hash"}
 time = {path="../pi_lib/time"}
@@ -27,6 +26,8 @@ lazy_static = "*"
 log = "*"
 rand = "*"
 thiserror = "1.0"
+futures = "0.3"
+
 
 
 # im = "*"

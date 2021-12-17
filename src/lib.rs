@@ -1,12 +1,12 @@
 #![feature(core_intrinsics)]
 #![feature(proc_macro_hygiene)]
+#![feature(min_specialization)]
 
 extern crate atom;
 extern crate listener;
 extern crate map;
-extern crate pointer;
 extern crate slab;
-#[macro_use]
+
 extern crate any;
 extern crate hash;
 extern crate share;
@@ -34,6 +34,8 @@ pub mod archetype;
 pub mod sys;
 pub mod storage;
 pub mod query;
+pub mod pointer;
+pub mod resource;
 
 pub use world::World;
 
@@ -53,58 +55,59 @@ pub mod prelude {
 
 
 
-use rand::{Rng, SeedableRng};
+
+// use rand::{Rng, SeedableRng};
 
 
-pub struct Benchmark4{
+// pub struct Benchmark4{
 
-	arr: Vec<usize>,
-	dirtys: Vec<usize>,
+// 	arr: Vec<usize>,
+// 	dirtys: Vec<usize>,
 
-	r: usize,
-}
+// 	r: usize,
+// }
 
-impl Benchmark4 {
-    pub fn new() -> Self {
-		let mut arr = Vec::new();
+// impl Benchmark4 {
+//     pub fn new() -> Self {
+// 		let mut arr = Vec::new();
 
-		let len = 10000;
+// 		let len = 10000;
 
-		for i in 0..len {
-			arr.push(i);
-		}
+// 		for i in 0..len {
+// 			arr.push(i);
+// 		}
 
-		let mut dirtys = Vec::new();
-		let mut rng = rand::thread_rng();
-		dirtys.push(rng.gen_range(0..len as u32) as usize);
+// 		let mut dirtys = Vec::new();
+// 		let mut rng = rand::thread_rng();
+// 		dirtys.push(rng.gen_range(0..len as u32) as usize);
 
-		Self {
-			dirtys,
-			r: 0,
-			arr,
-		}
-    }
+// 		Self {
+// 			dirtys,
+// 			r: 0,
+// 			arr,
+// 		}
+//     }
 
-    pub fn run(&mut self) {
-		let mut k = 0;
-		let mut len1 = self.arr.len() - 2;
-		let mut len2 = self.arr.len() - 2;
-		for i in 0..1000 {
-			println!("zzzz{:?}, {:?}", self.dirtys.len(), self.arr.len());
-			println!("xxxxxxxx{:?}, {:?}", self.dirtys[i], self.arr.len());
-			self.r = self.arr[self.dirtys[i]]; 
-		}
-		self.r = k;
-	}
-}
+//     pub fn run(&mut self) {
+// 		let mut k = 0;
+// 		let mut len1 = self.arr.len() - 2;
+// 		let mut len2 = self.arr.len() - 2;
+// 		for i in 0..1000 {
+// 			println!("zzzz{:?}, {:?}", self.dirtys.len(), self.arr.len());
+// 			println!("xxxxxxxx{:?}, {:?}", self.dirtys[i], self.arr.len());
+// 			self.r = self.arr[self.dirtys[i]]; 
+// 		}
+// 		self.r = k;
+// 	}
+// }
 
-#[test]
-fn aa() {
+// #[test]
+// fn aa() {
 	
 
-	let mut bench = Benchmark4::new();
-    bench.run();
-}
+// 	let mut bench = Benchmark4::new();
+//     bench.run();
+// }
 // #[test]
 // fn aa() {
 	
