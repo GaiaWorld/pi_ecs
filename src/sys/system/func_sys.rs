@@ -3,12 +3,12 @@ use crate::{
     component::ComponentId,
     query::{Access},
     sys::param::interface::{SystemParamState, SystemParam, SystemParamFetch},
-    sys::system::interface::{SystemId, System, SystemState, IntoSystem, In, InputMarker},
+    sys::system::interface::{System, SystemState, IntoSystem, In, InputMarker},
     world::World,
 };
 use pi_ecs_macros::all_tuples;
 // use bevy_ecs_macros::all_tuples;
-use std::{borrow::Cow, marker::PhantomData};
+use std::{borrow::Cow, marker::PhantomData, any::TypeId};
 
 /// The [`System`] counter part of an ordinary function.
 ///
@@ -88,8 +88,8 @@ where
     }
 
     #[inline]
-    fn id(&self) -> SystemId {
-        self.system_state.id
+    fn id(&self) -> TypeId {
+        TypeId::of::<F>()
     }
 
     // #[inline]

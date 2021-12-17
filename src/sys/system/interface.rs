@@ -1,23 +1,11 @@
 pub use listener::FnListener;
+use std::any::TypeId;
 use std::borrow::Cow;
-// use rand;
 
 use crate::World;
 use crate::component::ComponentId;
 use crate::archetype::ArchetypeComponentId;
 use crate::query::{Access, FilteredAccessSet};
-
-/// A [`System`] identifier.
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-pub struct SystemId(pub usize);
-
-impl SystemId {
-    /// Creates a new random `SystemId`.
-    #[allow(clippy::new_without_default)]
-    pub fn new() -> Self {
-        SystemId(rand::random::<usize>())
-    }
-}
 
 /// An ECS system that can be added to a [Schedule](crate::schedule::Schedule)
 ///
@@ -37,7 +25,7 @@ pub trait System: Send + Sync + 'static {
     /// Returns the system's name.
     fn name(&self) -> Cow<'static, str>;
     /// Returns the system's [`SystemId`].
-    fn id(&self) -> SystemId;
+    fn id(&self) -> TypeId;
     // /// Register a new archetype for this system.
     // fn new_archetype(&mut self, archetype: &Archetype);
     /// Returns the system's component [`Access`].
@@ -74,7 +62,6 @@ pub type BoxedSystem<In = (), Out = ()> = Box<dyn System<In = In, Out = Out>>;
 
 /// 系统状态
 pub struct SystemState {
-    pub(crate) id: SystemId, // 系统id
     pub(crate) name: Cow<'static, str>, // 系统名称
     pub(crate) component_access_set: FilteredAccessSet<ComponentId>,
     pub(crate) archetype_component_access: Access<ArchetypeComponentId>,
@@ -91,7 +78,6 @@ impl SystemState {
             archetype_component_access: Access::default(),
             component_access_set: FilteredAccessSet::default(),
             is_send: true,
-            id: SystemId::new(),
             last_change_tick: 0,
         }
     }
