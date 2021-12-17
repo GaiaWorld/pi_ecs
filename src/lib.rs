@@ -44,11 +44,11 @@ pub mod prelude {
     // pub use crate::reflect::ReflectComponent;
     pub use crate::{
         entity::Entity,
-        query::QueryState,
-        // system::{
-        //     Commands, In, IntoChainSystem, IntoExclusiveSystem, IntoSystem, Local, NonSend,
-        //     NonSendMut, Query, QuerySet, RemovedComponents, Res, ResMut, System,
-        // },
+        query::*,
+        sys::{
+			system::*,
+			param::*,
+		},
         world::World,
     };
 }
