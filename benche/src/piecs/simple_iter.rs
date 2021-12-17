@@ -25,10 +25,10 @@ impl Benchmark {
     pub fn new() -> Self {
         let mut world = World::new();
 		world.new_archetype::<Node>()
-			.add::<Velocity>()
-			.add::<Rotation>()
-			.add::<Transform>()
-			.add::<Position>()
+			.register::<Velocity>()
+			.register::<Rotation>()
+			.register::<Transform>()
+			.register::<Position>()
 			.create();
 		let mut dirtys = Vec::new();
 		for i in 0..10000 {

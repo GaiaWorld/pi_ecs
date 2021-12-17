@@ -4,9 +4,10 @@ use std::ptr::NonNull;
 /// 世界
 
 use std::sync::atomic::{AtomicU32, Ordering};
-use slotmap::{DenseSlotMap, SecondaryMap, SparseSecondaryMap};
+// use hash::XHashMap;
+use slotmap::{SecondaryMap, SparseSecondaryMap};
 
-use crate::archetype::{Archetype, Archetypes, ArchetypeId};
+use crate::archetype::{Archetype, Archetypes, ArchetypeId, ArchetypeIdent};
 use crate::component::{Components, ComponentId, Component, self};
 use crate::entity::Entity;
 use crate::query::{WorldQuery, QueryState};
@@ -14,17 +15,11 @@ use crate::storage::{LocalVersion, Offset, Local};
 
 pub struct World {
 	pub(crate) id:WorldId,
-    pub(crate) components: Components,
-    pub(crate) archetypes: Archetypes,
-    // pub(crate) storages: Storages,
-    // pub(crate) bundles: Bundles,
-    // pub(crate) removed_components: SparseSet<ComponentId, Vec<Entity>>,
-    // Access cache used by [WorldCell].
-    // pub(crate) archetype_component_access: ArchetypeComponentAccess,
-    // main_thread_validator: MainThreadValidator,
+	pub(crate) components: Components,
+	pub(crate) archetypes: Archetypes,
 
 	pub(crate) change_tick: AtomicU32,
-    pub(crate) last_change_tick: u32,
+	pub(crate) last_change_tick: u32,
 }
 
 impl World {
@@ -37,6 +32,16 @@ impl World {
 			last_change_tick: 0,
 		}
 	}
+
+	pub fn insert_resource<T: Component>(&mut self, value: T) {
+		let id = self.components.get_or_insert_resource_id::<T>();
+		self.archetypes.insert_resource::<T>(value, id);
+	}
+
+	pub fn get_resource_id<T: Component>(&self) -> Option<&ComponentId> {
+		self.components.get_resource_id::<T>()
+	}
+
 	pub fn new_archetype<T: Send + Sync + 'static>(&mut self) -> ArchetypeInfo {
 		if let Some(_r) = self.archetypes.get_id_by_ident(TypeId::of::<T>()) {
 			panic!("new_archetype fial");
@@ -67,13 +72,14 @@ impl World {
 		}
 	}
 
-	pub fn query<Q: WorldQuery>(&mut self) -> QueryState<Q, ()> {
+	pub fn query<A: ArchetypeIdent, Q: WorldQuery>(&mut self) -> QueryState<A, Q, ()> {
         QueryState::new(self)
     }
 
 	pub fn archetypes(&self) -> &Archetypes {
 		&self.archetypes
 	}
+
 	pub fn id(&self) -> WorldId {
         self.id
     }
@@ -103,12 +109,12 @@ pub struct ArchetypeInfo<'a> {
 }
 
 impl<'a> ArchetypeInfo<'a> {
-	pub fn add<C: Component>(&mut self) -> &mut Self{
+	pub fn register<C: Component>(&mut self) -> &mut Self{
 		let id = self.world.components.get_or_insert_id::<C>();
 		let r = self.components.insert(id);
 
 		if r {
-			let ty = self.world.components.infos[id.offset()].get_storage_type();
+			let ty = self.world.components.infos[id.offset()].storage_type();
 			self.containers[0].push(
 				match ty {
 					component::StorageType::SparseSet => {
@@ -126,7 +132,7 @@ impl<'a> ArchetypeInfo<'a> {
 	pub fn create(&mut self) {
 		let components = self.components.iter().map(|r| {r.clone()}).collect();
 		let c = self.containers.pop().unwrap();
-		self.world.archetypes.get_id_or_insert_by_ident(self.type_id, components, &self.world.components.infos, c);
+		self.world.archetypes.get_id_or_insert_by_ident(self.type_id, components, c);
 	}
 }
 
@@ -148,4 +154,16 @@ impl<'a> EntityRef<'a> {
 	pub fn id(&self) -> Entity {
 		Entity::new(self.archetype_id, self.local)
 	}
+}
+
+/// Creates `Self` using data from the given [World]
+pub trait FromWorld {
+    /// Creates `Self` using data from the given [World]
+    fn from_world(world: &mut World) -> Self;
+}
+
+impl<T: Default> FromWorld for T {
+    fn from_world(_world: &mut World) -> Self {
+        T::default()
+    }
 }

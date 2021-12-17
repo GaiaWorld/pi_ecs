@@ -15,7 +15,7 @@ pub trait SystemParamFetch<'a>: SystemParamState {
     /// This call might access any of the input parameters in an unsafe way. Make sure the data
     /// access is safe in the context of the system scheduler.
     unsafe fn get_param(
-        state: &'a mut Self,
+        state: &'a Self,
         system_state: &'a SystemState,
         world: &'a World,
         change_tick: u32,
@@ -44,7 +44,7 @@ macro_rules! impl_system_param_tuple {
 
             #[inline]
             unsafe fn get_param(
-                state: &'a mut Self,
+                state: &'a Self,
                 system_state: &'a SystemState,
                 world: &'a World,
                 change_tick: u32,
@@ -86,3 +86,4 @@ macro_rules! impl_system_param_tuple {
 
 
 all_tuples!(impl_system_param_tuple, 0, 16, P);
+
