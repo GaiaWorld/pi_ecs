@@ -36,6 +36,7 @@ pub mod storage;
 pub mod query;
 pub mod pointer;
 pub mod resource;
+pub mod dispatch;
 
 pub use world::World;
 
