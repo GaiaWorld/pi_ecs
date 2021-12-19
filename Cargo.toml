@@ -27,6 +27,7 @@ log = "*"
 rand = "*"
 thiserror = "1.0"
 futures = "0.3"
+async =  {path="../pi_lib/async"}
 
 
 

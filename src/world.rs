@@ -22,6 +22,14 @@ pub struct World {
 	pub(crate) last_change_tick: u32,
 }
 
+unsafe impl Sync for World {
+	
+}
+
+unsafe impl Send for World {
+	
+}
+
 impl World {
 	pub fn new() -> Self {
 		Self {
