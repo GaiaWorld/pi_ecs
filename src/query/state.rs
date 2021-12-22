@@ -38,7 +38,7 @@ impl<A: ArchetypeIdent, Q: WorldQuery, F: WorldQuery> QueryState<A, Q, F>
 where
     F::Fetch: FilterFetch,
 {
-    pub fn new(world: &mut World) -> Self {
+    pub fn new(world: &World) -> Self {
 		let archetype_id = match world.archetypes().get_id_by_ident(TypeId::of::<A>()) {
 			Some(r) => r.clone(),
 			None => panic!(),

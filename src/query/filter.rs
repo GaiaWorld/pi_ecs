@@ -39,7 +39,7 @@ pub struct WithState<T> {
 
 // SAFE: no component access or archetype component access
 unsafe impl<T: Component> FetchState for WithState<T> {
-    fn init(world: &mut World) -> Self {
+    fn init(world: &World) -> Self {
         Self {
 			read_state: ReadState::init(world),
             marker: PhantomData,
@@ -115,7 +115,7 @@ pub struct WithOutState<T> {
 
 // SAFE: no component access or archetype component access
 unsafe impl<T: Component> FetchState for WithOutState<T> {
-    fn init(world: &mut World) -> Self {
+    fn init(world: &World) -> Self {
         Self {
 			read_state: ReadState::init(world),
             marker: PhantomData,
@@ -245,7 +245,7 @@ macro_rules! impl_query_filter_tuple {
         #[allow(unused_variables)]
         #[allow(non_snake_case)]
         unsafe impl<$($filter: FetchState),*> FetchState for Or<($($filter,)*)> {
-            fn init(world: &mut World) -> Self {
+            fn init(world: &World) -> Self {
                 Or(($($filter::init(world),)*))
             }
 

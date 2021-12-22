@@ -12,7 +12,7 @@ use pi_ecs_macros::all_tuples;
 use std::{
     marker::PhantomData,
     // ptr::NonNull,
-	mem::MaybeUninit,
+	mem::MaybeUninit, any::TypeId,
 };
 
 /// WorldQuery 从world上fetch组件、实体、资源，需要实现该triat
@@ -59,7 +59,7 @@ pub trait Fetch<'w>: Send + Sync + Sized {
 /// [Fetch::table_fetch]
 pub unsafe trait FetchState: Send + Sync + Sized {
 	/// 创建FetchState实例
-    fn init(world: &mut World) -> Self;
+    fn init(world: &World) -> Self;
 	/// 更新组件
 	fn update_component_access(&self, access: &mut FilteredAccess<ComponentId>);
     fn update_archetype_component_access(&self, archetype: &Archetype, access: &mut Access<ArchetypeComponentId>);
@@ -90,7 +90,7 @@ pub struct EntityState;
 // SAFE: no component or archetype access
 unsafe impl FetchState for EntityState {
 	#[inline]
-    fn init(_world: &mut World) -> Self {
+    fn init(_world: &World) -> Self {
         Self
     }
 
@@ -156,8 +156,12 @@ pub struct ReadState<T> {
 // SAFE: component access and archetype component access are properly updated to reflect that T is
 // read
 unsafe impl<T: Component> FetchState for ReadState<T> {
-    fn init(world: &mut World) -> Self {
-        let component_info = world.components.get_or_insert_info::<T>();
+    fn init(world: &World) -> Self {
+		let component_id = match world.components.get_id(TypeId::of::<T>()) {
+			Some(r) => r,
+			None => panic!("ReadState fetch ${} fail", std::any::type_name::<T>()),
+		};
+        let component_info = world.components.get_info(component_id).unwrap();
         ReadState {
             component_id: component_info.id(),
             storage_type: component_info.storage_type(),
@@ -290,8 +294,12 @@ pub struct WriteState<T> {
 // SAFE: component access and archetype component access are properly updated to reflect that T is
 // read
 unsafe impl<T: Component> FetchState for WriteState<T> {
-    fn init(world: &mut World) -> Self {
-        let component_info = world.components.get_or_insert_info::<T>();
+    fn init(world: &World) -> Self {
+		let component_id = match world.components.get_id(TypeId::of::<T>()) {
+			Some(r) => r,
+			None => panic!("WriteState fetch ${} fail", std::any::type_name::<T>()),
+		};
+        let component_info = world.components.get_info(component_id).unwrap();
         WriteState {
             component_id: component_info.id(),
             storage_type: component_info.storage_type(),
@@ -338,7 +346,7 @@ pub struct OptionState<T: FetchState> {
 // SAFE: component access and archetype component access are properly updated according to the
 // internal Fetch
 unsafe impl<T: FetchState> FetchState for OptionState<T> {
-    fn init(world: &mut World) -> Self {
+    fn init(world: &World) -> Self {
         Self {
             state: T::init(world),
         }
@@ -428,7 +436,7 @@ macro_rules! impl_tuple_fetch {
         #[allow(non_snake_case)]
 		#[allow(unused_variables)]
         unsafe impl<$($name: FetchState),*> FetchState for ($($name,)*) {
-            fn init(_world: &mut World) -> Self {
+            fn init(_world: &World) -> Self {
                 ($($name::init(_world),)*)
             }
 

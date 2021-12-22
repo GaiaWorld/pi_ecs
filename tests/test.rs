@@ -21,12 +21,12 @@ fn _sync_sys(
 
 }
 
-async fn _async_sys<'a>(
-	_query1: Query<'a, Node, &Velocity>,
-	_query2: Query<'a, Node, &mut Position, With<Velocity>>, // Query<Node, &mut Position, WithOut<Velocity>>
-	_local: Local<'a, DirtyMark>,
-	_res: Res<'a, Resource1>,
-	_res_mut: ResMut<'a, Resource2>,
+async fn _async_sys(
+	_query1: Query<Node, &Velocity>,
+	_query2: Query<Node, &mut Position, With<Velocity>>, // Query<Node, &mut Position, WithOut<Velocity>>
+	_local: Local<DirtyMark>,
+	_res: Res<Resource1>,
+	_res_mut: ResMut<Resource2>,
 ) {
 	
 }

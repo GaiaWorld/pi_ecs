@@ -1,3 +1,7 @@
+use std::sync::Arc;
+
+use share::cell::TrustCell;
+
 use crate::{
     entity::Entity,
     query::{
@@ -10,17 +14,18 @@ use crate::{
 use std::marker::PhantomData;
 
 /// Provides scoped access to a [`World`] according to a given [`WorldQuery`] and query filter.
-pub struct Query<'w, A: ArchetypeIdent, Q: WorldQuery, F: WorldQuery = ()>
+pub struct Query<A: ArchetypeIdent, Q: WorldQuery, F: WorldQuery = ()>
 where
     F::Fetch: FilterFetch,
 {
-    pub(crate) world: &'w World,
-    pub(crate) state: &'w QueryState<A, Q, F>,
+	pub(crate) _world: Arc<TrustCell<World>>, // 抓住World， 因为Query可能在异步块中，需要保证WorldInner不被释放
+	pub(crate) world_ref: &'static World,
+    pub(crate) state: Arc<QueryState<A, Q, F>>, // 如果sys是异步函数，在异步函数没有执行完时，不能删除sys，否则可能造成未定义行为， TODO
     pub(crate) last_change_tick: u32,
     pub(crate) change_tick: u32,
 }
 
-impl<'w, A: ArchetypeIdent, Q: WorldQuery, F: WorldQuery> Query<'w, A, Q, F>
+impl<A: ArchetypeIdent, Q: WorldQuery, F: WorldQuery> Query<A, Q, F>
 where
     F::Fetch: FilterFetch,
 {
@@ -31,15 +36,16 @@ where
     /// This will create a query that could violate memory safety rules. Make sure that this is only
     /// called in ways that ensure the queries have unique mutable access.
     #[inline]
-    pub(crate) unsafe fn new(
-        world: &'w World,
-        state: &'w QueryState<A, Q, F>,
+    pub(crate) unsafe fn new<'w>(
+        world: &'w Arc<TrustCell<World>>,
+        state: &Arc<QueryState<A, Q, F>>,
         last_change_tick: u32,
         change_tick: u32,
     ) -> Self {
         Self {
-            world,
-            state,
+            _world: world.clone(),
+			world_ref: std::mem::transmute(world.get()),
+            state: state.clone(),
             last_change_tick,
             change_tick,
         }
@@ -57,7 +63,7 @@ where
         // same-system queries have runtime borrow checks when they conflict
         unsafe {
             self.state
-                .iter_unchecked_manual(self.world, self.last_change_tick, self.change_tick)
+                .iter_unchecked_manual(self.world_ref, self.last_change_tick, self.change_tick)
         }
     }
 
@@ -68,7 +74,7 @@ where
         // same-system queries have runtime borrow checks when they conflict
         unsafe {
             self.state
-                .iter_unchecked_manual(self.world, self.last_change_tick, self.change_tick)
+                .iter_unchecked_manual(self.world_ref, self.last_change_tick, self.change_tick)
         }
     }
 
@@ -83,7 +89,7 @@ where
         // SEMI-SAFE: system runs without conflicts with other systems.
         // same-system queries have runtime borrow checks when they conflict
         self.state
-            .iter_unchecked_manual(self.world, self.last_change_tick, self.change_tick)
+            .iter_unchecked_manual(self.world_ref, self.last_change_tick, self.change_tick)
     }
 
     /// Gets the query result for the given [`Entity`].
@@ -98,7 +104,7 @@ where
         // same-system queries have runtime borrow checks when they conflict
         unsafe {
             self.state.get_unchecked_manual(
-                self.world,
+				self.world_ref,
                 entity,
                 self.last_change_tick,
                 self.change_tick,
@@ -116,7 +122,7 @@ where
         // same-system queries have runtime borrow checks when they conflict
         unsafe {
             self.state.get_unchecked_manual(
-                self.world,
+                self.world_ref,
                 entity,
                 self.last_change_tick,
                 self.change_tick,
@@ -137,23 +143,25 @@ where
     ) -> Option<<Q::Fetch as Fetch>::Item> {
         // SEMI-SAFE: system runs without conflicts with other systems.
         // same-system queries have runtime borrow checks when they conflict
-        self.state
-            .get_unchecked_manual(self.world, entity, self.last_change_tick, self.change_tick)
+		self.state
+            .get_unchecked_manual(self.world_ref, entity, self.last_change_tick, self.change_tick)
+        // self.state
+        //     .get_unchecked_manual(self.world_ref, entity)
     }
 }
 
 pub struct QueryFetch<Q, F>(PhantomData<(Q, F)>);
 
-impl<'a, A: ArchetypeIdent, Q: WorldQuery + 'static, F: WorldQuery + 'static> SystemParam for Query<'a, A, Q, F>
+impl<A: ArchetypeIdent, Q: WorldQuery + 'static, F: WorldQuery + 'static> SystemParam for Query< A, Q, F>
 where
     F::Fetch: FilterFetch,
 {
-    type Fetch = QueryState<A, Q, F>;
+    type Fetch = Arc<QueryState<A, Q, F>>;
 }
 
 // SAFE: Relevant query ComponentId and ArchetypeComponentId access is applied to SystemState. If
 // this QueryState conflicts with any prior access, a panic will occur.
-unsafe impl<A: ArchetypeIdent, Q: WorldQuery + 'static, F: WorldQuery + 'static> SystemParamState for QueryState<A, Q, F>
+unsafe impl<A: ArchetypeIdent, Q: WorldQuery + 'static, F: WorldQuery + 'static> SystemParamState for Arc<QueryState<A, Q, F>>
 where
     F::Fetch: FilterFetch,
 {
@@ -179,23 +187,23 @@ where
         system_state
             .archetype_component_access
             .extend(&state.archetype_component_access);
-        state
+        Arc::new(state)
     }
 
     fn default_config() {}
 }
 
-impl<'a, A: ArchetypeIdent, Q: WorldQuery + 'static, F: WorldQuery + 'static> SystemParamFetch<'a> for QueryState<A, Q, F>
+impl<'a, A: ArchetypeIdent, Q: WorldQuery + 'static, F: WorldQuery + 'static> SystemParamFetch<'a> for Arc<QueryState<A, Q, F>>
 where
     F::Fetch: FilterFetch,
 {
-    type Item = Query<'a, A, Q, F>;
+    type Item = Query<A, Q, F>;
 
     #[inline]
     unsafe fn get_param(
         state: &'a mut Self,
         system_state: &'a SystemState,
-        world: &'a World,
+        world: &'a Arc<TrustCell<World>>,
         change_tick: u32,
     ) -> Self::Item {
         Query::new(world, state, system_state.last_change_tick, change_tick)

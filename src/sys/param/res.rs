@@ -1,10 +1,12 @@
+use share::cell::TrustCell;
+
 use crate::{
 	component::{ComponentId, Component},
 	sys::param::interface::{SystemParam, SystemParamFetch, SystemParamState},
 	sys::system::interface::SystemState,
 	world::World,
 };
-use std::{marker::PhantomData, ops::Deref};
+use std::{marker::PhantomData, ops::Deref, sync::Arc};
 
 
 /// Shared borrow of a resource.
@@ -14,25 +16,27 @@ use std::{marker::PhantomData, ops::Deref};
 /// Panics when used as a [`SystemParameter`](SystemParam) if the resource does not exist.
 ///
 /// Use `Option<Res<T>>` instead if the resource might not always exist.
-pub struct Res<'w, T: Component> {
-    value: &'w T,
+pub struct Res<T: Component> {
+    value: &'static T,
+	_world: Arc<TrustCell<World>>,
     // ticks: &'w ComponentTicks,
     // last_change_tick: u32,
     // change_tick: u32,
 }
 
-pub struct ResMut<'w, T: Component> {
-    value: &'w mut T,
+pub struct ResMut<T: Component> {
+    value: &'static mut T,
+	_world: Arc<TrustCell<World>>,
     // ticks: &'w mut ComponentTicks,
     // last_change_tick: u32,
     // change_tick: u32,
 }
 
-impl<'w, T: Component> Deref for Res<'w, T> {
+impl<T: Component> Deref for Res<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        self.value
+        unsafe{std::mem::transmute_copy(self.value)}
     }
 }
 
@@ -42,7 +46,7 @@ pub struct ResState<T> {
     marker: PhantomData<T>,
 }
 
-impl<'a, T: Component> SystemParam for Res<'a, T> {
+impl<T: Component> SystemParam for Res<T> {
     type Fetch = ResState<T>;
 }
 
@@ -82,16 +86,16 @@ unsafe impl<T: Component> SystemParamState for ResState<T> {
 }
 
 impl<'a, T: Component> SystemParamFetch<'a> for ResState<T> {
-    type Item = Res<'a, T>;
+    type Item = Res<T>;
 
     #[inline]
     unsafe fn get_param(
         state: &'a mut Self,
         system_state: &'a SystemState,
-        world: &'a World,
+        world: &'a Arc<TrustCell<World>>,
         _change_tick: u32,
     ) -> Self::Item {
-        let value = world
+        let value = world.get()
             .archetypes.get_resource(state.component_id)
             .unwrap_or_else(|| {
                 panic!(
@@ -102,6 +106,7 @@ impl<'a, T: Component> SystemParamFetch<'a> for ResState<T> {
             });
         Res {
             value: &*value.as_ptr().cast::<T>(),
+			_world: world.clone(),
             // ticks: &*column.get_ticks_mut_ptr(),
             // last_change_tick: system_state.last_change_tick,
             // change_tick,
@@ -109,11 +114,11 @@ impl<'a, T: Component> SystemParamFetch<'a> for ResState<T> {
     }
 }
 
-impl<'w, T: Component> Deref for ResMut<'w, T> {
+impl<T: Component> Deref for ResMut<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        self.value
+        unsafe{std::mem::transmute_copy(self.value)}
     }
 }
 
@@ -123,7 +128,7 @@ pub struct ResMutState<T> {
     marker: PhantomData<T>,
 }
 
-impl<'a, T: Component> SystemParam for ResMut<'a, T> {
+impl<T: Component> SystemParam for ResMut<T> {
     type Fetch = ResMutState<T>;
 }
 
@@ -163,16 +168,16 @@ unsafe impl<T: Component> SystemParamState for ResMutState<T> {
 }
 
 impl<'a, T: Component> SystemParamFetch<'a> for ResMutState<T> {
-    type Item = ResMut<'a, T>;
+    type Item = ResMut<T>;
 
     #[inline]
     unsafe fn get_param(
         state: &'a mut Self,
         system_state: &'a SystemState,
-        world: &'a World,
+        world: &'a Arc<TrustCell<World>>,
         _change_tick: u32,
     ) -> Self::Item {
-        let value = world
+        let value = world.get()
             .archetypes.get_resource(state.component_id)
             .unwrap_or_else(|| {
                 panic!(
@@ -183,6 +188,7 @@ impl<'a, T: Component> SystemParamFetch<'a> for ResMutState<T> {
             });
         ResMut {
             value: &mut *value.as_ptr().cast::<T>(),
+			_world: world.clone(),
             // ticks: &*column.get_ticks_mut_ptr(),
             // last_change_tick: system_state.last_change_tick,
             // change_tick,

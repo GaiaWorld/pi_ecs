@@ -1,3 +1,7 @@
+use std::sync::Arc;
+
+use share::cell::TrustCell;
+
 use crate::{
     archetype::ArchetypeComponentId,
     component::ComponentId,
@@ -10,6 +14,8 @@ use pi_ecs_macros::all_tuples;
 // use bevy_ecs_macros::all_tuples;
 use std::{borrow::Cow, marker::PhantomData, any::TypeId};
 use futures::future::{BoxFuture, FutureExt};
+
+use super::SystemId;
 
 /// The [`System`] counter part of an ordinary function.
 ///
@@ -24,6 +30,8 @@ where
     param_state: Option<Param::Fetch>,
     system_state: SystemState,
     config: Option<<Param::Fetch as SystemParamState>::Config>,
+	world: Arc<TrustCell<World>>,
+	id: SystemId,
     // NOTE: PhantomData<fn()-> T> gives this safe Send/Sync impls
     marker: PhantomData<fn() -> (In, Out, Marker)>,
 }
@@ -61,12 +69,15 @@ where
     Marker: 'static,
     F: SystemAsyncParamFunction<In, Out, Param, Marker> + Send + Sync + 'static,
 {
-    fn system(self) -> AsyncFunctionSystem<In, Out, Param, Marker, F> {
+    fn system(self, world: Arc<TrustCell<World>>) -> AsyncFunctionSystem<In, Out, Param, Marker, F> {
+		let id = SystemId::new(world.borrow_mut().archetype_component_grow());
         AsyncFunctionSystem {
             func: self,
             param_state: None,
             config: Some(<Param::Fetch as SystemParamState>::default_config()),
             system_state: SystemState::new::<F>(),
+			world,
+			id,
             marker: PhantomData,
         }
     }
@@ -89,8 +100,8 @@ where
     }
 
     #[inline]
-    fn id(&self) -> TypeId {
-        TypeId::of::<F>()
+    fn id(&self) -> SystemId {
+        self.id
     }
 
     // #[inline]
@@ -115,13 +126,13 @@ where
     }
 
     #[inline]
-    unsafe fn run_unsafe(&mut self, input: Self::In, world: &World) -> Self::Out {
+    unsafe fn run_unsafe(&mut self, input: Self::In) -> Self::Out {
         // let change_tick = world.increment_change_tick();
         let out = self.func.run(
             input,
             self.param_state.as_mut().unwrap(),
             &self.system_state,
-            world,
+            &self.world,
             0,
         );
         self.system_state.last_change_tick = 0;
@@ -161,7 +172,7 @@ pub trait SystemAsyncParamFunction<In, Out, Param: SystemParam, Marker>: Send + 
         input: In,
         state: &mut Param::Fetch,
         system_state: &SystemState,
-        world: &World,
+        world: &Arc<TrustCell<World>>,
         change_tick: u32,
     ) -> BoxFuture<'static, Out>;
 }
@@ -176,7 +187,7 @@ macro_rules! impl_system_function {
                 FnMut($(<<$param as SystemParam>::Fetch as SystemParamFetch>::Item),*) -> R + Send + Sync + 'static, Out: 'static, R: std::future::Future<Output=Out> + Send + 'static
         {
             #[inline]
-            fn run(&mut self, _input: (), state: &mut <($($param,)*) as SystemParam>::Fetch, system_state: &SystemState, world: &World, change_tick: u32) -> BoxFuture<'static, Out>  {
+            fn run(&mut self, _input: (), state: &mut <($($param,)*) as SystemParam>::Fetch, system_state: &SystemState, world: &Arc<TrustCell<World>>, change_tick: u32) -> BoxFuture<'static, Out>  {
                 unsafe {
                     let ($($param,)*) = <<($($param,)*) as SystemParam>::Fetch as SystemParamFetch>::get_param(state, system_state, world, change_tick);
                     self($($param),*).boxed()
@@ -192,7 +203,7 @@ macro_rules! impl_system_function {
 				FnMut(In<Input>, $(<<$param as SystemParam>::Fetch as SystemParamFetch>::Item),*) -> R + Send + Sync + 'static, Out: 'static, R: std::future::Future<Output=Out> + Send + 'static
         {
             #[inline]
-            fn run(&mut self, input: Input, state: &mut <($($param,)*) as SystemParam>::Fetch, system_state: &SystemState, world: &World, change_tick: u32) -> BoxFuture<'static, Out> {
+            fn run(&mut self, input: Input, state: &mut <($($param,)*) as SystemParam>::Fetch, system_state: &SystemState, world: &Arc<TrustCell<World>>, change_tick: u32) -> BoxFuture<'static, Out> {
                 unsafe {
                     let ($($param,)*) = <<($($param,)*) as SystemParam>::Fetch as SystemParamFetch>::get_param(state, system_state, world, change_tick);
                     self(In(input), $($param),*).boxed()

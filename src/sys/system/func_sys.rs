@@ -1,3 +1,7 @@
+use std::sync::Arc;
+
+use share::cell::TrustCell;
+
 use crate::{
     archetype::ArchetypeComponentId,
     component::ComponentId,
@@ -9,6 +13,8 @@ use crate::{
 use pi_ecs_macros::all_tuples;
 // use bevy_ecs_macros::all_tuples;
 use std::{borrow::Cow, marker::PhantomData, any::TypeId};
+
+use super::SystemId;
 
 /// The [`System`] counter part of an ordinary function.
 ///
@@ -23,6 +29,8 @@ where
     param_state: Option<Param::Fetch>,
     system_state: SystemState,
     config: Option<<Param::Fetch as SystemParamState>::Config>,
+	world: Arc<TrustCell<World>>,
+	id: SystemId,
     // NOTE: PhantomData<fn()-> T> gives this safe Send/Sync impls
     marker: PhantomData<fn() -> (In, Out, Marker)>,
 }
@@ -60,12 +68,15 @@ where
     Marker: 'static,
     F: SystemParamFunction<In, Out, Param, Marker> + Send + Sync + 'static,
 {
-    fn system(self) -> FunctionSystem<In, Out, Param, Marker, F> {
-        FunctionSystem {
+    fn system(self, world: Arc<TrustCell<World>>) -> FunctionSystem<In, Out, Param, Marker, F> {
+        let id = SystemId::new(world.borrow_mut().archetype_component_grow());
+		FunctionSystem {
             func: self,
             param_state: None,
+			world,
             config: Some(<Param::Fetch as SystemParamState>::default_config()),
             system_state: SystemState::new::<F>(),
+			id,
             marker: PhantomData,
         }
     }
@@ -88,8 +99,8 @@ where
     }
 
     #[inline]
-    fn id(&self) -> TypeId {
-        TypeId::of::<F>()
+    fn id(&self) -> SystemId {
+        self.id
     }
 
     // #[inline]
@@ -114,13 +125,13 @@ where
     }
 
     #[inline]
-    unsafe fn run_unsafe(&mut self, input: Self::In, world: &World) -> Self::Out {
+    unsafe fn run_unsafe(&mut self, input: Self::In) -> Self::Out {
         // let change_tick = world.increment_change_tick();
         let out = self.func.run(
             input,
             self.param_state.as_mut().unwrap(),
             &self.system_state,
-            world,
+            &self.world,
             0,
         );
         self.system_state.last_change_tick = 0;
@@ -160,7 +171,7 @@ pub trait SystemParamFunction<In, Out, Param: SystemParam, Marker>: Send + Sync 
         input: In,
         state: &mut Param::Fetch,
         system_state: &SystemState,
-        world: &World,
+        world: &Arc<TrustCell<World>>,
         change_tick: u32,
     ) -> Out;
 }
@@ -175,7 +186,7 @@ macro_rules! impl_system_function {
                 FnMut($(<<$param as SystemParam>::Fetch as SystemParamFetch>::Item),*) -> Out + Send + Sync + 'static, Out: 'static
         {
             #[inline]
-            fn run(&mut self, _input: (), state: &mut <($($param,)*) as SystemParam>::Fetch, system_state: &SystemState, world: &World, change_tick: u32) -> Out {
+            fn run(&mut self, _input: (), state: &mut <($($param,)*) as SystemParam>::Fetch, system_state: &SystemState, world: &Arc<TrustCell<World>>, change_tick: u32) -> Out {
                 unsafe {
                     let ($($param,)*) = <<($($param,)*) as SystemParam>::Fetch as SystemParamFetch>::get_param(state, system_state, world, change_tick);
                     self($($param),*)
@@ -191,7 +202,7 @@ macro_rules! impl_system_function {
                 FnMut(In<Input>, $(<<$param as SystemParam>::Fetch as SystemParamFetch>::Item),*) -> Out + Send + Sync + 'static, Out: 'static
         {
             #[inline]
-            fn run(&mut self, input: Input, state: &mut <($($param,)*) as SystemParam>::Fetch, system_state: &SystemState, world: &World, change_tick: u32) -> Out {
+            fn run(&mut self, input: Input, state: &mut <($($param,)*) as SystemParam>::Fetch, system_state: &SystemState, world: &Arc<TrustCell<World>>, change_tick: u32) -> Out {
                 unsafe {
                     let ($($param,)*) = <<($($param,)*) as SystemParam>::Fetch as SystemParamFetch>::get_param(state, system_state, world, change_tick);
                     self(In(input), $($param),*)

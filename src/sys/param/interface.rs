@@ -1,6 +1,9 @@
-use pi_ecs_macros::all_tuples;
+use std::sync::Arc;
 
-use crate::World;
+use pi_ecs_macros::all_tuples;
+use share::cell::TrustCell;
+
+use crate::world::World;
 use crate::component::ComponentId;
 use crate::query::{FilteredAccessSet, FilteredAccess};
 use crate::sys::system::interface::SystemState;
@@ -18,7 +21,7 @@ pub trait SystemParamFetch<'a>: SystemParamState {
     unsafe fn get_param(
         state: &'a mut Self,
         system_state: &'a SystemState,
-        world: &'a World,
+        world: &'a Arc<TrustCell<World>>,
         change_tick: u32,
     ) -> Self::Item;
 }
@@ -49,7 +52,7 @@ macro_rules! impl_system_param_tuple {
             unsafe fn get_param(
                 state: &'a mut Self,
                 system_state: &'a SystemState,
-                world: &'a World,
+                world: &'a Arc<TrustCell<World>>,
                 change_tick: u32,
             ) -> Self::Item {
 

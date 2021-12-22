@@ -1,8 +1,10 @@
 pub use listener::FnListener;
+use share::cell::TrustCell;
 use std::any::TypeId;
 use std::borrow::Cow;
+use std::sync::Arc;
 
-use crate::World;
+use crate::world::World;
 use crate::component::ComponentId;
 use crate::archetype::ArchetypeComponentId;
 use crate::query::{Access, FilteredAccessSet};
@@ -25,7 +27,7 @@ pub trait System: Send + Sync + 'static {
     /// Returns the system's name.
     fn name(&self) -> Cow<'static, str>;
     /// Returns the system's [`SystemId`].
-    fn id(&self) -> TypeId;
+    fn id(&self) -> SystemId;
     // /// Register a new archetype for this system.
     // fn new_archetype(&mut self, archetype: &Archetype);
     /// Returns the system's component [`Access`].
@@ -45,16 +47,29 @@ pub trait System: Send + Sync + 'static {
     ///     1. This system is the only system running on the given world across all threads.
     ///     2. This system only runs in parallel with other systems that do not conflict with the
     ///        [`System::archetype_component_access()`].
-    unsafe fn run_unsafe(&mut self, input: Self::In, world: &World) -> Self::Out;
+    unsafe fn run_unsafe(&mut self, input: Self::In) -> Self::Out;
     /// Runs the system with the given input in the world.
-    fn run(&mut self, input: Self::In, world: &mut World) -> Self::Out {
+    fn run(&mut self, input: Self::In) -> Self::Out {
         // SAFE: world and resources are exclusively borrowed
-        unsafe { self.run_unsafe(input, world) }
+        unsafe { self.run_unsafe(input) }
     }
     fn apply_buffers(&mut self, world: &mut World);
     /// Initialize the system.
     fn initialize(&mut self, _world: &mut World);
     fn check_change_tick(&mut self, change_tick: u32);
+}
+
+#[derive(Clone, Copy)]
+pub struct SystemId(usize);
+
+impl SystemId {
+	pub fn new(v: usize) -> Self {
+		SystemId(v)
+	}
+
+	pub fn id(&self) -> usize {
+		self.0
+	}
 }
 
 /// A convenience type alias for a boxed [`System`] trait object.
@@ -113,12 +128,12 @@ impl SystemState {
 /// ```
 pub trait IntoSystem<Params, SystemType: System> {
     /// Turns this value into its corresponding [`System`].
-    fn system(self) -> SystemType;
+    fn system(self, world: Arc<TrustCell<World>>) -> SystemType;
 }
 
 // Systems implicitly implement IntoSystem
 impl<Sys: System> IntoSystem<(), Sys> for Sys {
-    fn system(self) -> Sys {
+    fn system(self, _world: Arc<TrustCell<World>>) -> Sys {
         self
     }
 }

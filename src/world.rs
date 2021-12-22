@@ -1,7 +1,6 @@
 use std::any::TypeId;
 use std::collections::HashSet;
 use std::ptr::NonNull;
-/// 世界
 
 use std::sync::atomic::{AtomicU32, Ordering};
 // use hash::XHashMap;
@@ -50,6 +49,10 @@ impl World {
 		self.components.get_resource_id::<T>()
 	}
 
+	pub fn archetype_component_grow(&mut self) -> usize {
+		self.archetypes.archetype_component_grow()
+	}
+
 	pub fn new_archetype<T: Send + Sync + 'static>(&mut self) -> ArchetypeInfo {
 		if let Some(_r) = self.archetypes.get_id_by_ident(TypeId::of::<T>()) {
 			panic!("new_archetype fial");
@@ -80,7 +83,7 @@ impl World {
 		}
 	}
 
-	pub fn query<A: ArchetypeIdent, Q: WorldQuery>(&mut self) -> QueryState<A, Q, ()> {
+	pub fn query<A: ArchetypeIdent, Q: WorldQuery>(&self) -> QueryState<A, Q, ()> {
         QueryState::new(self)
     }
 
