@@ -36,11 +36,12 @@ impl<P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P>> SingleDispatcher<P> 
                     node.get_sync().run();
                 }else{
                     let f = node.get_async();
+                    let vec1= vec.clone();
                     let rt1= rt.clone();
                     rt.spawn(rt.alloc(), async move {
                         let _ = f.await;
                         // println!("ok");
-                        SingleDispatcher::exec(vec, rt1, stage_index, node_index + 1);
+                        SingleDispatcher::exec(vec1, rt1, stage_index, node_index + 1);
                     });
                 },
                 None => (),
