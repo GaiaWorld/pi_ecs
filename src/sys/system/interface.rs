@@ -1,6 +1,5 @@
 pub use listener::FnListener;
 use share::cell::TrustCell;
-use std::any::TypeId;
 use std::borrow::Cow;
 use std::sync::Arc;
 
