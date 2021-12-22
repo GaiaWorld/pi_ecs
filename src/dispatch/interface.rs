@@ -1,9 +1,9 @@
 use std::io::Result;
 use std::sync::Arc;
 
-use async_graph::{Runnble, Runner};
+use async_graph::{async_graph, Runnble, Runner};
 use futures::future::BoxFuture;
-use graph::{NGraph, NGraphBuilder, DirectedGraph, DirectedGraphNode};
+use graph::{DirectedGraph, DirectedGraphNode, NGraph, NGraphBuilder};
 use r#async::rt::{AsyncRuntime, AsyncTaskPool, AsyncTaskPoolExt};
 
 pub trait Dispatcher {
@@ -17,33 +17,42 @@ pub struct SingleDispatcher<P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P
 
 impl<P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P>> SingleDispatcher<P> {
     pub fn new(vec: Vec<(Arc<NGraph<usize, ExecNode>>, bool)>, rt: AsyncRuntime<(), P>) -> Self {
-        SingleDispatcher { vec: Arc::new(vec), rt }
+        SingleDispatcher {
+            vec: Arc::new(vec),
+            rt,
+        }
     }
     /// 执行指定阶段的指定节点
-    pub fn exec(vec: Arc<Vec<(Arc<NGraph<usize, ExecNode>>, bool)>>,
-    rt: AsyncRuntime<(), P>, mut stage_index: usize, mut node_index: usize) {
+    pub fn exec(
+        vec: Arc<Vec<(Arc<NGraph<usize, ExecNode>>, bool)>>,
+        rt: AsyncRuntime<(), P>,
+        mut stage_index: usize,
+        mut node_index: usize,
+    ) {
         while stage_index < vec.len() {
             let g = &vec[stage_index].0;
             let arr = g.topological_sort();
             if node_index >= arr.len() {
                 stage_index += 1;
-                continue
+                continue;
             }
             let node = g.get(&arr[node_index]).unwrap().value();
             node_index += 1;
             match node.is_async() {
-                Some(sync) => if sync {
-                    node.get_sync().run();
-                }else{
-                    let f = node.get_async();
-                    let vec1= vec.clone();
-                    let rt1= rt.clone();
-                    rt.spawn(rt.alloc(), async move {
-                        let _ = f.await;
-                        // println!("ok");
-                        SingleDispatcher::exec(vec1, rt1, stage_index, node_index + 1);
-                    });
-                },
+                Some(sync) => {
+                    if sync {
+                        node.get_sync().run();
+                    } else {
+                        let f = node.get_async();
+                        let vec1 = vec.clone();
+                        let rt1 = rt.clone();
+                        rt.spawn(rt.alloc(), async move {
+                            let _ = f.await;
+                            // println!("ok");
+                            SingleDispatcher::exec(vec1, rt1, stage_index, node_index);
+                        }).unwrap();
+                    }
+                }
                 None => (),
             }
         }
@@ -55,47 +64,104 @@ impl<P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P>> Dispatcher for Singl
         Self::exec(self.vec.clone(), self.rt.clone(), 0, 0);
     }
 }
-pub struct MultiDispatcher<P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P>> {
-    vec: Vec<(Arc<NGraph<usize, ExecNode>>, bool)>,
-    single: AsyncRuntime<(), P>,
-    multi: AsyncRuntime<(), P>,
-}
+pub struct MultiDispatcher<P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P>>(
+    Arc<MultiInner<P>>,
+);
 impl<P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P>> MultiDispatcher<P> {
     pub fn new(
         vec: Vec<(Arc<NGraph<usize, ExecNode>>, bool)>,
         single: AsyncRuntime<(), P>,
         multi: AsyncRuntime<(), P>,
     ) -> Self {
-        MultiDispatcher { vec, single, multi }
-    }
-}
-impl<P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P>> MultiDispatcher<P> {
-    /// 执行
-    fn exec(&self, index: usize) {
-        if index >= self.vec.len() {
-            return
-        }
-        let (g, single) = &self.vec[index];
-        if *single {
-            self.sync_exec(g)
-        }else{
-            self.async_exec(g.clone())
-        }
-    }
-    /// 异步执行
-    fn sync_exec(&self, g: &Arc<NGraph<usize, ExecNode>>) {
-        
-    }
-    /// 异步执行
-    fn async_exec(&self, g: Arc<NGraph<usize, ExecNode>>) {
-        
+        MultiDispatcher(Arc::new(MultiInner::new(vec, single, multi)))
     }
 }
 impl<P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P>> Dispatcher for MultiDispatcher<P> {
     /// 根据阶段是单线程还是多线程，
     /// 如果多线程阶段，同步节点和异步节点，则用多线程运行时并行执行
     /// 如果单线程阶段，同步节点自己执行， 如果有异步节点，则用单线程运行时执行
-    fn run(&self) {}
+    /// 一般为了线程安全，第一个阶段都是单线程执行
+    fn run(&self) {
+        let c = self.0.clone();
+        exec(c, 0)
+    }
+}
+struct MultiInner<P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P>> {
+    vec: Vec<(Arc<NGraph<usize, ExecNode>>, bool)>,
+    single: AsyncRuntime<(), P>,
+    multi: AsyncRuntime<(), P>,
+}
+impl<P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P>> MultiInner<P> {
+    pub fn new(
+        vec: Vec<(Arc<NGraph<usize, ExecNode>>, bool)>,
+        single: AsyncRuntime<(), P>,
+        multi: AsyncRuntime<(), P>,
+    ) -> Self {
+        MultiInner { vec, single, multi }
+    }
+}
+
+/// 执行指定阶段
+fn exec<P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P>>(
+    d: Arc<MultiInner<P>>,
+    stage_index: usize,
+) {
+    if stage_index >= d.vec.len() {
+        return;
+    }
+    let single = &d.vec[stage_index].1;
+    if *single {
+        single_exec(d, stage_index, 0);
+    } else {
+        multi_exec(d, stage_index);
+    }
+}
+
+/// 单线程执行, 尽量本线程运行， 遇到异步节点则用单线程运行时运行
+fn single_exec<P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P>>(
+    d: Arc<MultiInner<P>>,
+    stage_index: usize,
+    mut node_index: usize,
+) {
+    let g = &d.vec[stage_index].0;
+    loop {
+        if node_index >= g.node_count() {
+            // 本阶段执行完毕，执行下一阶段
+            return exec(d, stage_index + 1);
+        }
+        let arr = g.topological_sort();
+        let node = g.get(&arr[node_index]).unwrap().value();
+        node_index += 1;
+        match node.is_async() {
+            Some(sync) => {
+                if sync {
+                    node.get_sync().run();
+                } else {
+                    let f = node.get_async();
+                    let d1 = d.clone();
+                    d.single.spawn(d.single.alloc(), async move {
+                        let _ = f.await;
+                        single_exec(d1, stage_index, node_index);
+                    }).unwrap();
+                }
+            }
+            None => (),
+        }
+    }
+}
+/// 多线程执行
+fn multi_exec<P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P>>(
+    d: Arc<MultiInner<P>>,
+    stage_index: usize,
+) {
+    let d1 = d.clone();
+    d.multi.spawn(d.multi.alloc(), async move {
+        let g = &d1.vec[stage_index].0;
+        let r = async_graph(d1.multi.clone(), g.clone()).await;
+        if r.is_ok() {
+            exec(d1, stage_index + 1);
+        }
+    }).unwrap();
 }
 pub struct Node {
     pub(crate) id: usize,
