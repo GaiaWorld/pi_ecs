@@ -40,7 +40,6 @@ impl<P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P>> SingleDispatcher<P> 
             let node = g.get(&arr[node_index]).unwrap().value();
             node_index += 1;
             match node.is_async() {
-                    }).unwrap();
                 Some(r#async) => if !r#async {
                     node.get_sync().run();
                 }else{
@@ -51,7 +50,7 @@ impl<P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P>> SingleDispatcher<P> 
                         let _ = f.await;
                         // println!("ok");
                         SingleDispatcher::exec(vec1, rt1, stage_index, node_index + 1);
-                    });
+                    }).unwrap();
                 },
                 None => (),
             }
