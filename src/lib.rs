@@ -1,6 +1,8 @@
+// #![feature(fundamental)]
 #![feature(core_intrinsics)]
 #![feature(proc_macro_hygiene)]
 #![feature(min_specialization)]
+
 
 extern crate atom;
 extern crate listener;
@@ -51,6 +53,7 @@ pub mod prelude {
 			param::*,
 		},
         world::World,
+		dispatch::interface::*,
     };
 }
 

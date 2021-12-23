@@ -19,6 +19,7 @@ impl<P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P>> SingleDispatcher<P> 
     pub fn new(vec: Vec<(Arc<NGraph<usize, ExecNode>>, bool)>, rt: AsyncRuntime<(), P>) -> Self {
         SingleDispatcher { vec: Arc::new(vec), rt }
     }
+
     /// 执行指定阶段的指定节点
     pub fn exec(vec: Arc<Vec<(Arc<NGraph<usize, ExecNode>>, bool)>>,
     rt: AsyncRuntime<(), P>, mut stage_index: usize, mut node_index: usize) {
@@ -32,7 +33,7 @@ impl<P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P>> SingleDispatcher<P> 
             let node = g.get(&arr[node_index]).unwrap().value();
             node_index += 1;
             match node.is_async() {
-                Some(sync) => if sync {
+                Some(r#async) => if !r#async {
                     node.get_sync().run();
                 }else{
                     let f = node.get_async();

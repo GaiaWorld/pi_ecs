@@ -10,7 +10,6 @@ use std::{
     hash::Hash,
     ops::{Index, IndexMut},
 	any::{TypeId, type_name},
-	collections::hash_map::Entry,
 	ptr::NonNull,
 };
 
@@ -162,12 +161,13 @@ impl Archetypes {
 	}
 
 	pub(crate) fn insert_resource<T: Component>(&mut self, value: T, id: ComponentId) {
-		match self.resources.entry(id) {
-			Entry::Occupied(_r) => {
-				panic!("Resource repeat: {:?}", type_name::<T>());
-			}
-			Entry::Vacant(r) => r.insert(NonNull::new(Box::into_raw(Box::new(value)) as usize as *mut u8).unwrap()) 
-		};
+		if self.resources.contains_key(&id) {
+			panic!("Resource repeat: {:?}", type_name::<T>());
+		}
+
+		let archetype_component_id = self.archetype_component_grow();
+		self.archetype_resource_indices.insert(TypeId::of::<T>(), ArchetypeComponentId::new(archetype_component_id));
+		self.resources.insert(id, NonNull::new(Box::into_raw(Box::new(value)) as usize as *mut u8).unwrap());
 	}
 
 	pub fn get_archetype_resource_id<T: Component>(&self) -> Option<&ArchetypeComponentId> {

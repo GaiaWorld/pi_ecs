@@ -127,12 +127,12 @@ impl SystemState {
 /// ```
 pub trait IntoSystem<Params, SystemType: System> {
     /// Turns this value into its corresponding [`System`].
-    fn system(self, world: Arc<TrustCell<World>>) -> SystemType;
+    fn system(self, world: &mut Arc<TrustCell<World>>) -> SystemType;
 }
 
 // Systems implicitly implement IntoSystem
 impl<Sys: System> IntoSystem<(), Sys> for Sys {
-    fn system(self, _world: Arc<TrustCell<World>>) -> Sys {
+    fn system(self, _world: &mut Arc<TrustCell<World>>) -> Sys {
         self
     }
 }
@@ -165,3 +165,5 @@ impl<Sys: System> IntoSystem<(), Sys> for Sys {
 /// ```
 pub struct In<In>(pub In);
 pub struct InputMarker;
+
+pub struct OutputMarker;

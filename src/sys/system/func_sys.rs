@@ -21,7 +21,7 @@ use super::SystemId;
 /// You get this by calling [`IntoSystem::system`]  on a function that only accepts [`SystemParam`]s.
 /// The output of the system becomes the functions return type, while the input becomes the functions
 /// [`In`] tagged parameter or `()` if no such paramater exists.
-pub struct FunctionSystem<In, Out, Param, Marker, F>
+pub struct FunctionSystem<In, Out, Param, InMarker, F>
 where
     Param: SystemParam,
 {
@@ -32,10 +32,10 @@ where
 	world: Arc<TrustCell<World>>,
 	id: SystemId,
     // NOTE: PhantomData<fn()-> T> gives this safe Send/Sync impls
-    marker: PhantomData<fn() -> (In, Out, Marker)>,
+    mark: PhantomData<fn() -> (In, Out, InMarker)>,
 }
 
-impl<In, Out, Param: SystemParam, Marker, F> FunctionSystem<In, Out, Param, Marker, F> {
+impl<In, Out, Param: SystemParam, InMarker, F> FunctionSystem<In, Out, Param, InMarker, F> {
     /// Gives mutable access to the systems config via a callback. This is useful to set up system
     /// [`Local`](crate::system::Local)s.
     ///
@@ -60,35 +60,41 @@ impl<In, Out, Param: SystemParam, Marker, F> FunctionSystem<In, Out, Param, Mark
     }
 }
 
-impl<In, Out, Param, Marker, F> IntoSystem<Param, FunctionSystem<In, Out, Param, Marker, F>> for F
+pub struct SyncMarker;
+
+impl<In, Out, Param, InMarker, F> IntoSystem<Param, FunctionSystem<In, Out, Param, InMarker, F>> for F
 where
     In: 'static,
     Out: 'static,
     Param: SystemParam + 'static,
-    Marker: 'static,
-    F: SystemParamFunction<In, Out, Param, Marker> + Send + Sync + 'static,
+    InMarker: 'static,
+    F: SystemParamFunction<In, Out, Param, InMarker> + Send + Sync + 'static,
 {
-    fn system(self, world: Arc<TrustCell<World>>) -> FunctionSystem<In, Out, Param, Marker, F> {
+    fn system(self, world: &mut Arc<TrustCell<World>>) -> FunctionSystem<In, Out, Param, InMarker, F> {
         let id = SystemId::new(world.borrow_mut().archetype_component_grow());
-		FunctionSystem {
+		let mut r = FunctionSystem {
             func: self,
             param_state: None,
-			world,
+			world: world.clone(),
             config: Some(<Param::Fetch as SystemParamState>::default_config()),
             system_state: SystemState::new::<F>(),
 			id,
-            marker: PhantomData,
-        }
+            mark: PhantomData,
+        };
+		r.initialize(&mut world.borrow_mut());
+		r
     }
 }
 
-impl<In, Out, Param, Marker, F> System for FunctionSystem<In, Out, Param, Marker, F>
+
+
+impl<In, Out, Param, InMarker, F> System for FunctionSystem<In, Out, Param, InMarker, F>
 where
     In: 'static,
-    Out: 'static,
+    Out: 'static ,
     Param: SystemParam + 'static,
-    Marker: 'static,
-    F: SystemParamFunction<In, Out, Param, Marker> + Send + Sync + 'static,
+    InMarker: 'static,
+    F: SystemParamFunction<In, Out, Param, InMarker> + Send + Sync + 'static,
 {
     type In = In;
     type Out = Out;
@@ -165,7 +171,7 @@ where
 }
 
 /// A trait implemented for all functions that can be used as [`System`]s.
-pub trait SystemParamFunction<In, Out, Param: SystemParam, Marker>: Send + Sync + 'static {
+pub trait SystemParamFunction<In, Out, Param: SystemParam, InMarker>: Send + Sync + 'static {
     fn run(
         &mut self,
         input: In,
