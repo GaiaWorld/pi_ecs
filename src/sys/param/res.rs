@@ -36,7 +36,11 @@ impl<T: Component> Deref for Res<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        unsafe{std::mem::transmute_copy(self.value)}
+		// let v1 = self.value;
+        // let r = unsafe{std::mem::transmute(v1)};
+		// let t = r;
+		// t
+		self.value
     }
 }
 
@@ -118,7 +122,8 @@ impl<T: Component> Deref for ResMut<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        unsafe{std::mem::transmute_copy(self.value)}
+        // unsafe{std::mem::transmute_copy(self.value)}
+		self.value
     }
 }
 

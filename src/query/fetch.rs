@@ -17,11 +17,11 @@ use std::{
 
 /// WorldQuery 从world上fetch组件、实体、资源，需要实现该triat
 pub trait WorldQuery {
-    type Fetch: for<'a> Fetch<'a, State = Self::State>;
+    type Fetch: Fetch<State = Self::State>;
     type State: FetchState;
 }
 
-pub trait Fetch<'w>: Send + Sync + Sized {
+pub trait Fetch: Send + Sync + Sized {
     type Item;
     type State: FetchState;
 
@@ -107,7 +107,7 @@ unsafe impl FetchState for EntityState {
     }
 }
 
-impl<'w> Fetch<'w> for EntityFetch {
+impl Fetch for EntityFetch {
     type Item = Entity;
     type State = EntityState;
 
@@ -198,8 +198,8 @@ pub struct ReadFetch<T> {
 /// SAFE: access is read only
 unsafe impl<T> ReadOnlyFetch for ReadFetch<T> {}
 
-impl<'w, T: Component> Fetch<'w> for ReadFetch<T> {
-    type Item = &'w T;
+impl<T: Component> Fetch for ReadFetch<T> {
+    type Item = &'static T;
     type State = ReadState<T>;
 
     unsafe fn init(
@@ -244,8 +244,8 @@ pub struct WriteFetch<T> {
 	mark: PhantomData<T>,
 }
 
-impl<'w, T: Component> Fetch<'w> for WriteFetch<T> {
-    type Item = Mut<'w, T>;
+impl<T: Component> Fetch for WriteFetch<T> {
+    type Item = Mut<'static, T>;
     type State = WriteState<T>;
 
     unsafe fn init(
@@ -365,7 +365,7 @@ unsafe impl<T: FetchState> FetchState for OptionState<T> {
 	}
 }
 
-impl<'w, T: Fetch<'w>> Fetch<'w> for OptionFetch<T> {
+impl<T: Fetch> Fetch for OptionFetch<T> {
     type Item = Option<T::Item>;
     type State = OptionState<T::State>;
 
@@ -405,7 +405,7 @@ impl<'w, T: Fetch<'w>> Fetch<'w> for OptionFetch<T> {
 macro_rules! impl_tuple_fetch {
     ($(($name: ident, $state: ident)),*) => {
         #[allow(non_snake_case)]
-        impl<'a, $($name: Fetch<'a>),*> Fetch<'a> for ($($name,)*) {
+        impl<'a, $($name: Fetch),*> Fetch for ($($name,)*) {
             type Item = ($($name::Item,)*);
             type State = ($($name::State,)*);
 

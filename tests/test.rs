@@ -1,19 +1,34 @@
 use futures::future::{BoxFuture, FutureExt};
-use pi_ecs::{prelude::*};
+use pi_ecs::prelude::*;
 use share::cell::TrustCell;
 use r#async::rt::{multi_thread::MultiTaskRuntimeBuilder, AsyncRuntime};
+use std::{sync::Arc, io::Result};
 
+/// 定义一个名为Node原型类型
 struct Node;
+
+#[derive(Debug)]
+/// 定义一个组件类型
 struct Position(pub usize);
+
+#[derive(Debug)]
+/// 定义一个组件类型
 struct Velocity(pub usize);
 
-struct Resource1;
-struct Resource2;
+#[derive(Debug)]
+/// 定义一个资源类型
+struct Resource1(pub usize);
 
-#[derive(Default)]
-struct DirtyMark;
+#[derive(Debug)]
+/// 定义一个资源类型
+struct Resource2(pub usize);
 
-// 系统
+
+/// 定义一个系统的本地数据类型
+#[derive(Default, Debug)]
+struct DirtyMark(pub usize);
+
+// 同步系统
 fn _sync_sys(
 	_query1: Query<Node, &Velocity>,
 	_query2: Query<Node, &mut Position, With<Velocity>>, // Query<Node, &mut Position, WithOut<Velocity>>
@@ -21,32 +36,30 @@ fn _sync_sys(
 	_res: Res<Resource1>,
 	_res_mut: ResMut<Resource2>,
 ) {
+	
 	println!("run _sync_sys");
 }
 
-// async fn _async_sys(
-// 	_query1: Query<Node, &Velocity>,
-// 	_query2: Query<Node, &mut Position, With<Velocity>>, // Query<Node, &mut Position, WithOut<Velocity>>
-// 	_local: Local<DirtyMark>,
-// 	_res: Res<Resource1>,
-// 	_res_mut: ResMut<Resource2>,
-// ) -> () {
-	
-// }
-
+// 异步系统()
 fn _async_sys1(
 	_query1: Query<Node, &Velocity>,
-	_query2: Query<Node, &mut Position, With<Velocity>>, // Query<Node, &mut Position, WithOut<Velocity>>
-	_local: Local<DirtyMark>,
-	_res: Res<Resource1>,
-	_res_mut: ResMut<Resource2>,
+	mut query2: Query<Node, (Entity, &'static mut Position), With<Velocity>>, // Query<Node, &mut Position, WithOut<Velocity>>
+	local: Local<DirtyMark>,
+	res: Res<Resource1>,
+	res_mut: ResMut<Resource2>,
 ) -> BoxFuture<'static, Result<()>> {
 	async move {
-		println!("run _async_sys1");
+		let r1 = &*res;
+		let r2 = &*res_mut;
+		let r2 = &*local;
+		println!("run _async_sys1, res1: {:?}, {:?}, {:?}", &*res, &*res_mut, &*local);
+		println!("run _async_sys1, res1: {:?}, {:?}, {:?}", 1, 2,3);
+		for (entity, position) in query2.iter_mut() {
+			println!("run _async_sys1, entity: {:?}, position:{:?}",entity, &*position);
+		}
 		Ok(())
 	}.boxed()
 }
-use std::{sync::Arc, io::Result};
 
 #[test]
 fn test() {
@@ -60,23 +73,37 @@ fn test() {
 		.register::<Position>()
 		.create();
 	
-	world.insert_resource(Resource1);
-	world.insert_resource(Resource2);
+	world.insert_resource(Resource1(1));
+	world.insert_resource(Resource2(2));
 
 	// 创建原型为Node的实体，并为该实体添加组件（必须是在Node中注册过的组件， 否则无法插入）
-	for _i in 0..10_000 {
+	for i in 0..5 {
 		let _id = world.spawn::<Node>()
-		.insert(Position(2))
-		.insert(Velocity(1))
+		.insert(Position(i))
+		.id();
+	}
+	for i in 0..5 {
+		let _id = world.spawn::<Node>()
+		.insert(Position(i + 5))
+		.insert(Velocity(i + 5))
 		.id();
 	}
 
 	// 创建查询,并迭代查询
-	let mut query = world.query::<Node, (&Velocity, &mut Position)>();
-	for (_velocity, _position) in query.iter_mut(&mut world) {}
+	let mut query = world.query::<Node, (Entity, &Velocity, &mut Position)>();
+	for (entity, velocity, position) in query.iter_mut(&mut world) {
+		println!("iter_mut:{:?}, {:?}, {:?}", entity, velocity, position);
+	}
+
+	let mut query = world.query::<Node, (Entity, &Position)>();
+	for (entity, position) in query.iter(&mut world) {
+		println!("iter_mut1:{:?}, {:?}", entity, position);
+	}
 
 	let mut w = Arc::new(TrustCell::new(world));
 	test_system(&mut w);
+
+	std::thread::sleep(std::time::Duration::from_secs(5));
 }
 
 fn test_system(world: &mut Arc<TrustCell<World>>) {

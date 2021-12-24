@@ -16,14 +16,16 @@ impl<T: Component> Deref for Local<T> {
 
     #[inline]
     fn deref(&self) -> &Self::Target {
-        unsafe{std::mem::transmute_copy(self.0)}
+		self.0
+        // unsafe{std::mem::transmute_copy(self.0)}
     }
 }
 
 impl<T: Component> DerefMut for Local<T> {
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
-		unsafe{std::mem::transmute_copy(self.0)}
+		self.0
+		// unsafe{std::mem::transmute_copy(self.0)}
     }
 }
 

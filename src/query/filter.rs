@@ -13,7 +13,7 @@ use std::{marker::PhantomData};
 
 /// Fetch methods used by query filters. This trait exists to allow "short circuit" behaviors for
 /// relevant query filter fetches.
-pub trait FilterFetch: for<'a> Fetch<'a> {
+pub trait FilterFetch: Fetch {
     /// # Safety
     /// Must always be called _after_ [Fetch::set_archetype]. `archetype_index` must be in the range
     /// of the current archetype
@@ -58,7 +58,7 @@ unsafe impl<T: Component> FetchState for WithState<T> {
     }
 }
 
-impl<'a, T: Component> Fetch<'a> for WithFetch<T> {
+impl<T: Component> Fetch for WithFetch<T> {
     type Item = bool;
     type State = WithState<T>;
 
@@ -79,6 +79,7 @@ impl<'a, T: Component> Fetch<'a> for WithFetch<T> {
         _archetype: &Archetype,
 		_world: &World
     ) {
+		self.read_fetch.set_archetype(&_state.read_state, _archetype, _world);
     }
 
     #[inline]
@@ -136,7 +137,7 @@ unsafe impl<T: Component> FetchState for WithOutState<T> {
     }
 }
 
-impl<'a, T: Component> Fetch<'a> for WithOutFetch<T> {
+impl<T: Component> Fetch for WithOutFetch<T> {
     type Item = bool;
     type State = WithOutState<T>;
 
@@ -159,6 +160,9 @@ impl<'a, T: Component> Fetch<'a> for WithOutFetch<T> {
 		_world: &World
     ) {
 		self.not_component = !archetype.contains(state.read_state.component_id);
+		if !self.not_component {
+			self.read_fetch.set_archetype(&state.read_state, archetype, _world);
+		}
     }
 
     #[inline]
@@ -211,8 +215,8 @@ macro_rules! impl_query_filter_tuple {
 
         #[allow(unused_variables)]
         #[allow(non_snake_case)]
-        impl<'a, $($filter: FilterFetch),*> Fetch<'a> for Or<($(OrFetch<$filter>,)*)> {
-            type State = Or<($(<$filter as Fetch<'a>>::State,)*)>;
+        impl<$($filter: FilterFetch),*> Fetch for Or<($(OrFetch<$filter>,)*)> {
+            type State = Or<($(<$filter as Fetch>::State,)*)>;
             type Item = bool;
 
             unsafe fn init(world: &World, state: &Self::State) -> Self {

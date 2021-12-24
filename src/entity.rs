@@ -1,7 +1,7 @@
 use crate::storage::LocalVersion;
 use crate::archetype::ArchetypeId;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Entity {
 	archetype_id: ArchetypeId,
 	local: LocalVersion,

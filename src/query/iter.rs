@@ -74,12 +74,12 @@ impl<'w, 's, A: ArchetypeIdent, Q: WorldQuery, F: WorldQuery> Iterator for Query
 where
     F::Fetch: FilterFetch,
 {
-    type Item = <Q::Fetch as Fetch<'w>>::Item;
+    type Item = <Q::Fetch as Fetch>::Item;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         unsafe {
-			if self.matchs {
+			if !self.matchs {
 				return  None;
 			}
 			
@@ -91,6 +91,9 @@ where
 				}
 
 				let item = self.fetch.archetype_fetch(entity.local().offset());
+				if let None = item {
+					continue;
+				}
 				return item;
 			}
         }

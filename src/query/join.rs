@@ -32,9 +32,9 @@ pub struct JoinFetch<C: Component + Deref<Target = Entity>, A: Send + Sync + 'st
 }
 
 
-impl<'w, C: Component + Deref<Target = Entity>, A: Send + Sync + 'static, Q: Fetch<'w>, F: FilterFetch> Fetch<'w> for JoinFetch<C, A, Q, F> {
+impl<C: Component + Deref<Target = Entity>, A: Send + Sync + 'static, Q: Fetch, F: FilterFetch> Fetch for JoinFetch<C, A, Q, F> {
     type Item = Q::Item;
-    type State = JoinState<C, A, Q::State, <F as Fetch<'w>>::State>;
+    type State = JoinState<C, A, Q::State, <F as Fetch>::State>;
 
     unsafe fn init(
         world: &World,
