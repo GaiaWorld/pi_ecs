@@ -35,6 +35,7 @@ impl<P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P>> SingleDispatcher<P> 
             let arr = g.topological_sort();
             if node_index >= arr.len() {
                 stage_index += 1;
+                node_index = 0;
                 continue;
             }
             let node = g.get(&arr[node_index]).unwrap().value();
@@ -63,19 +64,19 @@ impl<P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P>> Dispatcher for Singl
         Self::exec(self.vec.clone(), self.rt.clone(), 0, 0);
     }
 }
-pub struct MultiDispatcher<P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P>>(
-    Arc<MultiInner<P>>,
+pub struct MultiDispatcher<P1: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P1>, P2: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P2>>(
+    Arc<MultiInner<P1, P2>>,
 );
-impl<P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P>> MultiDispatcher<P> {
+impl<P1: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P1>, P2: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P2>> MultiDispatcher<P1, P2> {
     pub fn new(
         vec: Vec<(Arc<NGraph<usize, ExecNode>>, bool)>,
-        single: AsyncRuntime<(), P>,
-        multi: AsyncRuntime<(), P>,
+        single: AsyncRuntime<(), P1>,
+        multi: AsyncRuntime<(), P2>,
     ) -> Self {
         MultiDispatcher(Arc::new(MultiInner::new(vec, single, multi)))
     }
 }
-impl<P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P>> Dispatcher for MultiDispatcher<P> {
+impl<P1: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P1>, P2: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P2>> Dispatcher for MultiDispatcher<P1, P2> {
     /// 根据阶段是单线程还是多线程，
     /// 如果多线程阶段，同步节点和异步节点，则用多线程运行时并行执行
     /// 如果单线程阶段，同步节点自己执行， 如果有异步节点，则用单线程运行时执行
@@ -85,24 +86,24 @@ impl<P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P>> Dispatcher for Multi
         exec(c, 0)
     }
 }
-struct MultiInner<P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P>> {
+struct MultiInner<P1: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P1>, P2: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P2>> {
     vec: Vec<(Arc<NGraph<usize, ExecNode>>, bool)>,
-    single: AsyncRuntime<(), P>,
-    multi: AsyncRuntime<(), P>,
+    single: AsyncRuntime<(), P1>,
+    multi: AsyncRuntime<(), P2>,
 }
-impl<P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P>> MultiInner<P> {
+impl<P1: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P1>, P2: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P2>> MultiInner<P1, P2> {
     pub fn new(
         vec: Vec<(Arc<NGraph<usize, ExecNode>>, bool)>,
-        single: AsyncRuntime<(), P>,
-        multi: AsyncRuntime<(), P>,
+        single: AsyncRuntime<(), P1>,
+        multi: AsyncRuntime<(), P2>,
     ) -> Self {
         MultiInner { vec, single, multi }
     }
 }
 
 /// 执行指定阶段
-fn exec<P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P>>(
-    d: Arc<MultiInner<P>>,
+fn exec<P1: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P1>, P2: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P2>>(
+    d: Arc<MultiInner<P1, P2>>,
     stage_index: usize,
 ) {
     if stage_index >= d.vec.len() {
@@ -117,8 +118,8 @@ fn exec<P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P>>(
 }
 
 /// 单线程执行, 尽量本线程运行， 遇到异步节点则用单线程运行时运行
-fn single_exec<P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P>>(
-    d: Arc<MultiInner<P>>,
+fn single_exec<P1: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P1>, P2: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P2>>(
+    d: Arc<MultiInner<P1, P2>>,
     stage_index: usize,
     mut node_index: usize,
 ) {
@@ -149,8 +150,8 @@ fn single_exec<P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P>>(
     }
 }
 /// 多线程执行
-fn multi_exec<P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P>>(
-    d: Arc<MultiInner<P>>,
+fn multi_exec<P1: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P1>, P2: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P2>>(
+    d: Arc<MultiInner<P1, P2>>,
     stage_index: usize,
 ) {
     let d1 = d.clone();
