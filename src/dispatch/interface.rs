@@ -40,8 +40,8 @@ impl<P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P>> SingleDispatcher<P> 
             }
             let node = g.get(&arr[node_index]).unwrap().value();
             node_index += 1;
-            match node.is_async() {
-                Some(r#async) => if !r#async {
+            match node.is_sync() {
+                Some(sync) => if sync {
                     node.get_sync().run();
                 }else{
                     let f = node.get_async();
@@ -132,7 +132,7 @@ fn single_exec<P1: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P1>, P2: Asyn
         let arr = g.topological_sort();
         let node = g.get(&arr[node_index]).unwrap().value();
         node_index += 1;
-        match node.is_async() {
+        match node.is_sync() {
             Some(sync) => {
                 if sync {
                     node.get_sync().run();
@@ -187,11 +187,11 @@ pub enum ExecNode {
 }
 impl Runnble for ExecNode {
     type R = Run;
-    fn is_async(&self) -> Option<bool> {
+    fn is_sync(&self) -> Option<bool> {
         match self {
             ExecNode::None => None,
-            ExecNode::Sync(_) => Some(false),
-            _ => Some(true),
+            ExecNode::Sync(_) => Some(true),
+            _ => Some(false),
         }
     }
     /// 获得需要执行的同步函数
