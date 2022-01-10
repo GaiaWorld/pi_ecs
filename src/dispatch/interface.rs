@@ -67,13 +67,12 @@ impl<P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P>> Dispatcher for Singl
 pub struct MultiDispatcher<P1: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P1>, P2: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P2>>(
     Arc<MultiInner<P1, P2>>,
 );
-impl<P1: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P1>, P2: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P2>> MultiDispatcher<P1, P2> {
+impl<P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P>, P2: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P2>> MultiDispatcher<P, P2> {
     pub fn new(
-        vec: Vec<(Arc<NGraph<usize, ExecNode>>, bool)>,
-        single: AsyncRuntime<(), P1>,
-        multi: AsyncRuntime<(), P2>,
+        vec: Vec<(Arc<NGraph<usize, ExecNode>>, Option<AsyncRuntime<(), P2>>)>,
+        multi: AsyncRuntime<(), P>,
     ) -> Self {
-        MultiDispatcher(Arc::new(MultiInner::new(vec, single, multi)))
+        MultiDispatcher(Arc::new(MultiInner::new(vec, multi)))
     }
 }
 impl<P1: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P1>, P2: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P2>> Dispatcher for MultiDispatcher<P1, P2> {
@@ -86,44 +85,44 @@ impl<P1: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P1>, P2: AsyncTaskPoolE
         exec(c, 0)
     }
 }
-struct MultiInner<P1: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P1>, P2: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P2>> {
-    vec: Vec<(Arc<NGraph<usize, ExecNode>>, bool)>,
-    single: AsyncRuntime<(), P1>,
-    multi: AsyncRuntime<(), P2>,
+struct MultiInner<P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P>, P2: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P2>> {
+    vec: Vec<(Arc<NGraph<usize, ExecNode>>, Option<AsyncRuntime<(), P2>>)>,
+    multi: AsyncRuntime<(), P>,
 }
-impl<P1: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P1>, P2: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P2>> MultiInner<P1, P2> {
+impl<P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P>, P2: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P2>> MultiInner<P, P2> {
     pub fn new(
-        vec: Vec<(Arc<NGraph<usize, ExecNode>>, bool)>,
-        single: AsyncRuntime<(), P1>,
-        multi: AsyncRuntime<(), P2>,
+        vec: Vec<(Arc<NGraph<usize, ExecNode>>, Option<AsyncRuntime<(), P2>>)>,
+        multi: AsyncRuntime<(), P>,
     ) -> Self {
-        MultiInner { vec, single, multi }
+        MultiInner { vec, multi }
     }
 }
 
 /// 执行指定阶段
-fn exec<P1: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P1>, P2: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P2>>(
-    d: Arc<MultiInner<P1, P2>>,
+fn exec<P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P>, P2: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P2>>(
+    d: Arc<MultiInner<P, P2>>,
     stage_index: usize,
 ) {
     if stage_index >= d.vec.len() {
         return;
     }
-    let single = &d.vec[stage_index].1;
-    if *single {
-        single_exec(d, stage_index, 0);
+    if let Some(single) = &d.vec[stage_index].1 {
+        let s = single.clone();
+        single_exec(d, stage_index, 0, s);
     } else {
         multi_exec(d, stage_index);
     }
 }
 
 /// 单线程执行, 尽量本线程运行， 遇到异步节点则用单线程运行时运行
-fn single_exec<P1: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P1>, P2: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P2>>(
-    d: Arc<MultiInner<P1, P2>>,
+fn single_exec<P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P>, P2: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P2>>(
+    d: Arc<MultiInner<P, P2>>,
     stage_index: usize,
     mut node_index: usize,
+    single: AsyncRuntime<(), P2>,
 ) {
     let g = &d.vec[stage_index].0;
+    let single1= single.clone();
     loop {
         if node_index >= g.node_count() {
             // 本阶段执行完毕，执行下一阶段
@@ -135,22 +134,23 @@ fn single_exec<P1: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P1>, P2: Asyn
         match node.is_sync() {
             Some(sync) => {
                 if sync {
-                    if node_index == 1 {
+                    if stage_index > 0 && node_index == 1 {
                         let f = node.get_sync();
                         let d1 = d.clone();
-                        d.single.spawn(d.single.alloc(), async move {
+                        single1.spawn(single1.alloc(), async move {
                             f.run();
-                            single_exec(d1, stage_index, node_index);
+                            single_exec(d1, stage_index, node_index, single);
                         }).unwrap();
                         return;
                     }
+                    // 如果是最开始的阶段， 或者非起始节点，则立即同步执行
                     node.get_sync().run();
                 } else {
                     let f = node.get_async();
                     let d1 = d.clone();
-                    d.single.spawn(d.single.alloc(), async move {
+                    single1.spawn(single1.alloc(), async move {
                         let _ = f.await;
-                        single_exec(d1, stage_index, node_index);
+                        single_exec(d1, stage_index, node_index, single);
                     }).unwrap();
                     return;
                 }

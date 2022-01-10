@@ -39,7 +39,10 @@ fn multi_dispatch() {
     let mut w = Arc::new(TrustCell::new(world));
 
     let mut stages = Vec::new();
-
+    // 创建 单线程 异步运行时
+    let runner = SingleTaskRunner::default();
+    let runtime = runner.startup().unwrap();
+    let single = AsyncRuntime::Local(runtime);
     {
         let mut s1 = StageBuilder::new();
 
@@ -47,9 +50,8 @@ fn multi_dispatch() {
         s1.add_node(sync_stage1_system2.system(&mut w));
 
         // 第二个参数：是否单线程执行
-        stages.push((Arc::new(s1.build()), false));
+        stages.push((Arc::new(s1.build()), None));
     }
-
     {
         let mut s2 = StageBuilder::new();
 
@@ -57,17 +59,11 @@ fn multi_dispatch() {
         s2.add_node(sync_stage2_system2.system(&mut w));
 
         // 第二个参数：是否单线程执行
-        stages.push((Arc::new(s2.build()), false));
+        stages.push((Arc::new(s2.build()), Some(single.clone())));
     }
-
-    // 创建 单线程 异步运行时
-    let runner = SingleTaskRunner::default();
-    let runtime = runner.startup().unwrap();
-    let single = AsyncRuntime::Local(runtime);
-
     let multi = AsyncRuntime::Multi(MultiTaskRuntimeBuilder::default().build());
 
-    let dispatcher = MultiDispatcher::new(stages, single, multi);
+    let dispatcher = MultiDispatcher::new(stages, multi);
     dispatcher.run();
     
     // 单线程 异步运行时，哪个线程推，就由哪个线程执行 future
