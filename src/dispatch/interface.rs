@@ -135,6 +135,15 @@ fn single_exec<P1: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P1>, P2: Asyn
         match node.is_sync() {
             Some(sync) => {
                 if sync {
+                    if node_index == 1 {
+                        let f = node.get_sync();
+                        let d1 = d.clone();
+                        d.single.spawn(d.single.alloc(), async move {
+                            f.run();
+                            single_exec(d1, stage_index, node_index);
+                        }).unwrap();
+                        return;
+                    }
                     node.get_sync().run();
                 } else {
                     let f = node.get_async();
@@ -143,6 +152,7 @@ fn single_exec<P1: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P1>, P2: Asyn
                         let _ = f.await;
                         single_exec(d1, stage_index, node_index);
                     }).unwrap();
+                    return;
                 }
             }
             None => (),
