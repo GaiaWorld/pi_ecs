@@ -46,7 +46,7 @@ fn single_runtime() {
         s1.add_node(sync_stage1_system2.system(&mut w));
 
         // 第二个参数：是否单线程执行
-        stages.push((Arc::new(s1.build()), false));
+        stages.push(Arc::new(s1.build()));
     }
 
     {
@@ -56,7 +56,7 @@ fn single_runtime() {
         s2.add_node(sync_stage2_system2.system(&mut w));
 
         // 第二个参数：是否单线程执行
-        stages.push((Arc::new(s2.build()), false));
+        stages.push(Arc::new(s2.build()));
     }
 
     // 创建 单线程 异步运行时
@@ -74,42 +74,5 @@ fn single_runtime() {
         std::thread::sleep(std::time::Duration::from_millis(50));
     }
 
-    std::thread::sleep(std::time::Duration::from_secs(1));
-}
-
-// 多线程异步运行时 派发
-#[test]
-fn multi_runtime() {
-    
-    let world = World::new();
-    let mut w = Arc::new(TrustCell::new(world));
-
-    let mut stages = Vec::new();
-
-    {
-        let mut s1 = StageBuilder::new();
-
-        s1.add_node(sync_stage1_system1.system(&mut w));
-        s1.add_node(sync_stage1_system2.system(&mut w));
-
-        // 第二个参数：是否单线程执行
-        stages.push((Arc::new(s1.build()), false));
-    }
-
-    {
-        let mut s2 = StageBuilder::new();
-
-        s2.add_node(async_stage2_system1.system(&mut w));
-        s2.add_node(sync_stage2_system2.system(&mut w));
-
-        // 第二个参数：是否单线程执行
-        stages.push((Arc::new(s2.build()), false));
-    }
-
-    let rt = AsyncRuntime::Multi(MultiTaskRuntimeBuilder::default().build());
-
-    let dispatcher = SingleDispatcher::new(stages, rt);
-    dispatcher.run();
-   
     std::thread::sleep(std::time::Duration::from_secs(1));
 }

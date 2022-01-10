@@ -11,12 +11,12 @@ pub trait Dispatcher {
 }
 
 pub struct SingleDispatcher<P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P>> {
-    vec: Arc<Vec<(Arc<NGraph<usize, ExecNode>>, bool)>>,
+    vec: Arc<Vec<Arc<NGraph<usize, ExecNode>>>>,
     rt: AsyncRuntime<(), P>,
 }
 
 impl<P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P>> SingleDispatcher<P> {
-    pub fn new(vec: Vec<(Arc<NGraph<usize, ExecNode>>, bool)>, rt: AsyncRuntime<(), P>) -> Self {
+    pub fn new(vec: Vec<Arc<NGraph<usize, ExecNode>>>, rt: AsyncRuntime<(), P>) -> Self {
         SingleDispatcher {
             vec: Arc::new(vec),
             rt,
@@ -25,13 +25,13 @@ impl<P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P>> SingleDispatcher<P> 
 
     /// 执行指定阶段的指定节点
     pub fn exec(
-        vec: Arc<Vec<(Arc<NGraph<usize, ExecNode>>, bool)>>,
+        vec: Arc<Vec<Arc<NGraph<usize, ExecNode>>>>,
         rt: AsyncRuntime<(), P>,
         mut stage_index: usize,
         mut node_index: usize,
     ) {
         while stage_index < vec.len() {
-            let g = &vec[stage_index].0;
+            let g = &vec[stage_index];
             let arr = g.topological_sort();
             if node_index >= arr.len() {
                 stage_index += 1;
