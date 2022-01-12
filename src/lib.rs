@@ -1,14 +1,15 @@
-// #![feature(fundamental)]
+#![feature(box_into_inner)]
 #![feature(core_intrinsics)]
 #![feature(proc_macro_hygiene)]
-#![feature(min_specialization)]
-
+#![feature(specialization)]
+#![feature(if_let_guard)]
 
 extern crate atom;
 extern crate listener;
 extern crate map;
 extern crate slab;
 
+#[macro_use]
 extern crate any;
 extern crate hash;
 extern crate share;
@@ -39,8 +40,9 @@ pub mod query;
 pub mod pointer;
 pub mod resource;
 pub mod dispatch;
+pub mod monitor;
 
-pub use world::World;
+pub use world::WorldInner;
 
 pub mod prelude {
     // #[cfg(feature = "bevy_reflect")]

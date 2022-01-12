@@ -1,18 +1,18 @@
 use crate::{
     archetype::{Archetype, ArchetypeId, ArchetypeComponentId},
-    component::{Component, ComponentId, StorageType},
+    component::{Component, ComponentId, MultiCaseImpl},
     entity::Entity,
     query::{Access, FilteredAccess},
-    storage::{ Keys, LocalVersion, SecondaryMap, SparseSecondaryMap, Local},
+    storage::{ Keys, LocalVersion},
     world::World,
-	pointer::Mut,
+	pointer::Mut, WorldInner,
 };
 
 use pi_ecs_macros::all_tuples;
+use share::cell::TrustCell;
 use std::{
     marker::PhantomData,
-    // ptr::NonNull,
-	mem::MaybeUninit, any::TypeId,
+	any::TypeId, sync::Arc,
 };
 
 /// WorldQuery 从world上fetch组件、实体、资源，需要实现该triat
@@ -32,8 +32,12 @@ pub trait Fetch: Send + Sync + Sized {
     /// to this function.
     unsafe fn init(
         world: &World,
-        state: &Self::State,
+        state: &Self::State
     ) -> Self;
+
+	unsafe fn setting(&mut self, _world: &WorldInner, _last_change_tick: u32, _change_tick: u32) {
+
+	}
 
     /// Adjusts internal state to account for the next [Archetype]. This will always be called on
     /// archetypes that match this [Fetch]
@@ -47,7 +51,16 @@ pub trait Fetch: Send + Sync + Sized {
     /// # Safety
     /// Must always be called _after_ [Fetch::set_archetype]. `archetype_index` must be in the range
     /// of the current archetype
-    unsafe fn archetype_fetch(&mut self, archetype_index: usize) -> Option<Self::Item>;
+    unsafe fn archetype_fetch(&mut self, archetype_index: LocalVersion) -> Option<Self::Item>;
+
+	unsafe fn main_fetch<'a>(&'a self, _state: &Self::State, _last_change_tick: u32, _change_tick: u32) -> Option<MianFetch<'a>> {
+		None
+	}
+}
+
+pub struct MianFetch<'a> {
+	pub(crate) value: Keys<'a, LocalVersion, ()>,
+	pub(crate) next: Option<Box<MianFetch<'a>>>,
 }
 
 /// State used to construct a Fetch. This will be cached inside QueryState, so it is best to move as
@@ -59,11 +72,12 @@ pub trait Fetch: Send + Sync + Sized {
 /// [Fetch::table_fetch]
 pub unsafe trait FetchState: Send + Sync + Sized {
 	/// 创建FetchState实例
-    fn init(world: &World) -> Self;
+    fn init(world: &mut World) -> Self;
 	/// 更新组件
 	fn update_component_access(&self, access: &mut FilteredAccess<ComponentId>);
     fn update_archetype_component_access(&self, archetype: &Archetype, access: &mut Access<ArchetypeComponentId>);
     fn matches_archetype(&self, archetype: &Archetype, world: &World) -> bool;
+	fn set_archetype<A: 'static + Send + Sync>(&self, _world: &mut World) {}
     // fn matches_table(&self, table: &Table) -> bool;
 }
 
@@ -78,7 +92,7 @@ impl WorldQuery for Entity {
 
 pub struct EntityFetch {
     // entities: *const Entity,
-	iter: MaybeUninit<Keys<'static, LocalVersion, ()>>,
+	// iter: MaybeUninit<Keys<'static, LocalVersion, ()>>,
 	archetype_id: ArchetypeId,
 }
 
@@ -90,7 +104,7 @@ pub struct EntityState;
 // SAFE: no component or archetype access
 unsafe impl FetchState for EntityState {
 	#[inline]
-    fn init(_world: &World) -> Self {
+    fn init(_world: &mut World) -> Self {
         Self
     }
 
@@ -113,10 +127,9 @@ impl Fetch for EntityFetch {
 
     unsafe fn init(
         _world: &World,
-        _state: &Self::State,
+        _state: &Self::State
     ) -> Self {
         Self {
-			iter: MaybeUninit::uninit(),
 			archetype_id: ArchetypeId::default(),
             // entities: std::ptr::null::<Entity>(),
         }
@@ -129,16 +142,18 @@ impl Fetch for EntityFetch {
         archetype: &Archetype,
 		_world: &World,
     ) {
-		self.iter.write(std::mem::transmute(archetype.entities.keys()));
+		// self.container =
+		// self.iter.write(std::mem::transmute(archetype.entities.keys()));
 		self.archetype_id = archetype.id();
     }
 
     #[inline]
-    unsafe fn archetype_fetch(&mut self, _archetype_index: usize) -> Option<Self::Item> {
-		match self.iter.assume_init_mut().next() {
-			Some(local) => Some(Entity::new(self.archetype_id, local)),
-			None => None,
-		} 
+    unsafe fn archetype_fetch(&mut self, local: LocalVersion) -> Option<Self::Item> {
+		Some(Entity::new(self.archetype_id, local))
+		// match self.iter.assume_init_mut().next() {
+		// 	Some(local) => Some(Entity::new(self.archetype_id, local)),
+		// 	None => None,
+		// } 
     }
 }
 
@@ -149,14 +164,13 @@ impl<T: Component> WorldQuery for &T {
 
 pub struct ReadState<T> {
     pub(crate) component_id: ComponentId,
-    pub(crate) storage_type: StorageType,
     marker: PhantomData<T>,
 }
 
 // SAFE: component access and archetype component access are properly updated to reflect that T is
 // read
 unsafe impl<T: Component> FetchState for ReadState<T> {
-    fn init(world: &World) -> Self {
+    fn init(world: &mut World) -> Self {
 		let component_id = match world.components.get_id(TypeId::of::<T>()) {
 			Some(r) => r,
 			None => panic!("ReadState fetch ${} fail", std::any::type_name::<T>()),
@@ -164,7 +178,6 @@ unsafe impl<T: Component> FetchState for ReadState<T> {
         let component_info = world.components.get_info(component_id).unwrap();
         ReadState {
             component_id: component_info.id(),
-            storage_type: component_info.storage_type(),
             marker: PhantomData,
         }
     }
@@ -179,7 +192,11 @@ unsafe impl<T: Component> FetchState for ReadState<T> {
 
     fn update_archetype_component_access(&self, archetype: &Archetype, access: &mut Access<ArchetypeComponentId>) {
 		let archetype_component_id = unsafe { archetype.archetype_component_id(self.component_id)};
-        access.add_read(archetype_component_id);
+        if access.has_write(archetype_component_id) {
+            panic!("&{} conflicts with a previous access in this query. Shared access cannot coincide with exclusive access.",
+                std::any::type_name::<T>());
+        }
+		access.add_read(archetype_component_id);
     }
 
 
@@ -189,7 +206,6 @@ unsafe impl<T: Component> FetchState for ReadState<T> {
 }
 
 pub struct ReadFetch<T> {
-    pub(crate) storage_type: StorageType,
 	// pub(crate) container: MaybeUninit<NonNull<u8>>,
 	pub(crate) container: usize,
 	mark: PhantomData<T>,
@@ -204,11 +220,9 @@ impl<T: Component> Fetch for ReadFetch<T> {
 
     unsafe fn init(
         _world: &World,
-        state: &Self::State,
+        _state: &Self::State
     ) -> Self {
         Self {
-            storage_type: state.storage_type,
-			// container: MaybeUninit::uninit(),
 			container: 0,
 			mark: PhantomData,
         }
@@ -221,40 +235,40 @@ impl<T: Component> Fetch for ReadFetch<T> {
         archetype: &Archetype,
 		_world: &World,
     ) {
-		self.container = archetype.get_component(state.component_id).as_ptr() as usize;
+		let c = archetype.get_component(state.component_id);
+		match c.clone().downcast() {
+			Ok(r) => {
+				let r: Arc<TrustCell<MultiCaseImpl<T>>> = r;
+				self.container = r.as_ptr() as usize;
+			},
+			Err(_) => panic!("downcast fail")
+		}
     }
 
     #[inline]
-    unsafe fn archetype_fetch(&mut self, archetype_index: usize) -> Option<Self::Item> {
-        match self.storage_type {
-            StorageType::Table => std::mem::transmute((&mut *(self.container as *mut SecondaryMap<Local, T>)).get(Local::new(archetype_index))),
-            StorageType::SparseSet => std::mem::transmute((&mut *(self.container as *mut SparseSecondaryMap<Local, T>)).get(Local::new(archetype_index)))
-        }
+    unsafe fn archetype_fetch(&mut self, local: LocalVersion) -> Option<Self::Item> {
+		std::mem::transmute((&mut *(self.container as *mut MultiCaseImpl<T>)).get(local))
     }
 }
 
 impl<T: Component> WorldQuery for &mut T {
-    type Fetch = WriteFetch<T>;
-    type State = WriteState<T>;
+    type Fetch = MutFetch<T>;
+    type State = MutState<T>;
 }
-pub struct WriteFetch<T> {
-    storage_type: StorageType,
-	// container: MaybeUninit<NonNull<u8>>,
+pub struct MutFetch<T> {
 	container: usize,
 	mark: PhantomData<T>,
 }
 
-impl<T: Component> Fetch for WriteFetch<T> {
+impl<T: Component> Fetch for MutFetch<T> {
     type Item = Mut<'static, T>;
-    type State = WriteState<T>;
+    type State = MutState<T>;
 
     unsafe fn init(
         _world: &World,
-        state: &Self::State,
+        _state: &Self::State
     ) -> Self {
         Self {
-            storage_type: state.storage_type,
-			// container: MaybeUninit::uninit(),
 			container: 0,
 			mark: PhantomData,
         }
@@ -267,15 +281,19 @@ impl<T: Component> Fetch for WriteFetch<T> {
         archetype: &Archetype,
 		_world: &World,
     ) {
-		self.container = archetype.get_component(state.component_id).as_ptr() as usize;
+		let c = archetype.get_component(state.component_id);
+		match c.clone().downcast() {
+			Ok(r) => {
+				let r: Arc<TrustCell<MultiCaseImpl<T>>> = r;
+				self.container = (*r).as_ptr() as usize;
+			},
+			Err(_) => panic!("downcast fail")
+		}
     }
 
     #[inline]
-    unsafe fn archetype_fetch(&mut self, archetype_index: usize) -> Option<Self::Item> {
-        let value: Option<&mut T> = match self.storage_type {
-            StorageType::Table => std::mem::transmute((&mut *(self.container as *mut SecondaryMap<Local, T>)).get_mut(Local::new(archetype_index))) ,
-            StorageType::SparseSet => std::mem::transmute((&mut *(self.container as *mut SparseSecondaryMap<Local, T>)).get_mut(Local::new(archetype_index))),
-        };
+    unsafe fn archetype_fetch(&mut self, local: LocalVersion) -> Option<Self::Item> {
+        let value = std::mem::transmute((&mut *(self.container as *mut MultiCaseImpl<T>)).get_mut(local));
 		match value {
 			Some(r) => Some(Mut {
 				value: r,
@@ -285,24 +303,22 @@ impl<T: Component> Fetch for WriteFetch<T> {
     }
 }
 
-pub struct WriteState<T> {
+pub struct MutState<T> {
     component_id: ComponentId,
-    storage_type: StorageType,
     marker: PhantomData<T>,
 }
 
 // SAFE: component access and archetype component access are properly updated to reflect that T is
 // read
-unsafe impl<T: Component> FetchState for WriteState<T> {
-    fn init(world: &World) -> Self {
+unsafe impl<T: Component> FetchState for MutState<T> {
+    fn init(world: &mut World) -> Self {
 		let component_id = match world.components.get_id(TypeId::of::<T>()) {
 			Some(r) => r,
-			None => panic!("WriteState fetch ${} fail", std::any::type_name::<T>()),
+			None => panic!("MutState fetch ${} fail", std::any::type_name::<T>()),
 		};
         let component_info = world.components.get_info(component_id).unwrap();
-        WriteState {
+        MutState {
             component_id: component_info.id(),
-            storage_type: component_info.storage_type(),
             marker: PhantomData,
         }
     }
@@ -317,7 +333,154 @@ unsafe impl<T: Component> FetchState for WriteState<T> {
 
     fn update_archetype_component_access(&self, archetype: &Archetype, access: &mut Access<ArchetypeComponentId>) {
 		let archetype_component_id = unsafe { archetype.archetype_component_id(self.component_id)};
-        access.add_read(archetype_component_id)
+        if access.has_write(archetype_component_id) {
+            panic!("&{} conflicts with a previous access in this query. Shared access cannot coincide with exclusive access.",
+                std::any::type_name::<T>());
+        }
+		access.add_write(archetype_component_id)
+    }
+
+
+    fn matches_archetype(&self, archetype: &Archetype, _world: &World) -> bool {
+        archetype.contains(self.component_id)
+    }
+}
+
+pub struct Write<T>(PhantomData<T>);
+pub struct WriteItem<T: Component> {
+	value: Option<&'static mut T>,
+	container: usize,
+	local: LocalVersion,
+	tick: u32
+}
+
+impl<T: Component> WriteItem<T> {
+    pub fn get<'a>(&'a self) -> Option<&'a T> {
+		match &self.value {
+			Some(r) => Some(r),
+			None => None
+		}
+	}
+
+	pub fn get_mut<'a>(&'a mut self) -> Option<&'a mut T> {
+		match &mut self.value {
+			Some(r) => Some(r),
+			None => None
+		}
+	}
+
+	pub fn write<'a>(&'a mut self, value: T) {
+		let c = unsafe{&mut *(self.container as *mut MultiCaseImpl<T>)};
+		c.insert(self.local,value, self.tick);
+		self.value = Some(unsafe{std::mem::transmute(c.get_mut(self.local))});
+	}
+}
+
+impl<T: Component> WorldQuery for Write<T> {
+    type Fetch = WriteFetch<T>;
+    type State = WriteState<T>;
+}
+pub struct WriteFetch<T> {
+	container: usize,
+	matchs: bool,
+	tick: u32,
+	mark: PhantomData<T>,
+}
+
+impl<T: Component> Fetch for WriteFetch<T> {
+    type Item = WriteItem<T>;
+    type State = WriteState<T>;
+
+    unsafe fn init(
+        _world: &World,
+        _state: &Self::State
+    ) -> Self {
+        Self {
+			container: 0,
+			matchs: false,
+			tick: 0,
+			mark: PhantomData,
+        }
+    }
+
+	unsafe fn setting(&mut self, _world: &WorldInner, _last_change_tick: u32, change_tick: u32) {
+		self.tick = change_tick;
+	}
+
+    #[inline]
+    unsafe fn set_archetype(
+        &mut self,
+        state: &Self::State,
+        archetype: &Archetype,
+		_world: &World,
+    ) {
+		self.matchs = archetype.contains(state.component_id);
+		// 没有对应的原型，则跳过
+		if !self.matchs {
+			log::warn!("component is not exist in archetype, so query fail, query: {:?}",  std::any::type_name::<Write<T>>());
+			return;
+		}
+
+		let c = archetype.get_component(state.component_id);
+		match c.clone().downcast() {
+			Ok(r) => {
+				let r: Arc<TrustCell<MultiCaseImpl<T>>> = r;
+				self.container = (*r).as_ptr() as usize;
+			},
+			Err(_) => panic!("downcast fail")
+		}
+    }
+
+    #[inline]
+    unsafe fn archetype_fetch(&mut self, local: LocalVersion) -> Option<Self::Item> {
+        if !self.matchs {
+			return None;
+		}
+		let value = std::mem::transmute((&mut *(self.container as *mut MultiCaseImpl<T>)).get_mut(local));
+		Some(WriteItem {
+			value,
+			container: self.container,
+			local: local,
+			tick: self.tick,
+		})
+    }
+}
+
+pub struct WriteState<T> {
+    component_id: ComponentId,
+    marker: PhantomData<T>,
+}
+
+// SAFE: component access and archetype component access are properly updated to reflect that T is
+// read
+unsafe impl<T: Component> FetchState for WriteState<T> {
+    fn init(world: &mut World) -> Self {
+		let component_id = match world.components.get_id(TypeId::of::<T>()) {
+			Some(r) => r,
+			None => panic!("WriteState fetch ${} fail", std::any::type_name::<T>()),
+		};
+        let component_info = world.components.get_info(component_id).unwrap();
+        WriteState {
+            component_id: component_info.id(),
+            marker: PhantomData,
+        }
+    }
+
+	fn update_component_access(&self, access: &mut FilteredAccess<ComponentId>) {
+		if access.access().has_write(self.component_id) {
+            panic!("&{} conflicts with a previous access in this query. Shared access cannot coincide with exclusive access.",
+                std::any::type_name::<T>());
+        }
+		access.add_write(self.component_id)
+	}
+
+    fn update_archetype_component_access(&self, archetype: &Archetype, access: &mut Access<ArchetypeComponentId>) {
+		let archetype_component_id = unsafe { archetype.archetype_component_id(self.component_id)};
+        if access.has_write(archetype_component_id) {
+            panic!("&{} conflicts with a previous access in this query. Shared access cannot coincide with exclusive access.",
+                std::any::type_name::<T>());
+        }
+		access.add_write(archetype_component_id)
     }
 
 
@@ -346,7 +509,7 @@ pub struct OptionState<T: FetchState> {
 // SAFE: component access and archetype component access are properly updated according to the
 // internal Fetch
 unsafe impl<T: FetchState> FetchState for OptionState<T> {
-    fn init(world: &World) -> Self {
+    fn init(world: &mut World) -> Self {
         Self {
             state: T::init(world),
         }
@@ -371,7 +534,7 @@ impl<T: Fetch> Fetch for OptionFetch<T> {
 
     unsafe fn init(
         world: &World,
-        state: &Self::State,
+        state: &Self::State
     ) -> Self {
         Self {
             fetch: T::init(world, &state.state),
@@ -389,15 +552,17 @@ impl<T: Fetch> Fetch for OptionFetch<T> {
 		self.matches = state.state.matches_archetype(archetype, world);
 		if self.matches {
         	self.fetch.set_archetype(&state.state, archetype, world);
+		} else {
+			log::warn!("component is not exist in archetype, so query fail, query: {:?}",  std::any::type_name::<Option<T>>());
 		}
     }
 
     #[inline]
-    unsafe fn archetype_fetch(&mut self, archetype_index: usize) -> Option<Self::Item> {
+    unsafe fn archetype_fetch(&mut self, local: LocalVersion) -> Option<Self::Item> {
 		if self.matches {
-        	Some(self.fetch.archetype_fetch(archetype_index))
+        	Some(self.fetch.archetype_fetch(local))
 		} else {
-			Some(None)
+			None
 		}
     }
 }
@@ -414,6 +579,19 @@ macro_rules! impl_tuple_fetch {
                 ($($name::init(_world, $name),)*)
             }
 
+			unsafe fn main_fetch<'x>(&'x self, state: &Self::State, _last_change_tick: u32, _change_tick: u32) -> Option<MianFetch<'x>> {
+				$crate::paste::item! {
+					let ($([<state $name>],)*) = state;
+					let ($($name,)*) = self;
+					$(
+						if let Some(r) = $name.main_fetch([<state $name>], _last_change_tick, _change_tick) {
+							return Some(r)
+						};
+					)*
+					None
+				}
+			}
+
             #[inline]
 			#[allow(unused_variables)]
             unsafe fn set_archetype(&mut self, _state: &Self::State, _archetype: &Archetype, world: &World) {
@@ -423,9 +601,10 @@ macro_rules! impl_tuple_fetch {
             }
 
             #[inline]
-            unsafe fn archetype_fetch(&mut self, _archetype_index: usize) -> Option<Self::Item> {
+			#[allow(unused_variables)]
+            unsafe fn archetype_fetch(&mut self, local: LocalVersion) -> Option<Self::Item> {
                 let ($($name,)*) = self;
-                Some(($(match $name.archetype_fetch(_archetype_index) {
+                Some(($(match $name.archetype_fetch(local) {
 					Some(r) => r,
 					None => return None
 				},)*))
@@ -436,13 +615,18 @@ macro_rules! impl_tuple_fetch {
         #[allow(non_snake_case)]
 		#[allow(unused_variables)]
         unsafe impl<$($name: FetchState),*> FetchState for ($($name,)*) {
-            fn init(_world: &World) -> Self {
+            fn init(_world: &mut World) -> Self {
                 ($($name::init(_world),)*)
             }
 
 			fn update_component_access(&self, access: &mut FilteredAccess<ComponentId>) {
 				let ($($name,)*) = self;
 				$($name.update_component_access(access);)*
+			}
+
+			fn set_archetype<A: 'static + Send + Sync>(&self, _world: &mut World)  {
+				let ($($name,)*) = self;
+                $($name.set_archetype::<A>(_world);)*
 			}
 
             fn update_archetype_component_access(&self, archetype: &Archetype, _access: &mut Access<ComponentId>) {

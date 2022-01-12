@@ -1,4 +1,10 @@
+#![feature(if_let_guard)]
+
 extern crate proc_macro;
+#[macro_use]
+extern crate syn;
+
+use std::str::FromStr;
 
 use find_crate::{Dependencies, Manifest};
 use proc_macro::TokenStream;
@@ -7,11 +13,12 @@ use quote::{format_ident, quote};
 use syn::{
     parse::{Parse, ParseStream},
     parse_macro_input,
-    punctuated::Punctuated,
+    punctuated::{Punctuated, Pair},
     token::Comma,
     Data, DataStruct, DeriveInput, Field, Fields, GenericParam, Ident, Index, Lifetime, LitInt,
-    Path, Result, Token,
+    Path, Result, Token, Type, TypePath, PathArguments, GenericArgument,
 };
+use quote::ToTokens;
 
 struct AllTuples {
     macro_ident: Ident,
@@ -78,6 +85,185 @@ pub fn all_tuples(input: TokenStream) -> TokenStream {
 }
 
 static BUNDLE_ATTRIBUTE_NAME: &str = "bundle";
+
+
+/// 实现组件，冲下组件存储
+/// example:
+/// 	#[derive(Component)]
+/// 	#[storage=XXX]
+#[proc_macro_derive(Component, attributes(storage))]
+pub fn component_derive(input: TokenStream) -> TokenStream {
+    let ast = syn::parse(input).unwrap();
+    let gen = impl_component(&ast);
+    gen.into()
+}
+
+/// 监听，为函数增加监听器属性
+/// example: `#[listen(component = (Node, Position, Modify), entity = (Node, Delete))]`
+#[proc_macro_attribute]
+pub fn listen(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let gen = impl_listen_component(attr, item);
+    gen.into()
+}
+
+fn impl_component(ast: &DeriveInput) -> proc_macro2::TokenStream {
+    let name = &ast.ident;
+    let (impl_generics, ty_generics, where_clause) = ast.generics.split_for_impl();
+
+    let storage = ast
+        .attrs
+        .iter()
+        .find(|attr| attr.path.segments[0].ident == "storage")
+        .map(|attr| {
+            syn::parse2::<StorageAttribute>(attr.tokens.clone())
+                .unwrap()
+                .storage
+        })
+        .unwrap_or_else(|| parse_quote!(VecMap));
+
+    quote! {
+        impl #impl_generics Component for #name #ty_generics #where_clause {
+            type Storage = #storage<Self>;
+        }
+    }
+}
+
+struct StorageAttribute {
+    storage: Path,
+}
+
+impl Parse for StorageAttribute {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let content;
+        let _parenthesized_token = parenthesized!(content in input);
+
+        Ok(StorageAttribute {
+            storage: content.parse()?,
+        })
+    }
+}
+
+fn impl_listen_component(attr: TokenStream, item: TokenStream) -> proc_macro2::TokenStream {
+
+	let s = attr.to_string();
+	
+	let r = String::from("XX<") + s.as_str() + ">";
+	
+	let args = match TokenStream::from_str(r.as_str()) {
+		Ok(r) if let Ok(mut v) = syn::parse::<TypePath>(r.clone()) => {
+			v.path.segments.pop().unwrap()
+		}
+		_ => panic!("impl_listen err, expect `listen(Compnent(A, C, T))`,  fond `listen({})` {}, {}", attr.to_string(), r, s),
+	};
+
+	let argments = match args {
+		Pair::Punctuated(t,_) => t.arguments,
+		Pair::End(t) => t.arguments,
+	};
+
+	let mut args = match argments {
+		PathArguments::AngleBracketed(r) => r.args,
+		_ => panic!("!PathArguments::AngleBracketed"),
+	};
+	
+	let mut list = Vec::new();
+	for elem in &mut args {
+		if let GenericArgument::Binding(binding) = elem {
+			// if let Type::Paren(expr)
+			let key = binding.ident.to_string();
+			let mut r = String::from("");
+			if key=="component" {
+				r += "pi_ecs::monitor::ComponentListen";
+			} else if key=="resource" {
+				r += "pi_ecs::monitor::ResourceListen";
+			} else if key=="entity" {
+				r += "pi_ecs::monitor::EntityListen";
+			} else {
+				panic!("!Component | Resource | EntityListen, is{:?}", key);
+			}
+			
+
+			let r = TokenStream::from_str(r.as_str()).unwrap();
+			let p = syn::parse::<Path>(r).unwrap();
+
+			if let Type::Tuple(r) = &mut binding.ty {
+				if let Some(last) = r.elems.last_mut() {
+					match last {
+						Type::Tuple(t) => {
+							for e in &mut t.elems {
+								if let Type::Path(p) = e {
+									let pp = &p.path;
+									let mut path = quote!{#pp}.to_string();
+									if path == "Create" || path == "Modify" || path == "Delete"{
+										path = String::from("pi_ecs::monitor::") + path.as_str();
+									}
+									p.path = syn::parse::<Path>(TokenStream::from_str(path.as_str()).unwrap()).unwrap();
+								} else {
+									panic!("is not path:{:?}", e);
+								}
+							}
+						},
+						Type::Path(p) => {
+							let pp = &p.path;
+							let mut path = quote!{#pp}.to_string();
+							if path == "Create" || path == "Modify" || path == "Delete"{
+								path = String::from("pi_ecs::monitor::") + path.as_str();
+							}
+							p.path = syn::parse::<Path>(TokenStream::from_str(path.as_str()).unwrap()).unwrap();
+						},
+						_ => panic!("event must is Tuple or Path")
+					}
+				}
+				list.push(ListenItem(p, &r.elems));
+			} else {
+				panic!("!TypeTuple, {:?}", binding.ty);
+			}
+			
+			continue;
+		}
+		panic!("!GenericArgument::Binding");
+	}
+
+	let mut f = match syn::parse::<syn::ItemFn>(item) {
+		Ok(r) => r,
+		Err(_) =>  panic!("impl_listen err: `${:?}`", attr.to_string())
+	};
+
+	// panic!("f:{:?}", f);
+
+	if list.len() > 0 && f.sig.inputs.len() >= 1 {
+		// return quote! {type ___ =pi_ecs::monitor::Listen<(#(#list)*)>;};
+		let r = TokenStream::from(quote! {___:pi_ecs::monitor::Listen<(#(#list,)*)>});
+		let i;
+		if f.sig.inputs.len() > 1 {
+			i = std::mem::replace(&mut f.sig.inputs[1], syn::parse::<syn::FnArg>(r).unwrap());
+		} else {
+			i = syn::parse::<syn::FnArg>(r).unwrap();
+		}
+		// panic!("xxx");
+		f.sig.inputs.push(i);
+	}
+	quote! {
+		#f
+	}
+}
+
+struct ListenItem<'a>(Path, &'a syn::punctuated::Punctuated<Type, Comma>);
+impl<'a> ToTokens for ListenItem<'a> {
+    fn to_tokens(&self, tokens: &mut TokenStream2) {
+		let (name, fileds) = (&self.0, &self.1);
+		tokens.extend(quote! {#name<#fileds>});
+	}
+}
+
+// #[listen(
+// 	Component(Node, C, (CreateEvent, DeleteEvent)), 
+// 	Resource(R, (CreateEvent, DeleteEvent)), 
+// 	Entity(A,(CreateEvent, DeleteEvent))
+// )]
+// fn aa(e: Event, _listen: Listen<ComponentListen<Node, C, (CreateEvent, DeleteEvent)>>) {
+
+// }
 
 #[proc_macro_derive(Bundle, attributes(bundle))]
 pub fn derive_bundle(input: TokenStream) -> TokenStream {

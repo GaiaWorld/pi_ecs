@@ -1,32 +1,34 @@
 use futures::future::{BoxFuture, FutureExt};
-use pi_ecs::prelude::*;
-use share::cell::TrustCell;
+use pi_ecs::{prelude::{Query, With,Res, World, Local, ResMut, Entity, StageBuilder, SingleDispatcher, Dispatcher}, sys::system::IntoSystem};
 use r#async::rt::{multi_thread::MultiTaskRuntimeBuilder, AsyncRuntime};
 use std::{sync::Arc, io::Result};
 
 /// 定义一个名为Node原型类型
-struct Node;
+pub struct Node;
 
 #[derive(Debug)]
 /// 定义一个组件类型
-struct Position(pub usize);
+pub struct Position(pub usize);
 
 #[derive(Debug)]
 /// 定义一个组件类型
-struct Velocity(pub usize);
+pub struct Velocity(pub usize);
 
 #[derive(Debug)]
 /// 定义一个资源类型
-struct Resource1(pub usize);
+pub struct Resource1(pub usize);
 
 #[derive(Debug)]
 /// 定义一个资源类型
-struct Resource2(pub usize);
+pub struct Resource2(pub usize);
 
 
 /// 定义一个系统的本地数据类型
 #[derive(Default, Debug)]
-struct DirtyMark(pub usize);
+pub struct DirtyMark(pub usize);
+
+#[derive(Default)]
+pub struct Local1(pub u32);
 
 // 同步系统
 fn _sync_sys(
@@ -36,7 +38,6 @@ fn _sync_sys(
 	_res: Res<Resource1>,
 	_res_mut: ResMut<Resource2>,
 ) {
-	
 	println!("run _sync_sys");
 }
 
@@ -49,9 +50,9 @@ fn _async_sys1(
 	res_mut: ResMut<Resource2>,
 ) -> BoxFuture<'static, Result<()>> {
 	async move {
-		let r1 = &*res;
-		let r2 = &*res_mut;
-		let r2 = &*local;
+		// let r1 = &*res;
+		// let r2 = &*res_mut;
+		// let r2 = &*local;
 		println!("run _async_sys1, res1: {:?}, {:?}, {:?}", &*res, &*res_mut, &*local);
 		println!("run _async_sys1, res1: {:?}, {:?}, {:?}", 1, 2,3);
 		for (entity, position) in query2.iter_mut() {
@@ -82,11 +83,15 @@ fn test() {
 		.insert(Position(i))
 		.id();
 	}
+
+	let mut vec = Vec::new();
 	for i in 0..5 {
-		let _id = world.spawn::<Node>()
+		let id = world.spawn::<Node>()
 		.insert(Position(i + 5))
 		.insert(Velocity(i + 5))
 		.id();
+
+		vec.push(id);
 	}
 
 	// 创建查询,并迭代查询
@@ -99,14 +104,14 @@ fn test() {
 	for (entity, position) in query.iter(&mut world) {
 		println!("iter_mut1:{:?}, {:?}", entity, position);
 	}
+	
 
-	let mut w = Arc::new(TrustCell::new(world));
-	test_system(&mut w);
+	test_system(&mut world);
 
 	std::thread::sleep(std::time::Duration::from_secs(5));
 }
 
-fn test_system(world: &mut Arc<TrustCell<World>>) {
+fn test_system(world: &mut World) {
 	let rt = AsyncRuntime::Multi(MultiTaskRuntimeBuilder::default().build());
 	let sync_system = _sync_sys.system(world);
 	// let async_system = _async_sys.system(world.clone());

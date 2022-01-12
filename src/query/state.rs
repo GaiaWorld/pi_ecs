@@ -1,6 +1,7 @@
 use std::marker::PhantomData;
 use std::any::TypeId;
 
+use crate::world::World;
 use crate::{
     archetype::{ArchetypeId, ArchetypeIdent, ArchetypeComponentId},
     component::ComponentId,
@@ -9,8 +10,7 @@ use crate::{
         Fetch, FetchState, FilterFetch, Access, FilteredAccess, QueryIter, ReadOnlyFetch,
         WorldQuery,EntityState
     },
-	storage::Offset,
-    world::{World, WorldId},
+    world::{WorldInner, WorldId},
 };
 use thiserror::Error;
 
@@ -38,11 +38,12 @@ impl<A: ArchetypeIdent, Q: WorldQuery, F: WorldQuery> QueryState<A, Q, F>
 where
     F::Fetch: FilterFetch,
 {
-    pub fn new(world: &World) -> Self {
+    pub fn new(world:  &mut World) -> Self {
 		let archetype_id = match world.archetypes().get_id_by_ident(TypeId::of::<A>()) {
 			Some(r) => r.clone(),
 			None => panic!(),
 		};
+
         let fetch_state = <Q::State as FetchState>::init(world);
         let filter_state = <F::State as FetchState>::init(world);
 		let entity_state = <EntityState as FetchState>::init(world) ;
@@ -54,6 +55,7 @@ where
         let mut component_access = Default::default();
 		fetch_state.update_component_access(&mut component_access);
         filter_state.update_component_access(&mut component_access);
+
 
         let mut state = Self {
 			matchs: false,
@@ -72,9 +74,9 @@ where
         state
     }
 
-	pub fn validate_world_and_update_archetypes(&mut self, world: &World) {
+	pub fn validate_world_and_update_archetypes(&mut self, world: &mut World) {
         if world.id() != self.world_id {
-            panic!("Attempted to use {} with a mismatched World. QueryStates can only be used with the World they were created from.",
+            panic!("Attempted to use {} with a mismatched WorldInner. QueryStates can only be used with the WorldInner they were created from.",
                 std::any::type_name::<Self>());
         }
         let archetypes = world.archetypes();
@@ -91,13 +93,17 @@ where
 		if self.matchs {
 			unsafe{ self.fetch_fetch.set_archetype(&self.fetch_state, archetype, world)};
 			unsafe{ self.filter_fetch.set_archetype(&self.filter_state, archetype, world)};
+
+			self.fetch_state.set_archetype::<A>(world);
+			self.filter_state.set_archetype::<A>(world);
+
 		}
 	}
 
     #[inline]
     pub fn get<'w>(
         &self,
-        world: &'w World,
+        world: &'w WorldInner,
         entity: Entity,
     ) -> Option<<Q::Fetch as Fetch>::Item>
     where
@@ -110,7 +116,7 @@ where
     #[inline]
     pub fn get_mut<'w>(
         &mut self,
-        world: &'w mut World,
+        world: &'w mut WorldInner,
         entity: Entity,
     ) -> Option<<Q::Fetch as Fetch>::Item> {
         // SAFE: query has unique world access
@@ -123,7 +129,7 @@ where
     #[inline]
     pub unsafe fn get_unchecked<'w>(
         &self,
-        world: &'w World,
+        world: &'w WorldInner,
         entity: Entity,
     ) -> Option<<Q::Fetch as Fetch>::Item> {
         // self.validate_world_and_update_archetypes(world);
@@ -141,7 +147,7 @@ where
 	#[allow(mutable_transmutes)]
     pub unsafe fn get_unchecked_manual<'w>(
         &self,
-        _world: &'w World,
+        _world: &'w WorldInner,
         entity: Entity,
         _last_change_tick: u32,
         _change_tick: u32,
@@ -155,15 +161,16 @@ where
         //     .ok_or(QueryEntityError::NoSuchEntity)?;
 
         // let archetype = &world.archetypes[entity.archetype_id()];
-        if std::mem::transmute::<&F::Fetch, &mut F::Fetch>(&self.filter_fetch).archetype_filter_fetch(entity.local().offset()) {
-            std::mem::transmute::<&Q::Fetch, &mut Q::Fetch>(&self.fetch_fetch).archetype_fetch(entity.local().offset())
+		
+        if std::mem::transmute::<&F::Fetch, &mut F::Fetch>(&self.filter_fetch).archetype_filter_fetch(entity.local()) {
+            std::mem::transmute::<&Q::Fetch, &mut Q::Fetch>(&self.fetch_fetch).archetype_fetch(entity.local())
         } else {
             None
         }
     }
 
     #[inline]
-    pub fn iter<'w, 's>(&'s mut self, world: &'w World) -> QueryIter<'w, 's, A, Q, F>
+    pub fn iter<'w, 's>(&'s mut self, world: &'w WorldInner) -> QueryIter<'w, 's, A, Q, F>
     where
         Q::Fetch: ReadOnlyFetch,
     {
@@ -172,7 +179,7 @@ where
     }
 
     #[inline]
-    pub fn iter_mut<'w, 's>(&'s mut self, world: &'w mut World) -> QueryIter<'w, 's, A, Q, F> {
+    pub fn iter_mut<'w, 's>(&'s mut self, world: &'w mut WorldInner) -> QueryIter<'w, 's, A, Q, F> {
         // SAFE: query has unique world access
         unsafe { self.iter_unchecked(world) }
     }
@@ -183,7 +190,7 @@ where
     #[inline]
     pub unsafe fn iter_unchecked<'w, 's>(
         &'s mut self,
-        world: &'w World,
+        world: &'w WorldInner,
     ) -> QueryIter<'w, 's, A, Q, F> {
         // self.validate_world_and_update_archetypes(world);
         self.iter_unchecked_manual(world, world.last_change_tick(), world.read_change_tick())
@@ -197,17 +204,17 @@ where
     #[inline]
     pub(crate) unsafe fn iter_unchecked_manual<'w, 's>(
         &'s self,
-        world: &'w World,
+        world: &'w WorldInner,
         last_change_tick: u32,
         change_tick: u32,
     ) -> QueryIter<'w, 's, A, Q, F> {
-        QueryIter::new(world, self, last_change_tick, change_tick)
+        QueryIter::new(world, &mut*(self as *const Self as usize as *mut Self), last_change_tick, change_tick)
     }
 
     // #[inline]
     // pub fn for_each<'w>(
     //     &mut self,
-    //     world: &'w World,
+    //     world: &'w WorldInner,
     //     func: impl FnMut(<Q::Fetch as Fetch<'w>>::Item),
     // ) where
     //     Q::Fetch: ReadOnlyFetch,
@@ -221,7 +228,7 @@ where
     // #[inline]
     // pub fn for_each_mut<'w>(
     //     &mut self,
-    //     world: &'w mut World,
+    //     world: &'w mut WorldInner,
     //     func: impl FnMut(<Q::Fetch as Fetch<'w>>::Item),
     // ) {
     //     // SAFE: query has unique world access
@@ -236,7 +243,7 @@ where
     // #[inline]
     // pub unsafe fn for_each_unchecked<'w>(
     //     &mut self,
-    //     world: &'w World,
+    //     world: &'w WorldInner,
     //     func: impl FnMut(<Q::Fetch as Fetch<'w>>::Item),
     // ) {
     //     self.validate_world_and_update_archetypes(world);
@@ -251,7 +258,7 @@ where
     // #[inline]
     // pub fn par_for_each<'w>(
     //     &mut self,
-    //     world: &'w World,
+    //     world: &'w WorldInner,
     //     task_pool: &TaskPool,
     //     batch_size: usize,
     //     func: impl Fn(<Q::Fetch as Fetch<'w>>::Item) + Send + Sync + Clone,
@@ -267,7 +274,7 @@ where
     // #[inline]
     // pub fn par_for_each_mut<'w>(
     //     &mut self,
-    //     world: &'w mut World,
+    //     world: &'w mut WorldInner,
     //     task_pool: &TaskPool,
     //     batch_size: usize,
     //     func: impl Fn(<Q::Fetch as Fetch<'w>>::Item) + Send + Sync + Clone,
@@ -284,7 +291,7 @@ where
     // #[inline]
     // pub unsafe fn par_for_each_unchecked<'w>(
     //     &mut self,
-    //     world: &'w World,
+    //     world: &'w WorldInner,
     //     task_pool: &TaskPool,
     //     batch_size: usize,
     //     func: impl Fn(<Q::Fetch as Fetch<'w>>::Item) + Send + Sync + Clone,
@@ -307,7 +314,7 @@ where
     // /// with a mismatched WorldId is unsafe.
     // pub(crate) unsafe fn for_each_unchecked_manual<'w, 's>(
     //     &'s self,
-    //     world: &'w World,
+    //     world: &'w WorldInner,
     //     mut func: impl FnMut(<Q::Fetch as Fetch<'w>>::Item),
     //     last_change_tick: u32,
     //     change_tick: u32,
@@ -356,7 +363,7 @@ where
     // /// with a mismatched WorldId is unsafe.
     // pub unsafe fn par_for_each_unchecked_manual<'w, 's>(
     //     &'s self,
-    //     world: &'w World,
+    //     world: &'w WorldInner,
     //     task_pool: &TaskPool,
     //     batch_size: usize,
     //     func: impl Fn(<Q::Fetch as Fetch<'w>>::Item) + Send + Sync + Clone,

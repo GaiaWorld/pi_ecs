@@ -4,6 +4,7 @@ mod filter;
 mod iter;
 mod state;
 mod join;
+mod dirty;
 
 pub use access::*;
 pub use fetch::*;

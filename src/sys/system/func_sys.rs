@@ -1,13 +1,9 @@
-use std::sync::Arc;
-
-use share::cell::TrustCell;
-
 use crate::{
     archetype::ArchetypeComponentId,
     component::ComponentId,
-    query::{Access},
+    query::Access,
     sys::param::interface::{SystemParamState, SystemParam, SystemParamFetch},
-    sys::system::interface::{System, SystemState, IntoSystem, In, InputMarker},
+    sys::system::interface::{System, SystemState, IntoSystem, InputMarker},
     world::World,
 };
 use pi_ecs_macros::all_tuples;
@@ -29,7 +25,7 @@ where
     param_state: Option<Param::Fetch>,
     system_state: SystemState,
     config: Option<<Param::Fetch as SystemParamState>::Config>,
-	world: Arc<TrustCell<World>>,
+	world: World,
 	id: SystemId,
     // NOTE: PhantomData<fn()-> T> gives this safe Send/Sync impls
     mark: PhantomData<fn() -> (In, Out, InMarker)>,
@@ -43,7 +39,7 @@ impl<In, Out, Param: SystemParam, InMarker, F> FunctionSystem<In, Out, Param, In
     ///
     /// ```
     /// # use bevy_ecs::prelude::*;
-    /// # let world = &mut World::default();
+    /// # let world = &mut WorldInner::default();
     /// fn local_is_42(local: Local<usize>) {
     ///     assert_eq!(*local, 42);
     /// }
@@ -60,6 +56,11 @@ impl<In, Out, Param: SystemParam, InMarker, F> FunctionSystem<In, Out, Param, In
     }
 }
 
+/// 系统输入
+pub trait SysInput {}
+
+impl SysInput for () {}
+
 pub struct SyncMarker;
 
 impl<In, Out, Param, InMarker, F> IntoSystem<Param, FunctionSystem<In, Out, Param, InMarker, F>> for F
@@ -70,8 +71,8 @@ where
     InMarker: 'static,
     F: SystemParamFunction<In, Out, Param, InMarker> + Send + Sync + 'static,
 {
-    fn system(self, world: &mut Arc<TrustCell<World>>) -> FunctionSystem<In, Out, Param, InMarker, F> {
-        let id = SystemId::new(world.borrow_mut().archetype_component_grow());
+    fn system(self, world: &mut World) -> FunctionSystem<In, Out, Param, InMarker, F> {
+        let id = SystemId::new(world.archetype_component_grow());
 		let mut r = FunctionSystem {
             func: self,
             param_state: None,
@@ -81,11 +82,10 @@ where
 			id,
             mark: PhantomData,
         };
-		r.initialize(&mut world.borrow_mut());
+		r.initialize(world);
 		r
     }
 }
-
 
 
 impl<In, Out, Param, InMarker, F> System for FunctionSystem<In, Out, Param, InMarker, F>
@@ -133,14 +133,15 @@ where
     #[inline]
     unsafe fn run_unsafe(&mut self, input: Self::In) -> Self::Out {
         // let change_tick = world.increment_change_tick();
+		let change_tick = self.world.read_change_tick();
         let out = self.func.run(
             input,
             self.param_state.as_mut().unwrap(),
             &self.system_state,
             &self.world,
-            0,
+            change_tick,
         );
-        self.system_state.last_change_tick = 0;
+        self.system_state.last_change_tick = change_tick;
         // self.system_state.last_change_tick = change_tick;
         out
     }
@@ -177,14 +178,28 @@ pub trait SystemParamFunction<In, Out, Param: SystemParam, InMarker>: Send + Syn
         input: In,
         state: &mut Param::Fetch,
         system_state: &SystemState,
-        world: &Arc<TrustCell<World>>,
+        world: &World,
         change_tick: u32,
     ) -> Out;
 }
 
+// impl<Input, Out, Func, Param: SystemParam> SystemParamFunction<Input, Out, Param, InputMarker> for Func
+// where
+// 	Func:
+// 	FnMut(Input, Param) -> Out + 
+// 	FnMut(Input, <<Param as SystemParam>::Fetch as SystemParamFetch>::Item) -> Out + Send + Sync + 'static, Out: 'static
+// {
+// 	fn run(&mut self, input: Input, state: &mut <Param as SystemParam>::Fetch, system_state: &SystemState, world: &World, change_tick: u32) -> Out {
+// 		unsafe {
+// 			let p = <<Param as SystemParam>::Fetch as SystemParamFetch>::get_param(state, system_state, world, change_tick);
+// 			self(input, p)
+// 		}
+// 	}
+// }
+
 macro_rules! impl_system_function {
     ($($param: ident),*) => {
-        #[allow(non_snake_case)]
+		#[allow(non_snake_case)]
         impl<Out, Func, $($param: SystemParam),*> SystemParamFunction<(), Out, ($($param,)*), ()> for Func
         where
             Func:
@@ -192,7 +207,7 @@ macro_rules! impl_system_function {
                 FnMut($(<<$param as SystemParam>::Fetch as SystemParamFetch>::Item),*) -> Out + Send + Sync + 'static, Out: 'static
         {
             #[inline]
-            fn run(&mut self, _input: (), state: &mut <($($param,)*) as SystemParam>::Fetch, system_state: &SystemState, world: &Arc<TrustCell<World>>, change_tick: u32) -> Out {
+            fn run(&mut self, _input: (), state: &mut <($($param,)*) as SystemParam>::Fetch, system_state: &SystemState, world: &World, change_tick: u32) -> Out {
                 unsafe {
                     let ($($param,)*) = <<($($param,)*) as SystemParam>::Fetch as SystemParamFetch>::get_param(state, system_state, world, change_tick);
                     self($($param),*)
@@ -200,21 +215,23 @@ macro_rules! impl_system_function {
             }
         }
 
-        #[allow(non_snake_case)]
-        impl<Input, Out, Func, $($param: SystemParam),*> SystemParamFunction<Input, Out, ($($param,)*), InputMarker> for Func
+		#[allow(non_snake_case)]
+        impl<Input: SysInput, Out, Func, $($param: SystemParam),*> SystemParamFunction<Input, Out, ($($param,)*), InputMarker> for Func
         where
             Func:
-                FnMut(In<Input>, $($param),*) -> Out +
-                FnMut(In<Input>, $(<<$param as SystemParam>::Fetch as SystemParamFetch>::Item),*) -> Out + Send + Sync + 'static, Out: 'static
+                FnMut(Input, $($param),*) -> Out +
+                FnMut(Input, $(<<$param as SystemParam>::Fetch as SystemParamFetch>::Item),*) -> Out + Send + Sync + 'static, Out: 'static
         {
             #[inline]
-            fn run(&mut self, input: Input, state: &mut <($($param,)*) as SystemParam>::Fetch, system_state: &SystemState, world: &Arc<TrustCell<World>>, change_tick: u32) -> Out {
+            fn run(&mut self, input: Input, state: &mut <($($param,)*) as SystemParam>::Fetch, system_state: &SystemState, world: &World, change_tick: u32) -> Out {
                 unsafe {
                     let ($($param,)*) = <<($($param,)*) as SystemParam>::Fetch as SystemParamFetch>::get_param(state, system_state, world, change_tick);
-                    self(In(input), $($param),*)
+                    self(input, $($param),*)
                 }
             }
         }
+
+        
     };
 }
 

@@ -1,7 +1,151 @@
-pub use slotmap::{Key, KeyData, SlotMap, SecondaryMap, SparseSecondaryMap, DenseSlotMap};
-pub use slotmap::dense::{Iter, IterMut, Keys, Values};
 use std::convert::From;
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
+use std::{ops::Index, ops::IndexMut};
+
+pub use slotmap::{Key, KeyData, SlotMap, SecondaryMap as SecondaryMap1, SparseSecondaryMap as SparseSecondaryMap1, DenseSlotMap};
+pub use map::Map;
+pub use slotmap::dense::{Iter, IterMut, Keys, Values};
+
+
+pub struct SecondaryMap<K: Key, V>(SecondaryMap1<K, V>);
+
+impl<K: Key, V> Deref for SecondaryMap<K, V> {
+	type Target = SecondaryMap1<K, V>;
+    fn deref(&self) -> &Self::Target {
+		&self.0
+	}
+}
+
+impl<K: Key, V> DerefMut for SecondaryMap<K, V> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+		&mut self.0
+	}
+}
+
+impl<K: Key, V> Map for SecondaryMap<K, V> {
+	type Key = K;
+	type Val = V;
+
+	fn len(&self) -> usize {
+		self.0.len()
+	}
+	fn with_capacity(capacity: usize) -> Self {
+		SecondaryMap(SecondaryMap1::with_capacity(capacity))
+	}
+    fn capacity(&self) -> usize {
+		self.0.len()
+	}
+    fn mem_size(&self) -> usize {
+		self.0.len()
+	}
+    fn contains(&self, key: &Self::Key) -> bool {
+		self.0.contains_key(*key)
+	}
+    fn get(&self, key: &Self::Key) -> Option<&Self::Val> {
+		self.0.get(*key)
+	}
+    fn get_mut(&mut self, key: &Self::Key) -> Option<&mut Self::Val> {
+		self.0.get_mut(*key)
+	}
+    unsafe fn get_unchecked(&self, key: &Self::Key) -> &Self::Val {
+		self.0.get_unchecked(*key)
+	}
+    unsafe fn get_unchecked_mut(&mut self, key: &Self::Key) -> &mut Self::Val {
+		self.0.get_unchecked_mut(*key)
+	}
+    unsafe fn remove_unchecked(&mut self, key: &Self::Key) -> Self::Val {
+		self.0.remove(*key).unwrap()
+	}
+    fn insert(&mut self, key: Self::Key, val: Self::Val) -> Option<Self::Val> {
+		self.0.insert(key, val)
+	}
+    fn remove(&mut self, key: &Self::Key) -> Option<Self::Val> {
+		self.0.remove(*key)
+	}
+}
+
+impl<K: Key, V> Index<K> for SecondaryMap<K, V> {
+	type Output = V;
+    fn index(&self, index: K) -> &Self::Output {
+		&self.0[index]
+	}
+}
+
+impl<K: Key, V> IndexMut<K> for SecondaryMap<K, V> {
+    fn index_mut(&mut self, index: K) -> &mut Self::Output {
+		&mut self.0[index]
+	}
+}
+
+pub struct SparseSecondaryMap<K: Key, V>(SparseSecondaryMap1<K, V>);
+
+impl<K: Key, V> Deref for SparseSecondaryMap<K, V> {
+	type Target = SparseSecondaryMap1<K, V>;
+    fn deref(&self) -> &Self::Target {
+		&self.0
+	}
+}
+
+impl<K: Key, V> DerefMut for SparseSecondaryMap<K, V> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+		&mut self.0
+	}
+}
+
+impl<K: Key, V> Map for SparseSecondaryMap<K, V> {
+	type Key = K;
+	type Val = V;
+
+	fn len(&self) -> usize {
+		self.0.len()
+	}
+	fn with_capacity(capacity: usize) -> Self {
+		SparseSecondaryMap(SparseSecondaryMap1::with_capacity(capacity))
+	}
+    fn capacity(&self) -> usize {
+		self.0.len()
+	}
+    fn mem_size(&self) -> usize {
+		self.0.len()
+	}
+    fn contains(&self, key: &Self::Key) -> bool {
+		self.0.contains_key(*key)
+	}
+    fn get(&self, key: &Self::Key) -> Option<&Self::Val> {
+		self.0.get(*key)
+	}
+    fn get_mut(&mut self, key: &Self::Key) -> Option<&mut Self::Val> {
+		self.0.get_mut(*key)
+	}
+    unsafe fn get_unchecked(&self, key: &Self::Key) -> &Self::Val {
+		self.0.get_unchecked(*key)
+	}
+    unsafe fn get_unchecked_mut(&mut self, key: &Self::Key) -> &mut Self::Val {
+		self.0.get_unchecked_mut(*key)
+	}
+    unsafe fn remove_unchecked(&mut self, key: &Self::Key) -> Self::Val {
+		self.0.remove(*key).unwrap()
+	}
+    fn insert(&mut self, key: Self::Key, val: Self::Val) -> Option<Self::Val> {
+		self.0.insert(key, val)
+	}
+    fn remove(&mut self, key: &Self::Key) -> Option<Self::Val> {
+		self.0.remove(*key)
+	}
+}
+
+impl<K: Key, V> Index<K> for SparseSecondaryMap<K, V> {
+	type Output = V;
+    fn index(&self, index: K) -> &Self::Output {
+		&self.0[index]
+	}
+}
+
+impl<K: Key, V> IndexMut<K> for SparseSecondaryMap<K, V> {
+    fn index_mut(&mut self, index: K) -> &mut Self::Output {
+		&mut self.0[index]
+	}
+}
 
 pub trait Offset: Clone {
 	fn offset(&self) -> usize;
@@ -12,7 +156,7 @@ pub trait FromOffset: Offset {
 
 
 #[derive(Debug, Copy, Clone, Hash, Ord, PartialOrd, Eq, PartialEq, Default)]
-pub struct LocalVersion(u64);
+pub struct LocalVersion(pub(crate) u64);
 
 impl Deref for LocalVersion {
 	type Target = u64;
