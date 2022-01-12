@@ -1,7 +1,5 @@
 use std::sync::Arc;
 
-use share::cell::TrustCell;
-
 use crate::{
     entity::Entity,
     query::{
@@ -9,7 +7,7 @@ use crate::{
     },
 	sys::param::interface::{SystemParam, SystemParamFetch, SystemParamState, assert_component_access_compatibility},
 	sys::system::interface::SystemState,
-	world::World, archetype::ArchetypeIdent,
+	world::World, archetype::ArchetypeIdent, WorldInner,
 };
 use std::marker::PhantomData;
 
@@ -18,8 +16,8 @@ pub struct Query<A: ArchetypeIdent, Q: WorldQuery, F: WorldQuery = ()>
 where
     F::Fetch: FilterFetch,
 {
-	pub(crate) _world: Arc<TrustCell<World>>, // 抓住World， 因为Query可能在异步块中，需要保证WorldInner不被释放
-	pub(crate) world_ref: &'static World,
+	pub(crate) _world: World, // 抓住World， 因为Query可能在异步块中，需要保证WorldInner不被释放
+	pub(crate) world_ref: &'static WorldInner,
     pub(crate) state: Arc<QueryState<A, Q, F>>, // 如果sys是异步函数，在异步函数没有执行完时，不能删除sys，否则可能造成未定义行为， TODO
     pub(crate) last_change_tick: u32,
     pub(crate) change_tick: u32,
@@ -37,14 +35,14 @@ where
     /// called in ways that ensure the queries have unique mutable access.
     #[inline]
     pub(crate) unsafe fn new<'w>(
-        world: &'w Arc<TrustCell<World>>,
+        world: &'w World,
         state: &Arc<QueryState<A, Q, F>>,
         last_change_tick: u32,
         change_tick: u32,
     ) -> Self {
         Self {
             _world: world.clone(),
-			world_ref: std::mem::transmute(world.get()),
+			world_ref: std::mem::transmute(&**world),
             state: state.clone(),
             last_change_tick,
             change_tick,
@@ -203,7 +201,7 @@ where
     unsafe fn get_param(
         state: &'a mut Self,
         system_state: &'a SystemState,
-        world: &'a Arc<TrustCell<World>>,
+        world: &'a World,
         change_tick: u32,
     ) -> Self::Item {
         Query::new(world, state, system_state.last_change_tick, change_tick)

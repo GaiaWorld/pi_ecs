@@ -1,7 +1,5 @@
 pub use listener::FnListener;
-use share::cell::TrustCell;
 use std::borrow::Cow;
-use std::sync::Arc;
 
 use crate::world::World;
 use crate::component::ComponentId;
@@ -127,12 +125,12 @@ impl SystemState {
 /// ```
 pub trait IntoSystem<Params, SystemType: System> {
     /// Turns this value into its corresponding [`System`].
-    fn system(self, world: &mut Arc<TrustCell<World>>) -> SystemType;
+    fn system(self, world: &mut World) -> SystemType;
 }
 
 // Systems implicitly implement IntoSystem
 impl<Sys: System> IntoSystem<(), Sys> for Sys {
-    fn system(self, _world: &mut Arc<TrustCell<World>>) -> Sys {
+    fn system(self, _world: &mut World) -> Sys {
         self
     }
 }

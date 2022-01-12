@@ -3,10 +3,27 @@ use std::marker::PhantomData;
 
 use crate::{
     archetype::{ArchetypeId, ArchetypeIdent},
-    query::{Fetch, FilterFetch, QueryState, WorldQuery, EntityFetch},
-    storage::Offset,
-    world::World,
+    query::{Fetch, FilterFetch, QueryState, WorldQuery, MianFetch},
+    storage::{LocalVersion, Keys},
+    world::WorldInner,
 };
+
+pub struct EntityIter<'a>(pub(crate) Vec<Keys<'a, LocalVersion, ()>>, pub(crate) Keys<'a, LocalVersion, ()>);
+
+impl<'a> EntityIter<'a> {
+	pub fn next(&mut self) -> Option<LocalVersion> {
+		if let Some(r) = self.1.next() {
+			return Some(r);
+		}
+
+		if self.0.len() == 0 {
+			return None;
+		}
+
+		self.1 = self.0.pop().unwrap();
+		return self.1.next();
+	}
+}
 
 pub struct QueryIter<'w, 's,  A: ArchetypeIdent, Q: WorldQuery, F: WorldQuery>
 where
@@ -14,10 +31,10 @@ where
 {
 	archetype_id: ArchetypeId,
 	matchs: bool,
-    world: &'w World,
+    world: &'w WorldInner,
     fetch: &'s mut Q::Fetch,
     filter:&'s mut F::Fetch,
-	entity: EntityFetch,
+	entity: EntityIter<'s>,
 	mark: PhantomData<A>,
 }
 
@@ -26,10 +43,10 @@ where
     F::Fetch: FilterFetch,
 {
     pub(crate) unsafe fn new(
-        world: &'w World,
-        query_state: &'s QueryState<A, Q, F>,
-        _last_change_tick: u32,
-        _change_tick: u32,
+        world: &'w WorldInner,
+        query_state: &'s mut QueryState<A, Q, F>,
+        last_change_tick: u32,
+        change_tick: u32,
     ) -> Self {
         // let mut fetch = <Q::Fetch as Fetch>::init(
         //     world,
@@ -43,18 +60,37 @@ where
         //     // last_change_tick,
         //     // change_tick,
         // );
-		let fetch = &query_state.fetch_fetch;
-		let filter = &query_state.filter_fetch;
-		let mut entity = EntityFetch::init(world,
-            &query_state.entity_state);
+		let fetch = &mut query_state.fetch_fetch;
 		
-		if query_state.matchs {
-			entity.set_archetype(
-				&query_state.entity_state,
-				&world.archetypes()[query_state.archetype_id],
-				&world,
-			);
-		}
+
+		// let mut entity = EntityFetch::init(world,
+        //     &query_state.entity_state);
+		fetch.setting(world, last_change_tick, change_tick);
+		query_state.filter_fetch.setting(world, last_change_tick, change_tick);
+
+		let filter = & query_state.filter_fetch;
+		let iter = match filter.main_fetch(&query_state.filter_state, last_change_tick, change_tick) {
+			Some(r) => r,
+			None => MianFetch{
+				value: std::mem::transmute(world.archetypes()[query_state.archetype_id].entities.keys()),
+				next: None,
+			} 
+		};
+
+		let (value, mut next) = (iter.value,iter.next);
+
+		let mut iter1 = EntityIter(Vec::new(), value);
+		loop {
+			match next {
+				Some(r) => {
+					let r = Box::into_inner(r);
+					let (value, next1) = (r.value,r.next);
+					iter1.0.push(value);
+					next = next1;
+				},
+				None => break
+			}
+		} 
 		
 		#[allow(mutable_transmutes)]
         QueryIter {
@@ -63,7 +99,7 @@ where
 			matchs: query_state.matchs,
             fetch: std::mem::transmute(fetch),
             filter: std::mem::transmute(filter),
-			entity,
+			entity: iter1,
 			archetype_id: query_state.archetype_id,
             mark: PhantomData,
         }
@@ -84,13 +120,13 @@ where
 			}
 			
 			loop {
-				let entity = self.entity.archetype_fetch(0)?;
+				let entity = self.entity.next()?;
 
-				if !self.filter.archetype_filter_fetch(entity.local().offset()) {
+				if !self.filter.archetype_filter_fetch(entity) {
 					continue;
 				}
 
-				let item = self.fetch.archetype_fetch(entity.local().offset());
+				let item = self.fetch.archetype_fetch(entity);
 				if let None = item {
 					continue;
 				}

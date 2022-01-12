@@ -173,7 +173,7 @@ fn multi_exec<P1: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P1>, P2: Async
         }
     }).unwrap();
 }
-pub struct Node {
+pub struct GraphNode {
     pub(crate) id: usize,
     pub(crate) reads: Vec<usize>,
     pub(crate) writes: Vec<usize>,
@@ -222,7 +222,7 @@ impl Runnble for ExecNode {
 
 pub struct StageBuilder {
     components: HashSet<usize>,
-    systems: Vec<Node>,
+    systems: Vec<GraphNode>,
     edges: Vec<(usize, usize)>,
 }
 
@@ -235,16 +235,16 @@ impl StageBuilder {
         }
     }
 
-    pub fn add_node<T: Into<Node>>(&mut self, node: T) -> &mut Self {
+    pub fn add_node<T: Into<GraphNode>>(&mut self, node: T) -> &mut Self {
         let node = node.into();
 
         for k in &node.reads {
-            self.edges.push((*k, node.id));
             self.components.insert(*k);
+            self.edges.push((*k, node.id));
         }
         for k in &node.writes {
-            self.edges.push((node.id, *k));
             self.components.insert(*k);
+            self.edges.push((node.id, *k));
         }
         self.systems.push(node);
         self

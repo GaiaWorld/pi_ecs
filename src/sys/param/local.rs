@@ -1,12 +1,10 @@
-use share::cell::TrustCell;
-
 use crate::{
 	component::{Component},
 	sys::param::interface::{SystemParam, SystemParamFetch, SystemParamState},
 	sys::system::interface::SystemState,
 	world::{World, FromWorld}
 };
-use std::{ops::{Deref, DerefMut}, sync::Arc};
+use std::ops::{Deref, DerefMut};
 
 
 pub struct Local<T: Component>(&'static mut T);
@@ -40,7 +38,7 @@ impl<T: Component + FromWorld> SystemParam for Local<T> {
 unsafe impl<T: Component + FromWorld> SystemParamState for LocalState<T> {
     type Config = Option<T>;
 
-    fn init(world: &mut World, _system_state: &mut SystemState, config: Self::Config) -> Self {
+    fn init(world:  &mut World, _system_state: &mut SystemState, config: Self::Config) -> Self {
         Self(config.unwrap_or_else(|| T::from_world(world)))
     }
 
@@ -56,8 +54,8 @@ impl<'a, T: Component + FromWorld> SystemParamFetch<'a> for LocalState<T> {
     unsafe fn get_param(
         state: &'a mut Self,
         _system_state: &'a SystemState,
-        _world: &'a Arc<TrustCell<World>>,
-        _change_tick: u32,
+        _world: &'a World,
+        _last_change_tick: u32,
     ) -> Self::Item {
         Local(std::mem::transmute(&mut state.0))
     }

@@ -1,0 +1,12 @@
+[package]
+name = "pi_ecs_testxx"
+version = "0.1.0"
+description = "pi_ecs Macros"
+authors = ["suncy <suncy@gmail.com>"]
+edition = "2018"
+license = "MIT"
+
+
+[dependencies]
+pi_ecs_macros = { path = "../macros"}
+pi_ecs = { path = "../"}

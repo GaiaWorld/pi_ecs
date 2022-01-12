@@ -6,6 +6,11 @@ pub struct Entity {
 	archetype_id: ArchetypeId,
 	local: LocalVersion,
 }
+impl Default for Entity { 
+	fn default() -> Self {
+		Self{archetype_id: ArchetypeId::new(0), local: LocalVersion(0)}
+	}
+}
 
 impl Entity {
 	pub(crate) fn new(archetype_id: ArchetypeId, local: LocalVersion) -> Self {
