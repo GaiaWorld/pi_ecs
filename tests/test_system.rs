@@ -122,7 +122,7 @@ fn test_system(world: &mut World) {
 	stage.add_node(async_system);
 	
 	let mut stages = Vec::new();
-	stages.push((Arc::new(stage.build()), false));
+	stages.push(Arc::new(stage.build()));
 	let dispatcher = SingleDispatcher::new(stages , rt);
 
 	dispatcher.run();
