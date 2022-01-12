@@ -1,4 +1,4 @@
-use std::io::Result;
+use std::{io::Result, collections::HashSet};
 use std::sync::Arc;
 
 use async_graph::{async_graph, Runnble, Runner};
@@ -221,14 +221,16 @@ impl Runnble for ExecNode {
 }
 
 pub struct StageBuilder {
-    nodes: Vec<Node>,
+    components: HashSet<usize>,
+    systems: Vec<Node>,
     edges: Vec<(usize, usize)>,
 }
 
 impl StageBuilder {
     pub fn new() -> Self {
         StageBuilder {
-            nodes: Vec::new(),
+            components: HashSet::default(),
+            systems: Vec::new(),
             edges: Vec::new(),
         }
     }
@@ -238,11 +240,13 @@ impl StageBuilder {
 
         for k in &node.reads {
             self.edges.push((*k, node.id));
+            self.components.insert(*k);
         }
         for k in &node.writes {
             self.edges.push((node.id, *k));
+            self.components.insert(*k);
         }
-        self.nodes.push(node);
+        self.systems.push(node);
         self
     }
 
@@ -252,7 +256,10 @@ impl StageBuilder {
     }
     pub fn build(self) -> NGraph<usize, ExecNode> {
         let mut builder = NGraphBuilder::new();
-        for n in self.nodes {
+        for id in self.components {
+            builder = builder.node(id, ExecNode::None);
+        }
+        for n in self.systems {
             builder = builder.node(n.id, n.node);
         }
         for n in self.edges {
