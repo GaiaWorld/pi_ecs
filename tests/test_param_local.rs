@@ -32,7 +32,6 @@ fn local(
 	println!("local run, local1: {:?}, local2: {:?}", *local1, *local2);
 }
 
-/// 测试=系统参数Join
 #[test]
 fn test() {
 	

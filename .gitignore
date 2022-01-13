@@ -2,4 +2,4 @@
 **/target
 **/*.png
 /.cargo
-/Cargo.lock
+**/Cargo.lock

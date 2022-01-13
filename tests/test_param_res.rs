@@ -20,7 +20,6 @@ fn res(
 	println!("res run, res1: {:?}, res2: {:?}", *res1, *res2);
 }
 
-/// 测试系统参数Tick
 #[test]
 fn test() {
 	

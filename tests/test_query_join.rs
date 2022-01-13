@@ -54,7 +54,7 @@ fn join(
 	}
 }
 
-/// 测试=系统参数Join
+/// 测试系统参数Join
 #[test]
 fn test() {
 	

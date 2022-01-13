@@ -46,7 +46,6 @@ fn listener_component_create(
 	println!("run listener_component_create, entity: {:?}", input.id);
 }
 
-/// 测试=系统参数Join
 #[test]
 fn test() {
 	
