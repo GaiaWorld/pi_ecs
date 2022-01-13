@@ -1,4 +1,5 @@
 /// 测试组件查询Write
+/// Wirte与&mut不同的是，Wirte除了可以修改组件，还可以同事发出修改事件
 
 use pi_ecs::{prelude::{World, StageBuilder, SingleDispatcher, Dispatcher, Query, Write}, sys::system::IntoSystem, monitor::{Event, Listeners, ListenSetup}};
 use pi_ecs_macros::listen;

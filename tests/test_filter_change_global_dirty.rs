@@ -1,4 +1,5 @@
 /// 测试Filter: Changed
+/// 该过滤器基于监听器，使用组件的修改发出了事件，Changed才能感知到
 
 use std::sync::Arc;
 
