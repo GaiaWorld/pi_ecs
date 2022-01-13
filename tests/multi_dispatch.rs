@@ -3,7 +3,6 @@ use pi_ecs::prelude::*;
 use r#async::rt::{
     multi_thread::MultiTaskRuntimeBuilder, single_thread::SingleTaskRunner, AsyncRuntime,
 };
-use share::cell::TrustCell;
 use std::{io::Result, sync::Arc};
 
 // 同步 System
@@ -35,8 +34,7 @@ fn sync_stage2_system2() {
 #[test]
 fn multi_dispatch() {
     
-    let world = World::new();
-    let mut w = Arc::new(TrustCell::new(world));
+    let mut world = World::new();
 
     let mut stages = Vec::new();
     // 创建 单线程 异步运行时
@@ -46,8 +44,8 @@ fn multi_dispatch() {
     {
         let mut s1 = StageBuilder::new();
 
-        s1.add_node(sync_stage1_system1.system(&mut w));
-        s1.add_node(sync_stage1_system2.system(&mut w));
+        s1.add_node(sync_stage1_system1.system(&mut world));
+        s1.add_node(sync_stage1_system2.system(&mut world));
 
         // 第二个参数：是否单线程执行
         stages.push((Arc::new(s1.build()), None));
@@ -55,8 +53,8 @@ fn multi_dispatch() {
     {
         let mut s2 = StageBuilder::new();
 
-        s2.add_node(async_stage2_system1.system(&mut w));
-        s2.add_node(sync_stage2_system2.system(&mut w));
+        s2.add_node(async_stage2_system1.system(&mut world));
+        s2.add_node(sync_stage2_system2.system(&mut world));
 
         // 第二个参数：是否单线程执行
         stages.push((Arc::new(s2.build()), Some(single.clone())));

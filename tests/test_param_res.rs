@@ -1,3 +1,5 @@
+/// 测试系统参数Res、ResMut
+
 use pi_ecs::{prelude::{World, StageBuilder, SingleDispatcher, Dispatcher, Res, ResMut}, sys::system::IntoSystem};
 use r#async::rt::{multi_thread::{MultiTaskRuntimeBuilder, StealableTaskPool}, AsyncRuntime};
 use std::sync::Arc;
@@ -46,7 +48,7 @@ fn get_dispatcher(world: &mut World) -> SingleDispatcher<StealableTaskPool<()>> 
 	stage.add_node(join_system);
 	
 	let mut stages = Vec::new();
-	stages.push((Arc::new(stage.build()), false));
+	stages.push(Arc::new(stage.build()));
 	let dispatcher = SingleDispatcher::new(stages , rt);
 
 	dispatcher

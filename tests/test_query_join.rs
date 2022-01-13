@@ -1,3 +1,5 @@
+/// 测试Join查询
+
 use std::ops::{Deref, DerefMut};
 
 use pi_ecs::{prelude::{Query, World, Entity, StageBuilder, SingleDispatcher, Dispatcher, Join}, sys::system::IntoSystem, storage::Offset};
@@ -100,7 +102,7 @@ fn test_system(world: &mut World) {
 	stage.add_node(join_system);
 	
 	let mut stages = Vec::new();
-	stages.push((Arc::new(stage.build()), false));
+	stages.push(Arc::new(stage.build()));
 	let dispatcher = SingleDispatcher::new(stages , rt);
 
 	dispatcher.run();

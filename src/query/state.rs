@@ -82,15 +82,15 @@ where
         let archetypes = world.archetypes();
 		let archetype = &archetypes[self.archetype_id];
 
-		self.fetch_state.update_archetype_component_access(archetype, &mut self.archetype_component_access);
-        self.filter_state.update_archetype_component_access(archetype, &mut self.archetype_component_access);
-
 		self.matchs = 
 			self.fetch_state.matches_archetype(archetype, world) &&
 			self.filter_state.matches_archetype(archetype, world) &&
 			self.entity_state.matches_archetype(archetype, world);
 		
 		if self.matchs {
+			self.fetch_state.update_archetype_component_access(archetype, &mut self.archetype_component_access);
+        	self.filter_state.update_archetype_component_access(archetype, &mut self.archetype_component_access);
+		
 			unsafe{ self.fetch_fetch.set_archetype(&self.fetch_state, archetype, world)};
 			unsafe{ self.filter_fetch.set_archetype(&self.filter_state, archetype, world)};
 

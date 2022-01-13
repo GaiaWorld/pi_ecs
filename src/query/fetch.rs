@@ -76,7 +76,8 @@ pub unsafe trait FetchState: Send + Sync + Sized {
 	/// 更新组件
 	fn update_component_access(&self, access: &mut FilteredAccess<ComponentId>);
     fn update_archetype_component_access(&self, archetype: &Archetype, access: &mut Access<ArchetypeComponentId>);
-    fn matches_archetype(&self, archetype: &Archetype, world: &World) -> bool;
+    fn matches_archetype(&mut self, archetype: &Archetype, world: &World) -> bool;
+	fn get_matches(&self) -> bool;
 	fn set_archetype<A: 'static + Send + Sync>(&self, _world: &mut World) {}
     // fn matches_table(&self, table: &Table) -> bool;
 }
@@ -116,9 +117,13 @@ unsafe impl FetchState for EntityState {
     fn update_archetype_component_access(&self, _archetype: &Archetype, _access: &mut Access<ComponentId>) {}
 
     #[inline]
-    fn matches_archetype(&self, _archetype: &Archetype, _world: &World) -> bool {
+    fn matches_archetype(&mut self, _archetype: &Archetype, _world: &World) -> bool {
         true
     }
+
+	fn get_matches(&self) -> bool {
+		true
+	}
 }
 
 impl Fetch for EntityFetch {
@@ -164,6 +169,7 @@ impl<T: Component> WorldQuery for &T {
 
 pub struct ReadState<T> {
     pub(crate) component_id: ComponentId,
+	matchs: bool,
     marker: PhantomData<T>,
 }
 
@@ -178,6 +184,7 @@ unsafe impl<T: Component> FetchState for ReadState<T> {
         let component_info = world.components.get_info(component_id).unwrap();
         ReadState {
             component_id: component_info.id(),
+			matchs: false,
             marker: PhantomData,
         }
     }
@@ -200,9 +207,14 @@ unsafe impl<T: Component> FetchState for ReadState<T> {
     }
 
 
-    fn matches_archetype(&self, archetype: &Archetype, _world: &World) -> bool {
-        archetype.contains(self.component_id)
+    fn matches_archetype(&mut self, archetype: &Archetype, _world: &World) -> bool {
+        self.matchs = archetype.contains(self.component_id);
+		self.matchs
     }
+
+	fn get_matches(&self) -> bool {
+		self.matchs
+	}
 }
 
 pub struct ReadFetch<T> {
@@ -305,6 +317,7 @@ impl<T: Component> Fetch for MutFetch<T> {
 
 pub struct MutState<T> {
     component_id: ComponentId,
+	matchs: bool,
     marker: PhantomData<T>,
 }
 
@@ -319,6 +332,7 @@ unsafe impl<T: Component> FetchState for MutState<T> {
         let component_info = world.components.get_info(component_id).unwrap();
         MutState {
             component_id: component_info.id(),
+			matchs: false,
             marker: PhantomData,
         }
     }
@@ -341,9 +355,14 @@ unsafe impl<T: Component> FetchState for MutState<T> {
     }
 
 
-    fn matches_archetype(&self, archetype: &Archetype, _world: &World) -> bool {
-        archetype.contains(self.component_id)
+    fn matches_archetype(&mut self, archetype: &Archetype, _world: &World) -> bool {
+        self.matchs = archetype.contains(self.component_id);
+		self.matchs
     }
+
+	fn get_matches(&self) -> bool {
+		self.matchs
+	}
 }
 
 pub struct Write<T>(PhantomData<T>);
@@ -475,16 +494,18 @@ unsafe impl<T: Component> FetchState for WriteState<T> {
 	}
 
     fn update_archetype_component_access(&self, archetype: &Archetype, access: &mut Access<ArchetypeComponentId>) {
-		let archetype_component_id = unsafe { archetype.archetype_component_id(self.component_id)};
-        if access.has_write(archetype_component_id) {
-            panic!("&{} conflicts with a previous access in this query. Shared access cannot coincide with exclusive access.",
-                std::any::type_name::<T>());
-        }
-		access.add_write(archetype_component_id)
+		if archetype.contains(self.component_id) {
+			let archetype_component_id = unsafe { archetype.archetype_component_id(self.component_id)};
+			if access.has_write(archetype_component_id) {
+				panic!("&{} conflicts with a previous access in this query. Shared access cannot coincide with exclusive access.",
+					std::any::type_name::<T>());
+			}
+			access.add_write(archetype_component_id)
+		}
     }
 
 
-    fn matches_archetype(&self, archetype: &Archetype, _world: &World) -> bool {
+    fn matches_archetype(&mut self, archetype: &Archetype, _world: &World) -> bool {
         archetype.contains(self.component_id)
     }
 }
@@ -504,6 +525,7 @@ unsafe impl<T: ReadOnlyFetch> ReadOnlyFetch for OptionFetch<T> {}
 
 pub struct OptionState<T: FetchState> {
     state: T,
+	matchs: bool,
 }
 
 // SAFE: component access and archetype component access are properly updated according to the
@@ -512,6 +534,7 @@ unsafe impl<T: FetchState> FetchState for OptionState<T> {
     fn init(world: &mut World) -> Self {
         Self {
             state: T::init(world),
+			matchs: false
         }
     }
 
@@ -520,10 +543,13 @@ unsafe impl<T: FetchState> FetchState for OptionState<T> {
 	}
 
     fn update_archetype_component_access(&self, archetype: &Archetype, access: &mut Access<ArchetypeComponentId>) {
-        self.state.update_archetype_component_access(archetype, access);
+		if self.matchs {
+			self.state.update_archetype_component_access(archetype, access);
+		}
     }
 
-    fn matches_archetype(&self, _archetype: &Archetype, _world: &World) -> bool {
+    fn matches_archetype(&mut self, archetype: &Archetype, world: &World) -> bool {
+		self.matchs = self.state.matches_archetype(archetype, world);
         true
 	}
 }
@@ -636,7 +662,7 @@ macro_rules! impl_tuple_fetch {
 
 
 			#[allow(unused_variables)]
-            fn matches_archetype(&self, _archetype: &Archetype, world: &World) -> bool {
+            fn matches_archetype(&mut self, _archetype: &Archetype, world: &World) -> bool {
                 let ($($name,)*) = self;
                 true $(&& $name.matches_archetype(_archetype, world))*
             }

@@ -1,3 +1,5 @@
+/// 测试Filter: Changed
+
 use std::sync::Arc;
 
 use pi_ecs::{prelude::{Query, Changed, IntoSystem, StageBuilder, SingleDispatcher, Dispatcher}, entity::Entity, world::World};
@@ -63,7 +65,7 @@ fn create_dispatcher(world: &mut World) -> SingleDispatcher<StealableTaskPool<()
 	stage.add_node(iter_dirty_system);
 	
 	let mut stages = Vec::new();
-	stages.push((Arc::new(stage.build()), false));
+	stages.push(Arc::new(stage.build()));
 	let dispatcher = SingleDispatcher::new(stages , rt);
 
 	return dispatcher;
