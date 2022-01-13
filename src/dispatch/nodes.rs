@@ -5,6 +5,7 @@ use share::cell::TrustCell;
 use futures::future::BoxFuture;
 
 use crate::{
+	world::World,
 	sys::{
 		system::{
 			func_sys::{
@@ -17,7 +18,7 @@ use crate::{
 	},
 };
 
-use crate::dispatch::interface::{GraphNode, ExecNode};
+use crate::dispatch::interface::{GraphNode, ExecNode, Arrange};
 
 use super::interface::Run;
 
@@ -58,5 +59,20 @@ impl<Param: SystemParam + 'static, F> Into<GraphNode> for FunctionSystem<(), Box
 				sys.borrow_mut().run(())
 			}))
 		}
+	}
+}
+
+impl Arrange for World {
+	fn arrang(&self) -> Option<GraphNode> {
+		let mut w = self.clone();
+		let id = w.archetype_component_grow();
+		Some(GraphNode {
+			id,
+			reads: Vec::new(),
+			writes: Vec::new(),
+			node: ExecNode::Sync(Run(Arc::new(move|| {
+				w.increment_change_tick();
+			})))
+		})
 	}
 }

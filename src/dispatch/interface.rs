@@ -16,9 +16,21 @@ pub struct SingleDispatcher<P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P
 }
 
 impl<P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P>> SingleDispatcher<P> {
-    pub fn new(vec: Vec<Arc<NGraph<usize, ExecNode>>>, rt: AsyncRuntime<(), P>) -> Self {
+    pub fn new<T: Arrange>(vec: Vec<Arc<NGraph<usize, ExecNode>>>, arrange: &T, rt: AsyncRuntime<(), P>) -> Self {
+		let mut v1 = Vec::new();
+		for i in vec.into_iter() {
+			v1.push(i);
+
+			// arrange node
+			if let Some(node) = arrange.arrang() {
+				let mut stage = StageBuilder::new();
+				stage.add_node(node);
+				
+				v1.push(Arc::new(stage.build()))
+			}
+		}
         SingleDispatcher {
-            vec: Arc::new(vec),
+            vec: Arc::new(v1),
             rt,
         }
     }
@@ -267,4 +279,8 @@ impl StageBuilder {
         }
         builder.build().unwrap()
     }
+}
+
+pub trait Arrange {
+	fn arrang(&self) -> Option<GraphNode>;
 }
