@@ -1,6 +1,6 @@
 /// 测试组件Option查询
 
-use pi_ecs::{prelude::{World, StageBuilder, SingleDispatcher, Dispatcher, Query}, sys::system::IntoSystem, entity::Entity, storage::Offset};
+use pi_ecs::{prelude::{World, StageBuilder, SingleDispatcher, Dispatcher, Query}, sys::system::IntoSystem};
 use r#async::rt::{multi_thread::{MultiTaskRuntimeBuilder, StealableTaskPool}, AsyncRuntime};
 use std::sync::Arc;
 
@@ -45,10 +45,10 @@ fn test() {
 
 fn get_dispatcher(world: &mut World) -> SingleDispatcher<StealableTaskPool<()>> {
 	let rt = AsyncRuntime::Multi(MultiTaskRuntimeBuilder::default().build());
-	let join_system = option.system(world);
+	let system = option.system(world);
 
 	let mut stage = StageBuilder::new();
-	stage.add_node(join_system);
+	stage.add_node(system);
 	
 	let mut stages = Vec::new();
 	stages.push(Arc::new(stage.build()));

@@ -57,10 +57,10 @@ fn test() {
 
 fn get_dispatcher(world: &mut World) -> SingleDispatcher<StealableTaskPool<()>> {
 	let rt = AsyncRuntime::Multi(MultiTaskRuntimeBuilder::default().build());
-	let join_system = ref_.system(world);
+	let system = ref_.system(world);
 
 	let mut stage = StageBuilder::new();
-	stage.add_node(join_system);
+	stage.add_node(system);
 	
 	let mut stages = Vec::new();
 	stages.push(Arc::new(stage.build()));

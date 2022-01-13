@@ -1,3 +1,5 @@
+/// 测试System
+
 use futures::future::{BoxFuture, FutureExt};
 use pi_ecs::{prelude::{Query, With,Res, World, Local, ResMut, Entity, StageBuilder, SingleDispatcher, Dispatcher}, sys::system::IntoSystem};
 use r#async::rt::{multi_thread::MultiTaskRuntimeBuilder, AsyncRuntime};

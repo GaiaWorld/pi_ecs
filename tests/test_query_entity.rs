@@ -1,4 +1,4 @@
-/// 测试组件引用查询（&， &mut）
+/// 测试Entity查询
 
 use pi_ecs::{prelude::{World, StageBuilder, SingleDispatcher, Dispatcher, Query}, sys::system::IntoSystem, entity::Entity, storage::Offset};
 use r#async::rt::{multi_thread::{MultiTaskRuntimeBuilder, StealableTaskPool}, AsyncRuntime};
@@ -48,10 +48,10 @@ fn test() {
 
 fn get_dispatcher(world: &mut World) -> SingleDispatcher<StealableTaskPool<()>> {
 	let rt = AsyncRuntime::Multi(MultiTaskRuntimeBuilder::default().build());
-	let join_system = entity.system(world);
+	let system = entity.system(world);
 
 	let mut stage = StageBuilder::new();
-	stage.add_node(join_system);
+	stage.add_node(system);
 	
 	let mut stages = Vec::new();
 	stages.push(Arc::new(stage.build()));

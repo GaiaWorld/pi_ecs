@@ -182,7 +182,8 @@ impl<T: Component> FilterFetch for WithOutFetch<T> {
 		if self.not_component {
 			return true;
 		} else {
-			std::mem::transmute((&mut *(self.read_fetch.container as *mut MultiCaseImpl<T>)).contains_key(&local))
+			let r:bool = std::mem::transmute((&mut *(self.read_fetch.container as *mut MultiCaseImpl<T>)).contains_key(&local));
+			!r
 		}
 	}
 }
