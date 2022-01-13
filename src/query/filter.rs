@@ -62,7 +62,7 @@ unsafe impl<T: Component> FetchState for WithState<T> {
     fn update_archetype_component_access(&self, _archetype: &Archetype, _access: &mut Access<ArchetypeComponentId>) {
     }
 	
-    fn matches_archetype(&mut self, archetype: &Archetype, _world: &World) -> bool {
+    fn matches_archetype(&self, archetype: &Archetype) -> bool {
 		archetype.contains(self.read_state.component_id)
     }
 }
@@ -138,7 +138,7 @@ unsafe impl<T: Component> FetchState for WithOutState<T> {
 		self.read_state.update_archetype_component_access(archetype, access);
     }
 	
-    fn matches_archetype(&mut self, _archetype: &Archetype, _world: &World) -> bool {
+    fn matches_archetype(&self, _archetype: &Archetype,) -> bool {
 		true
     }
 }
@@ -260,7 +260,7 @@ macro_rules! impl_query_filter_tuple {
                 let ($($filter,)*) = &mut self.0;
                 let ($($state,)*) = &state.0;
                 $(
-                    $filter.matches = $state.matches_archetype(archetype, world);
+                    $filter.matches = $state.matches_archetype(archetype);
                     if $filter.matches {
                         $filter.fetch.set_archetype($state, archetype, world);
                     }
@@ -284,7 +284,7 @@ macro_rules! impl_query_filter_tuple {
 				// let ($($filter,)*) = &mut self.0;
                 // let ($($state,)*) = &state.0;
                 // $(
-                //     $filter.matches = $state.matches_archetype(archetype, world);
+                //     $filter.matches = $state.matches_archetype(archetype);
                 //     if $filter.matches {
                 //         $filter.fetch.set_archetype( world);
                 //     }
@@ -301,9 +301,9 @@ macro_rules! impl_query_filter_tuple {
                 $($filter.update_archetype_component_access(archetype, access);)*
             }
 
-            fn matches_archetype(&mut self, archetype: &Archetype, world: &World) -> bool {
+            fn matches_archetype(&self, archetype: &Archetype) -> bool {
                 let ($($filter,)*) = &self.0;
-                false $(|| $filter.matches_archetype(archetype, world))*
+                false $(|| $filter.matches_archetype(archetype))*
             }
         }
 
@@ -407,7 +407,7 @@ macro_rules! impl_tick_filter {
                 access.add_read(archetype_component_id);
             }
 
-            fn matches_archetype(&mut self, archetype: &Archetype, _world: &World) -> bool {
+            fn matches_archetype(&self, archetype: &Archetype) -> bool {
                 archetype.contains(self.component_id)
             }
 			fn set_archetype<A: 'static + Send + Sync>(&self, world: &mut World) {

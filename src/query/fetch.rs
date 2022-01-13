@@ -76,8 +76,8 @@ pub unsafe trait FetchState: Send + Sync + Sized {
 	/// 更新组件
 	fn update_component_access(&self, access: &mut FilteredAccess<ComponentId>);
     fn update_archetype_component_access(&self, archetype: &Archetype, access: &mut Access<ArchetypeComponentId>);
-    fn matches_archetype(&mut self, archetype: &Archetype, world: &World) -> bool;
-	fn get_matches(&self) -> bool;
+    fn matches_archetype(&self, archetype: &Archetype) -> bool;
+	// fn get_matches(&self) -> bool;
 	fn set_archetype<A: 'static + Send + Sync>(&self, _world: &mut World) {}
     // fn matches_table(&self, table: &Table) -> bool;
 }
@@ -117,13 +117,9 @@ unsafe impl FetchState for EntityState {
     fn update_archetype_component_access(&self, _archetype: &Archetype, _access: &mut Access<ComponentId>) {}
 
     #[inline]
-    fn matches_archetype(&mut self, _archetype: &Archetype, _world: &World) -> bool {
+    fn matches_archetype(&self, _archetype: &Archetype,) -> bool {
         true
     }
-
-	fn get_matches(&self) -> bool {
-		true
-	}
 }
 
 impl Fetch for EntityFetch {
@@ -147,8 +143,6 @@ impl Fetch for EntityFetch {
         archetype: &Archetype,
 		_world: &World,
     ) {
-		// self.container =
-		// self.iter.write(std::mem::transmute(archetype.entities.keys()));
 		self.archetype_id = archetype.id();
     }
 
@@ -169,7 +163,6 @@ impl<T: Component> WorldQuery for &T {
 
 pub struct ReadState<T> {
     pub(crate) component_id: ComponentId,
-	matchs: bool,
     marker: PhantomData<T>,
 }
 
@@ -184,7 +177,6 @@ unsafe impl<T: Component> FetchState for ReadState<T> {
         let component_info = world.components.get_info(component_id).unwrap();
         ReadState {
             component_id: component_info.id(),
-			matchs: false,
             marker: PhantomData,
         }
     }
@@ -207,14 +199,9 @@ unsafe impl<T: Component> FetchState for ReadState<T> {
     }
 
 
-    fn matches_archetype(&mut self, archetype: &Archetype, _world: &World) -> bool {
-        self.matchs = archetype.contains(self.component_id);
-		self.matchs
+    fn matches_archetype(&self, archetype: &Archetype) -> bool {
+        archetype.contains(self.component_id)
     }
-
-	fn get_matches(&self) -> bool {
-		self.matchs
-	}
 }
 
 pub struct ReadFetch<T> {
@@ -317,7 +304,6 @@ impl<T: Component> Fetch for MutFetch<T> {
 
 pub struct MutState<T> {
     component_id: ComponentId,
-	matchs: bool,
     marker: PhantomData<T>,
 }
 
@@ -332,7 +318,6 @@ unsafe impl<T: Component> FetchState for MutState<T> {
         let component_info = world.components.get_info(component_id).unwrap();
         MutState {
             component_id: component_info.id(),
-			matchs: false,
             marker: PhantomData,
         }
     }
@@ -355,14 +340,9 @@ unsafe impl<T: Component> FetchState for MutState<T> {
     }
 
 
-    fn matches_archetype(&mut self, archetype: &Archetype, _world: &World) -> bool {
-        self.matchs = archetype.contains(self.component_id);
-		self.matchs
+    fn matches_archetype(&self, archetype: &Archetype) -> bool {
+        archetype.contains(self.component_id)
     }
-
-	fn get_matches(&self) -> bool {
-		self.matchs
-	}
 }
 
 pub struct Write<T>(PhantomData<T>);
@@ -422,7 +402,9 @@ impl<T: Component> Fetch for WriteFetch<T> {
         }
     }
 
-	unsafe fn setting(&mut self, _world: &WorldInner, _last_change_tick: u32, change_tick: u32) {
+	unsafe fn setting(
+		&mut self, 
+		_world: &WorldInner, _last_change_tick: u32, change_tick: u32) {
 		self.tick = change_tick;
 	}
 
@@ -505,7 +487,7 @@ unsafe impl<T: Component> FetchState for WriteState<T> {
     }
 
 
-    fn matches_archetype(&mut self, archetype: &Archetype, _world: &World) -> bool {
+    fn matches_archetype(&self, archetype: &Archetype) -> bool {
         archetype.contains(self.component_id)
     }
 }
@@ -548,8 +530,7 @@ unsafe impl<T: FetchState> FetchState for OptionState<T> {
 		}
     }
 
-    fn matches_archetype(&mut self, archetype: &Archetype, world: &World) -> bool {
-		self.matchs = self.state.matches_archetype(archetype, world);
+    fn matches_archetype(&self, _archetype: &Archetype) -> bool {
         true
 	}
 }
@@ -575,7 +556,7 @@ impl<T: Fetch> Fetch for OptionFetch<T> {
         archetype: &Archetype,
 		world: &World,
     ) {
-		self.matches = state.state.matches_archetype(archetype, world);
+		self.matches = state.state.matches_archetype(archetype);
 		if self.matches {
         	self.fetch.set_archetype(&state.state, archetype, world);
 		} else {
@@ -662,9 +643,9 @@ macro_rules! impl_tuple_fetch {
 
 
 			#[allow(unused_variables)]
-            fn matches_archetype(&mut self, _archetype: &Archetype, world: &World) -> bool {
+            fn matches_archetype(&self, _archetype: &Archetype) -> bool {
                 let ($($name,)*) = self;
-                true $(&& $name.matches_archetype(_archetype, world))*
+                true $(&& $name.matches_archetype(_archetype))*
             }
         }
 

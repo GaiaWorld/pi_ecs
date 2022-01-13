@@ -83,9 +83,9 @@ where
 		let archetype = &archetypes[self.archetype_id];
 
 		self.matchs = 
-			self.fetch_state.matches_archetype(archetype, world) &&
-			self.filter_state.matches_archetype(archetype, world) &&
-			self.entity_state.matches_archetype(archetype, world);
+			self.fetch_state.matches_archetype(archetype) &&
+			self.filter_state.matches_archetype(archetype) &&
+			self.entity_state.matches_archetype(archetype);
 		
 		if self.matchs {
 			self.fetch_state.update_archetype_component_access(archetype, &mut self.archetype_component_access);

@@ -140,8 +140,8 @@ unsafe impl<C: Component + Deref<Target = Entity>, A: Send + Sync + 'static, Q: 
 		self.filter_state.update_archetype_component_access(a, access);
     }
 
-    fn matches_archetype(&mut self, archetype: &Archetype, world: &World) -> bool {
-		let inner_archetype = &world.archetypes()[self.archetype_id];
-		archetype.contains(self.component_id) && self.fetch_state.matches_archetype(inner_archetype, world) && self.filter_state.matches_archetype(inner_archetype, world)
+    fn matches_archetype(&self, archetype: &Archetype) -> bool {
+		let inner_archetype = &self.world.archetypes()[self.archetype_id];
+		archetype.contains(self.component_id) && self.fetch_state.matches_archetype(inner_archetype) && self.filter_state.matches_archetype(inner_archetype)
 	}
 }
