@@ -46,12 +46,12 @@ fn test() {
 		entitys.push(id);
 	}
 
-	println!("change 3: ");
+	println!("change count 3: ");
 	dispatcher.run();
 	std::thread::sleep(std::time::Duration::new(1, 0));
-	world.increment_change_tick();
+
 	world.insert_component(entitys[1].clone(), Position(10));
-	println!("change 1: ");
+	println!("change count 1: ");
 	dispatcher.run();
 
 	std::thread::sleep(std::time::Duration::new(2, 0));
@@ -67,7 +67,7 @@ fn create_dispatcher(world: &mut World) -> SingleDispatcher<StealableTaskPool<()
 	
 	let mut stages = Vec::new();
 	stages.push(Arc::new(stage.build()));
-	let dispatcher = SingleDispatcher::new(stages , rt);
+	let dispatcher = SingleDispatcher::new(stages, world, rt);
 
 	return dispatcher;
 }

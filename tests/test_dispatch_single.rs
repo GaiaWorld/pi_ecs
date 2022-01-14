@@ -62,7 +62,7 @@ fn single_runtime() {
     let runtime = runner.startup().unwrap();
     let single = AsyncRuntime::Local(runtime);
 
-    let dispatcher = SingleDispatcher::new(stages, single);
+    let dispatcher = SingleDispatcher::new(stages, &world, single);
     dispatcher.run();
     
     // 单线程 异步运行时，哪个线程推，就由哪个线程执行 future

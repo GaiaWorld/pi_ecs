@@ -103,7 +103,7 @@ fn test_system(world: &mut World) {
 	
 	let mut stages = Vec::new();
 	stages.push(Arc::new(stage.build()));
-	let dispatcher = SingleDispatcher::new(stages , rt);
+	let dispatcher = SingleDispatcher::new(stages, world, rt);
 
 	dispatcher.run();
 }

@@ -25,8 +25,6 @@ fn test() {
 	println!("第一次运行：");
 	dispatcher.run();
 
-	world.increment_change_tick();
-
 	// 第二次运行，节拍为2
 	println!("第二次运行：");
 	dispatcher.run();
@@ -43,7 +41,7 @@ fn get_dispatcher(world: &mut World) -> SingleDispatcher<StealableTaskPool<()>> 
 	
 	let mut stages = Vec::new();
 	stages.push(Arc::new(stage.build()));
-	let dispatcher = SingleDispatcher::new(stages , rt);
+	let dispatcher = SingleDispatcher::new(stages, world, rt);
 
 	dispatcher
 }
