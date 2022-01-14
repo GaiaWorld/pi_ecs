@@ -30,8 +30,8 @@ impl<T: FromOffset> Access<T> {
         self.writes.grow(bits);
     }
 
-	pub fn get_reads(&self) -> &FixedBitSet {
-		&self.reads
+	pub fn get_reads_and_writes(&self) -> &FixedBitSet {
+		&self.reads_and_writes
 	}
 
 	pub fn get_writes(&self) -> &FixedBitSet {

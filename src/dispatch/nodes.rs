@@ -29,7 +29,10 @@ impl<Param: SystemParam + 'static, F> Into<GraphNode> for FunctionSystem<(), (),
 	default fn into(self) -> GraphNode {
 		let id = self.id();
 		let component_access = self.archetype_component_access();
-		let reads = component_access.get_reads().ones().into_iter().collect();
+		let reads = component_access
+								.get_reads_and_writes()
+								.difference(component_access.get_writes())
+								.collect();
 		let writes = component_access.get_writes().ones().into_iter().collect();
 		let sys = TrustCell::new(self);
 		GraphNode{
@@ -48,7 +51,11 @@ impl<Param: SystemParam + 'static, F> Into<GraphNode> for FunctionSystem<(), Box
 	fn into(self) -> GraphNode {
 		let id = self.id();
 		let component_access = self.archetype_component_access();
-		let reads = component_access.get_reads().ones().into_iter().collect();
+		
+		let reads = component_access
+								.get_reads_and_writes()
+								.difference(component_access.get_writes())
+								.collect();
 		let writes = component_access.get_writes().ones().into_iter().collect();
 		let sys = TrustCell::new(self);
 		GraphNode{

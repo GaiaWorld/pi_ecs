@@ -20,7 +20,7 @@ where
 {
     world_id: WorldId,
 	pub(crate) archetype_id: ArchetypeId, // A对应的实体id
-	pub(crate) component_access: FilteredAccess<ComponentId>,
+	pub(crate) component_access: FilteredAccess<ComponentId>, // 暂时没用
     pub(crate) archetype_component_access: Access<ArchetypeComponentId>,
     pub(crate) fetch_state: Q::State,
     pub(crate) filter_state: F::State,
