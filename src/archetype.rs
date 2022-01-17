@@ -23,6 +23,7 @@ use hash::XHashMap;
 pub struct Archetype {
 	// 原型id
     id: ArchetypeId,
+	archetype_component_id: ArchetypeComponentId, // 实体id
 	// 该原型下的实体
     pub(crate) entities: DenseSlotMap<LocalVersion, ()>,
 	//实体变化监听器
@@ -43,9 +44,10 @@ pub struct Archetype {
 
 impl Archetype {
 	/// 创建原型，创建的原型中还未注册组件类型，需要再调用
-	pub fn new(id: ArchetypeId) -> Self {
+	pub fn new(id: ArchetypeId, archetype_component_id: ArchetypeComponentId) -> Self {
 		Self {
 			id,
+			archetype_component_id,
 			entities: DenseSlotMap::default(),
 			entity_listners: NotifyImpl::default(),
 
@@ -54,6 +56,10 @@ impl Archetype {
 			archetype_component_ids: SecondaryMap::with_capacity(0),
 			component_ids: Vec::default(),
 		}
+	}
+
+	pub fn entity_archetype_component_id(&self) -> ArchetypeComponentId {
+		self.archetype_component_id
 	}
 
 	/// 为原型注册组件类型
@@ -267,7 +273,7 @@ impl Archetypes {
 		}
 
 		let id = ArchetypeId::new(self.archetypes.len());
-		let archetype = Archetype::new(id);
+		let archetype = Archetype::new(id, Local::new(self.archetype_component_grow()));
 		archetype
     }
 

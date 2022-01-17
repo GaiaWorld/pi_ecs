@@ -5,15 +5,17 @@ use std::ops::{Deref, DerefMut};
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
+use map::Map;
 use share::cell::TrustCell;
 
-use crate::archetype::{Archetype, Archetypes, ArchetypeId, ArchetypeIdent};
+use crate::archetype::{Archetype, Archetypes, ArchetypeId, ArchetypeIdent, ArchetypeComponentId};
 use crate::component::{Components, ComponentId, Component};
 use crate::entity::Entity;
 use crate::monitor::{EventType, Listener};
 use crate::query::{WorldQuery, QueryState};
-use crate::storage::{LocalVersion, Local};
+use crate::storage::{LocalVersion, Local, SecondaryMap};
 use crate::sys::param::res::ResState;
+use crate::query::Access;
 
 
 
@@ -59,6 +61,9 @@ pub struct WorldInner {
 	pub(crate) components: Components,
 	pub(crate) archetypes: Archetypes,
 
+	/// 该字段描述了监听器监听的组件做访问的数据id
+	pub(crate) listener_access: SecondaryMap<ArchetypeComponentId, Vec<Access<ArchetypeComponentId>>>,
+
 	pub(crate) change_tick: AtomicU32,
 	pub(crate) last_change_tick: u32,
 }
@@ -69,6 +74,7 @@ impl WorldInner {
 			id: WorldId(0),
 			components: Components::new(),
 			archetypes: Archetypes::new(),
+			listener_access: SecondaryMap::with_capacity(0),
 			change_tick: AtomicU32::new(1),
 			last_change_tick: 0,
 		}

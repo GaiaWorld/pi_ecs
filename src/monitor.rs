@@ -1,10 +1,19 @@
+use std::any::TypeId;
 
 pub use listener::FnListener;
 use listener::{Listener as LibListener, Listeners as LibListeners};
+use map::Map;
 use pi_ecs_macros::all_tuples;
 use share::{Share, cell::TrustCell};
 use std::{ops::Deref, sync::Arc, marker::PhantomData};
-use crate::{world::World, entity::Entity, component::Component, sys::{system::{System, IntoSystem, SystemState, InputMarker, func_sys::{FunctionSystem, SystemParamFunction, SysInput}}, param::{SystemParam, SystemParamFetch, SystemParamState}}};
+use crate::{
+	world::World, 
+	entity::Entity, 
+	component::Component, 
+	query::Access,
+	sys::{system::{System, IntoSystem, SystemState, InputMarker, func_sys::{FunctionSystem, SystemParamFunction, SysInput}}, 
+	param::{SystemParam, SystemParamFetch, SystemParamState}}, archetype::ArchetypeComponentId};
+
 
 impl SysInput for Event {}
 pub trait Listeners<P, ListenerType> {
@@ -29,6 +38,7 @@ where
 {
 	fn setup(self, world: &mut World) {
 		let sys = self.f.system(world);
+
 		let sys = TrustCell::new(sys);
 		let listener = Listener(Arc::new(move |e: Event| {
 			sys.borrow_mut().run(e);
@@ -37,11 +47,21 @@ where
 	}
 }
 
-pub trait A<T>{}
-
-
 pub trait ListenInit: Send + Sync + 'static {
 	fn init(world: &mut World, listener: Listener);
+	fn add_access(world: &mut World, access: Access<ArchetypeComponentId>);
+}
+
+pub fn add_access(world: &mut World, access: Access<ArchetypeComponentId>, a_c_id: ArchetypeComponentId) {
+	let arr = world.listener_access.get_mut(&a_c_id);
+	let arr = match arr {
+		Some(r) => r,
+		None => {
+			world.listener_access.insert(a_c_id, Vec::new());
+			&mut world.listener_access[a_c_id]
+		}
+	};
+	arr.push(access);
 }
 pub struct ComponentListen<A, C, T>(PhantomData<(A, C, T)>);
 impl<A, C, T> ListenInit for ComponentListen<A, C, T> where 
@@ -50,6 +70,14 @@ impl<A, C, T> ListenInit for ComponentListen<A, C, T> where
 	T: EventType{
 	fn init(world: &mut World, listener: Listener) {
 		world.add_component_listener::<T, A, C>(listener);
+	}
+	fn add_access(world: &mut World, access: Access<ArchetypeComponentId>) {
+		let arch_id = world.archetypes().get_id_by_ident(TypeId::of::<A>())
+.unwrap();		
+		let c_id = world.components.get_id(TypeId::of::<C>()).unwrap();
+		let a_c_id = unsafe{world.archetypes()[arch_id.clone()].archetype_component_id(c_id)};
+
+		add_access(world, access, a_c_id);
 	}
 }
 
@@ -60,6 +88,11 @@ impl<R, T> ListenInit for ResourceListen<R, T> where
 	fn init(world: &mut World, listener: Listener) {
 		world.add_resource_listener::<T, R>(listener);
 	}
+	fn add_access(world: &mut World, access: Access<ArchetypeComponentId>) {
+		let a_c_id = world.archetypes().get_archetype_resource_id::<R>().unwrap().clone();
+
+		add_access(world, access, a_c_id);
+	}
 }
 
 pub struct EntityListen<A, T>(PhantomData<(A, T)>);
@@ -68,6 +101,14 @@ impl<A, T> ListenInit for EntityListen<A, T> where
 	T: EventType{
 	fn init(world: &mut World, listener: Listener) {
 		world.add_entity_listener::<T, A>(listener);
+	}
+	
+	fn add_access(world: &mut World, access: Access<ArchetypeComponentId>) {
+		let arch_id = world.archetypes().get_id_by_ident(TypeId::of::<A>())
+.unwrap();		
+		let a_c_id = world.archetypes()[arch_id.clone()].entity_archetype_component_id();
+
+		add_access(world, access, a_c_id);
 	}
 }
 
@@ -266,6 +307,10 @@ macro_rules! impl_event_init {
 		impl<$($param: ListenInit),*> ListenInit for ($($param,)*) {
 			fn init(world: &mut World, listener: Listener) {
 				$($param::init(world, listener.clone());)*
+			}
+
+			fn add_access(world: &mut World, access: Access<ArchetypeComponentId>) {
+				$($param::add_access(world, access.clone());)*
 			}
 		}
     };

@@ -54,6 +54,10 @@ impl<In, Out, Param: SystemParam, InMarker, F> FunctionSystem<In, Out, Param, In
         f(self.config.as_mut().unwrap());
         self
     }
+
+	pub fn world(&self) -> &World {
+		&self.world
+	}
 }
 
 /// 系统输入
