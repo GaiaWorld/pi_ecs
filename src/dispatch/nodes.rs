@@ -19,9 +19,43 @@ use crate::{
 	},
 };
 
-use crate::dispatch::interface::{GraphNode, ExecNode, Arrange};
+use crate::dispatch::interface::{GraphNode, ExecNode, Arrange, Operate};
 
 use super::interface::Run;
+
+
+pub struct SyncRun<Param: SystemParam + 'static, F>(pub(crate) TrustCell<
+	FunctionSystem<(), (), Param, (), F>
+>);
+
+pub struct AsyncRun<Param: SystemParam + 'static, F>(pub(crate) TrustCell<
+	FunctionSystem<(), BoxFuture<'static, Result<()> >, Param, (), F>
+>);
+
+impl<Param: SystemParam + 'static, F> Operate for SyncRun<Param, F> where 
+	F: Send + Sync + SystemParamFunction<(), (), Param, ()>{
+
+	type R=();
+	fn run(&self) {
+		self.0.borrow_mut().run(());
+	}
+	fn apply(&self) {
+		self.0.borrow_mut().apply_buffers();
+	}
+}
+
+impl<Param: SystemParam + 'static, F> Operate for AsyncRun<Param, F> where 
+	F: Send + Sync + SystemParamFunction<(), BoxFuture<'static, Result<()>>, Param, ()> {
+
+	type R= BoxFuture<'static, Result<()>>;
+
+	fn run(&self) -> BoxFuture<'static, Result<()>> {
+		self.0.borrow_mut().run(())
+	}
+	fn apply(&self) {
+		self.0.borrow_mut().apply_buffers();
+	}
+}
 
 
 impl<Param: SystemParam + 'static, F> Into<GraphNode> for FunctionSystem<(), (), Param, (), F> where 
@@ -64,9 +98,7 @@ impl<Param: SystemParam + 'static, F> Into<GraphNode> for FunctionSystem<(), (),
 			id: id.id(),
 			reads,
 			writes,
-			node: ExecNode::Sync(Run(Arc::new(move || {
-				sys.borrow_mut().run(())
-			})) )
+			node: ExecNode::Sync(Run(Arc::new(SyncRun(sys))))
 		}
 	}
 }
@@ -87,9 +119,7 @@ impl<Param: SystemParam + 'static, F> Into<GraphNode> for FunctionSystem<(), Box
 			id: id.id(),
 			reads: reads,
 			writes: writes,
-			node: ExecNode::Async(Box::new(move || {
-				sys.borrow_mut().run(())
-			}))
+			node: ExecNode::Async(Box::new(AsyncRun(sys)))
 		}
 	}
 }
@@ -98,13 +128,27 @@ impl Arrange for World {
 	fn arrang(&self) -> Option<GraphNode> {
 		let mut w = self.clone();
 		let id = w.archetype_component_grow();
+		let sys = move|| {
+			w.increment_change_tick();
+		};
 		Some(GraphNode {
 			id,
 			reads: Vec::new(),
 			writes: Vec::new(),
-			node: ExecNode::Sync(Run(Arc::new(move|| {
-				w.increment_change_tick();
-			})))
+			node: ExecNode::Sync(Run(Arc::new(FnSys(Box::new(sys)))))
 		})
+	}
+}
+
+pub struct FnSys(pub(crate) Box<dyn Fn()>);
+
+impl Operate for FnSys  {
+
+	type R = ();
+
+	fn run(&self) {
+		self.0();
+	}
+	fn apply(&self) {
 	}
 }

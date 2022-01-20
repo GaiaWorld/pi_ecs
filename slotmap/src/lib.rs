@@ -216,6 +216,7 @@ pub mod __impl {
 
 pub mod basic;
 pub mod dense;
+pub mod delay;
 pub mod hop;
 pub mod secondary;
 #[cfg(feature = "std")]
@@ -229,6 +230,8 @@ use core::num::NonZeroU32;
 pub use crate::basic::SlotMap;
 #[doc(inline)]
 pub use crate::dense::DenseSlotMap;
+#[doc(inline)]
+pub use crate::delay::DelaySlotMap;
 #[doc(inline)]
 pub use crate::hop::HopSlotMap;
 #[doc(inline)]

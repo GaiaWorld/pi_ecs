@@ -10,7 +10,7 @@ use share::cell::TrustCell;
 
 use crate::archetype::{Archetype, Archetypes, ArchetypeId, ArchetypeIdent, ArchetypeComponentId};
 use crate::component::{Components, ComponentId, Component};
-use crate::entity::Entity;
+use crate::entity::{Entity, Entities};
 use crate::monitor::{EventType, Listener};
 use crate::query::{WorldQuery, QueryState};
 use crate::storage::{LocalVersion, Local, SecondaryMap};
@@ -128,7 +128,7 @@ impl WorldInner {
 	}
 
 	/// 删除实体
-	pub fn unspawn(&mut self, entity: Entity) {
+	pub fn despawn(&mut self, entity: Entity) {
 		self.archetypes[entity.archetype_id()].remove_entity(entity.local());
 	}
 
@@ -137,6 +137,12 @@ impl WorldInner {
 		let change_tick = self.read_change_tick();
 		let id = self.components.get_or_insert_id::<C>();
 		self.archetypes[entity.archetype_id()].insert_component(entity.local(), value, id, change_tick);
+	}
+
+	/// 为删除组件组件
+	pub fn remove_component<C: Component>(&mut self, entity: Entity) {
+		let id = self.components.get_or_insert_id::<C>();
+		self.archetypes[entity.archetype_id()].remove_component(entity.local(), id);
 	}
 
 	/// 添加组件监听器
@@ -169,6 +175,10 @@ impl WorldInner {
 	/// 取到原型
 	pub fn archetypes(&self) -> &Archetypes {
 		&self.archetypes
+	}
+
+	pub fn entities(&self, arch_id: Local) -> &Entities {
+		&self.archetypes()[arch_id].entities
 	}
 
 	/// 取到WorldId

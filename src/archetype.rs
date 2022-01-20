@@ -2,9 +2,9 @@
 
 use crate::{
     component::{ComponentId, CellMultiCase, MultiCase, Component, MultiCaseImpl},
-    entity::Entity,
+    entity::{Entity, Entities},
     storage::{Offset, LocalVersion, Local},
-	monitor::{NotifyImpl, Listener, EventType, Notify}, 
+	monitor::{NotifyImpl, Listener, EventType}, 
 	resource::{SingleCase, SingleCaseImpl},
 	prelude::FilteredAccessSet,
 };
@@ -17,17 +17,15 @@ use std::{
 };
 
 use share::cell::TrustCell;
-use slotmap::{DenseSlotMap, SecondaryMap};
 use hash::XHashMap;
+use slotmap::SecondaryMap;
 
 pub struct Archetype {
 	// 原型id
     id: ArchetypeId,
 	archetype_component_id: ArchetypeComponentId, // 实体id
 	// 该原型下的实体
-    pub(crate) entities: DenseSlotMap<LocalVersion, ()>,
-	//实体变化监听器
-	entity_listners: NotifyImpl,
+    pub(crate) entities: Entities,
 
 	// 组件（每个ComponentId对应一个MultiCase）
 	// MultiCase是某个类型的组件的容器
@@ -48,8 +46,7 @@ impl Archetype {
 		Self {
 			id,
 			archetype_component_id,
-			entities: DenseSlotMap::default(),
-			entity_listners: NotifyImpl::default(),
+			entities: Entities::new(id),
 
 			components: SecondaryMap::with_capacity(0),
 
@@ -82,13 +79,12 @@ impl Archetype {
 
 	/// 创建实体
 	pub fn create_entity(&mut self) -> Entity {
-		Entity::new(self.id, self.entities.insert(()))
+		Entity::new(self.id, self.entities.insert())
 	}
 
 	/// 移除实体
 	/// 移除实体时，会连带将其拥有的组件页删除，会发出实体删除的事件，但不会发出组件销毁的事件，
 	pub fn remove_entity(&mut self, local: LocalVersion) {
-		self.entity_listners.delete_event(Entity::new(self.id, local));
 		if self.entities.remove(local).is_some() {
 			for i in self.component_ids.iter() {
 				self.components[*i].delete(local);
@@ -152,7 +148,7 @@ impl Archetype {
 	/// 添加实体监听器
 	#[inline]
 	pub fn add_entity_listener<T: EventType>(&mut self, listener: Listener) {
-		T::add(&self.entity_listners, listener);
+		T::add(&self.entities.entity_listners, listener);
 	}
 
 	/// 取到原型id
@@ -444,7 +440,3 @@ impl IndexMut<ArchetypeId> for Archetypes {
         &mut self.archetypes[index.offset()]
     }
 }
-
-
-
-

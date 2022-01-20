@@ -3,3 +3,4 @@
 **/*.png
 /.cargo
 **/Cargo.lock
+.vscode/launch.json

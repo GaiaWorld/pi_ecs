@@ -100,7 +100,7 @@ fn test() {
 	world.insert_component(vec[4].clone(), Position(4));
 	// 会触发实体删除事件
 	println!("entity will modify");
-	world.unspawn(vec[3].clone());
+	world.despawn(vec[3].clone());
 
 	println!("resoruce will modify");
 	world.res::<Resource1>().query_mut(&mut world).modify_event(Entity::default(), "", 0);

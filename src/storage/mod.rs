@@ -2,7 +2,7 @@ use std::convert::From;
 use std::ops::{Deref, DerefMut};
 use std::{ops::Index, ops::IndexMut};
 
-pub use slotmap::{Key, KeyData, SlotMap, SecondaryMap as SecondaryMap1, SparseSecondaryMap as SparseSecondaryMap1, DenseSlotMap};
+pub use slotmap::{Key, KeyData, SlotMap, SecondaryMap as SecondaryMap1, SparseSecondaryMap as SparseSecondaryMap1, DenseSlotMap, DelaySlotMap};
 pub use map::Map;
 pub use slotmap::dense::{Iter, IterMut, Keys, Values};
 
@@ -157,6 +157,16 @@ pub trait FromOffset: Offset {
 
 #[derive(Debug, Copy, Clone, Hash, Ord, PartialOrd, Eq, PartialEq, Default)]
 pub struct LocalVersion(pub(crate) u64);
+
+// impl LocalVersion {
+// 	pub(crate) fn new(idx: u32, version: u32) -> Self {
+// 		LocalVersion((version as u64) << 32 +  idx as u64)
+// 	}
+
+// 	pub(crate) fn version(&self) -> u32 {
+// 		(self.0 >> 32) as u32
+// 	}
+// }
 
 impl Deref for LocalVersion {
 	type Target = u64;

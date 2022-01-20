@@ -46,6 +46,12 @@ impl<P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P>> SingleDispatcher<P> 
             let g = &vec[stage_index];
             let arr = g.topological_sort();
             if node_index >= arr.len() {
+
+				// stage结束，apply
+				for i in 0..arr.len() {
+					let node = g.get(&arr[i]).unwrap().value();
+					node.apply();
+				}
                 stage_index += 1;
                 node_index = 0;
                 continue;
@@ -136,11 +142,19 @@ fn single_exec<P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P>, P2: AsyncT
     let g = &d.vec[stage_index].0;
     let single1= single.clone();
     loop {
+		let arr = g.topological_sort();
         if node_index >= g.node_count() {
+
+			// stage结束，apply
+			for i in 0..g.node_count() {
+				let node = g.get(&arr[i]).unwrap().value();
+				node.apply();
+			}
+
             // 本阶段执行完毕，执行下一阶段
             return exec(d, stage_index + 1);
         }
-        let arr = g.topological_sort();
+        
         let node = g.get(&arr[node_index]).unwrap().value();
         node_index += 1;
         match node.is_sync() {
@@ -181,6 +195,14 @@ fn multi_exec<P1: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P1>, P2: Async
         let g = &d1.vec[stage_index].0;
         let r = async_graph(d1.multi.clone(), g.clone()).await;
         if r.is_ok() {
+
+			// stage结束，apply
+			let arr = g.topological_sort();
+			for i in 0..g.node_count() {
+				let node = g.get(&arr[i]).unwrap().value();
+				node.apply();
+			}
+
             exec(d1, stage_index + 1);
         }
     }).unwrap();
@@ -192,20 +214,26 @@ pub struct GraphNode {
     pub(crate) node: ExecNode,
 }
 
-pub struct Run(pub(crate) Arc<dyn Fn() -> ()>);
+pub trait Operate {
+	type R;
+	fn run(&self) -> Self::R;
+	fn apply(&self);
+}
+
+pub struct Run(pub(crate) Arc<dyn Operate<R=()>>);
 unsafe impl Send for Run {}
 unsafe impl Sync for Run {}
 
 impl Runner for Run {
     fn run(self) {
-        self.0()
+        self.0.run()
     }
 }
 
 pub enum ExecNode {
     None,
     Sync(Run),
-    Async(Box<dyn Fn() -> BoxFuture<'static, Result<()>> + 'static + Send + Sync>),
+    Async(Box<dyn Operate<R=BoxFuture<'static, Result<()>>> + 'static + Send + Sync>),
 }
 impl Runnble for ExecNode {
     type R = Run;
@@ -226,10 +254,20 @@ impl Runnble for ExecNode {
     /// 获得需要执行的异步块
     fn get_async(&self) -> BoxFuture<'static, Result<()>> {
         match self {
-            ExecNode::Async(f) => f(),
+            ExecNode::Async(f) => f.run(),
             _ => panic!(),
         }
     }
+}
+
+impl ExecNode {
+	fn apply(&self) {
+		match self {
+			ExecNode::Sync(f) => f.0.apply(),
+            ExecNode::Async(f) => f.apply(),
+            _ => (),
+        };
+	}
 }
 
 pub struct StageBuilder {

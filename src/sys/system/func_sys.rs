@@ -151,9 +151,9 @@ where
     }
 
     #[inline]
-    fn apply_buffers(&mut self, world: &mut World) {
+    fn apply_buffers(&mut self) {
         let param_state = self.param_state.as_mut().unwrap();
-        param_state.apply(world);
+        param_state.apply(&mut self.world);
     }
 
     #[inline]
@@ -208,7 +208,9 @@ macro_rules! impl_system_function {
         where
             Func:
                 FnMut($($param),*) -> Out +
-                FnMut($(<<$param as SystemParam>::Fetch as SystemParamFetch>::Item),*) -> Out + Send + Sync + 'static, Out: 'static
+                FnMut($(<<$param as SystemParam>::Fetch as SystemParamFetch>::Item),*) -> Out + 
+				Send + Sync + 'static, 
+			Out: 'static
         {
             #[inline]
             fn run(&mut self, _input: (), state: &mut <($($param,)*) as SystemParam>::Fetch, system_state: &SystemState, world: &World, change_tick: u32) -> Out {

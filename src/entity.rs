@@ -1,4 +1,7 @@
-use crate::storage::LocalVersion;
+use std::ops::{Deref, DerefMut};
+
+use crate::monitor::{NotifyImpl, Notify};
+use crate::storage::{LocalVersion, DelaySlotMap, Local};
 use crate::archetype::ArchetypeId;
 
 #[derive(Clone, Debug)]
@@ -26,15 +29,61 @@ impl Entity {
 	}
 }
 
+pub struct Entities {
+	arch_id: Local,
+	storage: DelaySlotMap<LocalVersion, ()>,
+	//实体变化监听器
+	pub(crate) entity_listners: NotifyImpl,
+}
 
-// impl From<EntityInfo> for Entity {
-// 	fn from(info: EntityInfo) -> Self {
-// 		let idx: u64 = *info.local & 0xffff_ffff;
-// 		let version: u64 = (*info.local >> 32) | 1; // Ensure version is odd.
-		
+impl Deref for Entities {
+	type Target = DelaySlotMap<LocalVersion, ()>;
 
-// 		// archetype_id 8位，version 26位，idx 28位
-// 		return Entity((*info.archetype_id as u64) << 56 + version << 36 + idx);
-// 	}
-// }
+    fn deref(&self) -> &Self::Target {
+		&self.storage
+	}
+}
 
+
+impl DerefMut for Entities {
+	fn deref_mut(&mut self) -> &mut Self::Target {
+		&mut self.storage
+	}
+}
+
+impl Entities {
+	pub fn new(arch_id: Local) -> Self {
+		Self {
+			arch_id,
+			storage: DelaySlotMap::default(),
+			entity_listners: NotifyImpl::default(),
+		}
+	}
+
+	pub fn remove(&mut self, local: LocalVersion) -> Option<()> {
+		if self.storage.contains_key(local) {
+			self.entity_listners.delete_event(Entity::new(self.arch_id, local));
+		}
+		self.storage.remove(local)
+	}
+
+	pub fn insert(&mut self) -> LocalVersion {
+		let local = self.storage.insert(());
+		self.entity_listners.create_event(Entity::new(self.arch_id, local));
+		local
+	}
+
+	pub fn flush(&mut self) {
+		let (storage, entity_listners) = (
+			unsafe{&mut *(&self.storage as *const DelaySlotMap<LocalVersion, ()> as usize as *mut DelaySlotMap<LocalVersion, ()>)}, 
+			&self.entity_listners
+		);
+		unsafe{	storage.flush( |s, local| {
+				s.try_insert_with_key::<_, Never>(move |_k| {Ok(())}).unwrap_unchecked();
+				entity_listners.create_event(Entity::new(self.arch_id, local));
+			});
+		}
+	}
+}
+
+pub enum Never {}
