@@ -62,8 +62,8 @@ fn _async_sys1(
 		}
 		Ok(())
 	}.boxed()
-}
 
+}
 #[test]
 fn test() {
 	

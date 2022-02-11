@@ -4,6 +4,7 @@ pub mod res;
 pub mod local;
 pub mod tick;
 pub mod command;
+pub mod world;
 
 pub use interface::*;
 pub use local::Local;
