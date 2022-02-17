@@ -17,8 +17,6 @@ use crate::storage::{LocalVersion, Local, SecondaryMap};
 use crate::sys::param::res::ResState;
 use crate::query::Access;
 
-
-
 /// 世界
 #[derive(Clone)]
 pub struct World {

@@ -203,8 +203,8 @@ impl ComponentInfo {
 
 pub struct Components {
     pub(crate) infos: Vec<ComponentInfo>,
-    indices: XHashMap<TypeId, usize>,
-    resource_indices: XHashMap<TypeId, ComponentId>,
+    pub(crate) indices: XHashMap<TypeId, usize>,
+    pub(crate) resource_indices: XHashMap<TypeId, ComponentId>,
 }
 
 #[derive(Debug, Error)]

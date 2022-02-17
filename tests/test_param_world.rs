@@ -1,6 +1,9 @@
 /// 测试系统参数Res、ResMut
 use pi_ecs::{
-    prelude::{Dispatcher, SingleDispatcher, StageBuilder, World},
+    prelude::{
+        world::{WorldMut, WorldRead},
+        Dispatcher, Res, ResMut, SingleDispatcher, StageBuilder, World,
+    },
     sys::system::IntoSystem,
 };
 use r#async::rt::{
@@ -15,12 +18,25 @@ struct Resource1(pub usize);
 #[derive(Debug)]
 struct Resource2(pub usize);
 
-fn res(w: World) {
+// res: ResMut<Resource1> 会 崩掉，报和 WorldRead 有冲突
+fn sys_read_world(w: WorldRead, res: Res<Resource1>) {
+    println!("sys_read_world run, res: {:?}", res.0);
+
     let id1 = w.get_resource_id::<Resource1>();
-    println!("res run, id1: {:?}", id1);
+    println!("sys_read_world run, id1: {:?}", id1);
 
     let id2 = w.get_resource_id::<Resource2>();
-    println!("res run, id2: {:?}", id2);
+    println!("sys_read_world run, id2: {:?}", id2);
+}
+
+// res: Res<Resource1> 会 崩掉，报和 WorldMut 有冲突
+// res: ResMut<Resource1> 会 崩掉，报和 WorldMut 有冲突
+fn sys_write_world(w: WorldMut) {
+    let id1 = w.get_resource_id::<Resource1>();
+    println!("sys_write_world run, id1: {:?}", id1);
+
+    let id2 = w.get_resource_id::<Resource2>();
+    println!("sys_write_world run, id2: {:?}", id2);
 }
 
 #[test]
@@ -41,10 +57,12 @@ fn test() {
 
 fn get_dispatcher(world: &mut World) -> SingleDispatcher<StealableTaskPool<()>> {
     let rt = AsyncRuntime::Multi(MultiTaskRuntimeBuilder::default().build());
-    let system = res.system(world);
+    let s1 = sys_read_world.system(world);
+    let s2 = sys_write_world.system(world);
 
     let mut stage = StageBuilder::new();
-    stage.add_node(system);
+    stage.add_node(s1);
+    stage.add_node(s2);
 
     let mut stages = Vec::new();
     stages.push(Arc::new(stage.build()));
