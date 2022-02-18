@@ -102,7 +102,7 @@ pub struct JoinState<C: Component + Deref<Target = Entity>, A, Q, F> {
 }
 
 unsafe impl<C: Component + Deref<Target = Entity>, A: Send + Sync + 'static, Q: FetchState, F: FetchState> FetchState for JoinState<C, A, Q, F> {
-    fn init(world: &mut World) -> Self {
+    fn init(world: &mut World, query_id: usize) -> Self {
 		let archetype_id = match world.archetypes().get_id_by_ident(TypeId::of::<A>()) {
 			Some(r) => r.clone(),
 			None => panic!("JoinState fetch archetype ${} fail", std::any::type_name::<A>()),
@@ -116,8 +116,8 @@ unsafe impl<C: Component + Deref<Target = Entity>, A: Send + Sync + 'static, Q: 
 			world: world.clone(),
 			archetype_id,
 			component_id: component_info.id(),
-            fetch_state: Q::init(world),
-			filter_state: F::init(world),
+            fetch_state: Q::init(world, query_id),
+			filter_state: F::init(world, query_id),
 			mark: PhantomData,
         }
     }

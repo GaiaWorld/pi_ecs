@@ -12,7 +12,7 @@ use crate::{
     // bundle::Bundle,
     component::{Component, ComponentId, MultiCaseImpl},
     query::{Fetch, ReadFetch, FetchState, Access, FilteredAccess, WorldQuery, ReadState, MianFetch},
-    storage::{SecondaryMap, Local, LocalVersion, DenseSlotMap},
+    storage::{SecondaryMap, Local, LocalVersion},
     world::{World, WorldInner},
 };
 use pi_ecs_macros::all_tuples;
@@ -48,9 +48,9 @@ pub struct WithState<T> {
 
 // SAFE: no component access or archetype component access
 unsafe impl<T: Component> FetchState for WithState<T> {
-    fn init(world: &mut World) -> Self {
+    fn init(world: &mut World, query_id: usize) -> Self {
         Self {
-			read_state: ReadState::init(world),
+			read_state: ReadState::init(world, query_id),
             marker: PhantomData,
         }
     }
@@ -122,9 +122,9 @@ pub struct WithOutState<T> {
 
 // SAFE: no component access or archetype component access
 unsafe impl<T: Component> FetchState for WithOutState<T> {
-    fn init(world: &mut World) -> Self {
+    fn init(world: &mut World, query_id: usize) -> Self {
         Self {
-			read_state: ReadState::init(world),
+			read_state: ReadState::init(world, query_id),
             marker: PhantomData,
         }
     }
@@ -278,8 +278,8 @@ macro_rules! impl_query_filter_tuple {
         #[allow(unused_variables)]
         #[allow(non_snake_case)]
         unsafe impl<$($filter: FetchState),*> FetchState for Or<($($filter,)*)> {
-            fn init(world: &mut World) -> Self {
-                Or(($($filter::init(world),)*))
+            fn init(world: &mut World, query_id: usize) -> Self {
+                Or(($($filter::init(world, query_id),)*))
             }
 			fn set_archetype<A: 'static + Send + Sync>(&self, _world: &mut World)  {
 				// let ($($filter,)*) = &mut self.0;
@@ -340,7 +340,7 @@ macro_rules! impl_tick_filter {
             // table_ticks: *mut ComponentTicks,
             // entity_table_rows: *const usize,
 			container: usize, // 组件容器
-			dirty_container: DenseSlotMap<LocalVersion, ()>,
+			dirty_container: SecondaryMap<LocalVersion, ()>,
 
             marker: PhantomData<T>,
             last_change_tick: u32,
@@ -361,7 +361,7 @@ macro_rules! impl_tick_filter {
 
         // SAFE: this reads the T component. archetype component access and component access are updated to reflect that
         unsafe impl<T: Component> FetchState for $state_name<T> {
-            fn init(world: &mut World) -> Self {
+            fn init(world: &mut World, _query_id: usize) -> Self {
                 let component_id = match world.components.get_id(TypeId::of::<T>()){
 					Some(r) => r,
 					None => panic!("FetchState error: {}", std::any::type_name::<T>()),
@@ -440,7 +440,7 @@ macro_rules! impl_tick_filter {
                     marker: PhantomData,
                     last_change_tick: 0,
                     change_tick: 0,
-					dirty_container: DenseSlotMap::default(),
+					dirty_container: SecondaryMap::with_capacity(0),
                 };
                 value
             }

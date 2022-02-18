@@ -189,6 +189,11 @@ where
     }
 
     fn default_config() {}
+
+	// 
+	fn apply(&mut self, world: &mut World) {
+		(**self).apply(world)
+	}
 }
 
 impl<'a, A: ArchetypeIdent, Q: WorldQuery + 'static, F: WorldQuery + 'static> SystemParamFetch<'a> for Arc<QueryState<A, Q, F>>

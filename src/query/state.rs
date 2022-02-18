@@ -31,6 +31,8 @@ where
 
 	pub(crate) matchs: bool,
 
+	// pub(crate) id: usize, // 为每个查询分配一个id， 一些和没查询相关联的数据可以用该id绑定
+
 	mark: PhantomData<A>,
 }
 
@@ -43,10 +45,11 @@ where
 			Some(r) => r.clone(),
 			None => panic!(),
 		};
+		let q_id = world.gen_query_id();
 
-        let fetch_state = <Q::State as FetchState>::init(world);
-        let filter_state = <F::State as FetchState>::init(world);
-		let entity_state = <EntityState as FetchState>::init(world) ;
+        let fetch_state = <Q::State as FetchState>::init(world, q_id);
+        let filter_state = <F::State as FetchState>::init(world, q_id);
+		let entity_state = <EntityState as FetchState>::init(world, q_id) ;
 		let fetch_fetch =
             unsafe{ <Q::Fetch as Fetch>::init(world, &fetch_state) };
         let filter_fetch =
@@ -68,6 +71,7 @@ where
 			entity_state,
 			component_access: component_access,
             archetype_component_access: Default::default(),
+			// id: q_id,
 			mark: PhantomData
         };
 		state.validate_world_and_update_archetypes(world);
@@ -451,6 +455,10 @@ where
     //         }
     //     });
     // }
+
+	pub fn apply(&self, world: &mut World) {
+		self.filter_state.apply(world);
+	}
 }
 
 /// An error that occurs when retrieving a specific [Entity]'s query result.

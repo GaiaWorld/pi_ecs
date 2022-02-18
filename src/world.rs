@@ -66,6 +66,8 @@ pub struct WorldInner {
 
 	pub(crate) change_tick: AtomicU32,
 	pub(crate) last_change_tick: u32,
+
+	pub(crate) query_generator: usize,
 }
 
 impl WorldInner {
@@ -77,7 +79,13 @@ impl WorldInner {
 			listener_access: SecondaryMap::with_capacity(0),
 			change_tick: AtomicU32::new(1),
 			last_change_tick: 0,
+			query_generator: 0,
 		}
+	}
+
+	pub fn gen_query_id(&mut self) -> usize {
+		self.query_generator += 1;
+		self.query_generator - 1
 	}
 
 	/// 插入资源

@@ -1,10 +1,12 @@
 
 use std::marker::PhantomData;
 
+use slotmap::secondary::Keys;
+
 use crate::{
     archetype::{ArchetypeId, ArchetypeIdent},
-    query::{Fetch, FilterFetch, QueryState, WorldQuery, MianFetch},
-    storage::{LocalVersion, Keys},
+    query::{Fetch, FilterFetch, QueryState, WorldQuery},
+    storage::{LocalVersion},
     world::WorldInner,
 };
 
@@ -34,7 +36,8 @@ where
     world: &'w WorldInner,
     fetch: &'s mut Q::Fetch,
     filter:&'s mut F::Fetch,
-	entity: EntityIter<'s>,
+	entities_iter: Option<EntityIter<'s>>,
+	all_entities_iter: slotmap::dense::Keys<'s, LocalVersion, ()>,
 	mark: PhantomData<A>,
 }
 
@@ -70,27 +73,25 @@ where
 
 		let filter = & query_state.filter_fetch;
 		let iter = match filter.main_fetch(&query_state.filter_state, last_change_tick, change_tick) {
-			Some(r) => r,
-			None => MianFetch{
-				value: std::mem::transmute(world.archetypes()[query_state.archetype_id].entities.keys()),
-				next: None,
-			} 
+			Some(iter) => {
+				let (value, mut next) = (iter.value,iter.next);
+				let mut iter1 = EntityIter(Vec::new(), value);
+				loop {
+					match next {
+						Some(r) => {
+							let r = Box::into_inner(r);
+							let (value, next1) = (r.value,r.next);
+							iter1.0.push(value);
+							next = next1;
+						},
+						None => break
+					}
+				}
+				Some(iter1)
+			},
+			None => None,
 		};
-
-		let (value, mut next) = (iter.value,iter.next);
-
-		let mut iter1 = EntityIter(Vec::new(), value);
-		loop {
-			match next {
-				Some(r) => {
-					let r = Box::into_inner(r);
-					let (value, next1) = (r.value,r.next);
-					iter1.0.push(value);
-					next = next1;
-				},
-				None => break
-			}
-		} 
+		let all_entities = std::mem::transmute(world.archetypes()[query_state.archetype_id].entities.keys());
 		
 		#[allow(mutable_transmutes)]
         QueryIter {
@@ -99,8 +100,9 @@ where
 			matchs: query_state.matchs,
             fetch: std::mem::transmute(fetch),
             filter: std::mem::transmute(filter),
-			entity: iter1,
+			entities_iter: iter,
 			archetype_id: query_state.archetype_id,
+			all_entities_iter: all_entities,
             mark: PhantomData,
         }
     }
@@ -119,19 +121,36 @@ where
 				return  None;
 			}
 			
-			loop {
-				let entity = self.entity.next()?;
-
-				if !self.filter.archetype_filter_fetch(entity) {
-					continue;
+			if let Some(iter) = &mut self.entities_iter {
+				loop {
+					let entity = iter.next()?;
+	
+					if !self.filter.archetype_filter_fetch(entity) {
+						continue;
+					}
+	
+					let item = self.fetch.archetype_fetch(entity);
+					if let None = item {
+						continue;
+					}
+					return item;
 				}
-
-				let item = self.fetch.archetype_fetch(entity);
-				if let None = item {
-					continue;
+			} else {
+				loop {
+					let entity = self.all_entities_iter.next()?;
+	
+					if !self.filter.archetype_filter_fetch(entity) {
+						continue;
+					}
+	
+					let item = self.fetch.archetype_fetch(entity);
+					if let None = item {
+						continue;
+					}
+					return item;
 				}
-				return item;
 			}
+			
         }
     }
 

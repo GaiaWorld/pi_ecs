@@ -3,7 +3,7 @@ use crate::{
     component::{Component, ComponentId, MultiCaseImpl},
     entity::Entity,
     query::{Access, FilteredAccess},
-    storage::{ Keys, LocalVersion},
+    storage::LocalVersion,
     world::World,
 	pointer::Mut, WorldInner,
 };
@@ -59,7 +59,7 @@ pub trait Fetch: Send + Sync + Sized {
 }
 
 pub struct MianFetch<'a> {
-	pub(crate) value: Keys<'a, LocalVersion, ()>,
+	pub(crate) value: slotmap::secondary::Keys<'a, LocalVersion, ()>,
 	pub(crate) next: Option<Box<MianFetch<'a>>>,
 }
 
@@ -72,7 +72,7 @@ pub struct MianFetch<'a> {
 /// [Fetch::table_fetch]
 pub unsafe trait FetchState: Send + Sync + Sized {
 	/// 创建FetchState实例
-    fn init(world: &mut World) -> Self;
+    fn init(world: &mut World, query_id: usize) -> Self;
 	/// 更新组件
 	fn update_component_access(&self, access: &mut FilteredAccess<ComponentId>);
     fn update_archetype_component_access(&self, archetype: &Archetype, access: &mut Access<ArchetypeComponentId>);
@@ -80,6 +80,10 @@ pub unsafe trait FetchState: Send + Sync + Sized {
 	// fn get_matches(&self) -> bool;
 	fn set_archetype<A: 'static + Send + Sync>(&self, _world: &mut World) {}
     // fn matches_table(&self, table: &Table) -> bool;
+
+	fn apply(&self, _world: &mut World) {
+
+	}
 }
 
 /// A fetch that is read only. This must only be implemented for read-only fetches.
@@ -105,7 +109,7 @@ pub struct EntityState;
 // SAFE: no component or archetype access
 unsafe impl FetchState for EntityState {
 	#[inline]
-    fn init(_world: &mut World) -> Self {
+    fn init(_world: &mut World, _query_id: usize) -> Self {
         Self
     }
 
@@ -169,7 +173,7 @@ pub struct ReadState<T> {
 // SAFE: component access and archetype component access are properly updated to reflect that T is
 // read
 unsafe impl<T: Component> FetchState for ReadState<T> {
-    fn init(world: &mut World) -> Self {
+    fn init(world: &mut World, _query_id: usize) -> Self {
 		let component_id = match world.components.get_id(TypeId::of::<T>()) {
 			Some(r) => r,
 			None => panic!("ReadState fetch ${} fail", std::any::type_name::<T>()),
@@ -310,7 +314,7 @@ pub struct MutState<T> {
 // SAFE: component access and archetype component access are properly updated to reflect that T is
 // read
 unsafe impl<T: Component> FetchState for MutState<T> {
-    fn init(world: &mut World) -> Self {
+    fn init(world: &mut World, _query_id: usize) -> Self {
 		let component_id = match world.components.get_id(TypeId::of::<T>()) {
 			Some(r) => r,
 			None => panic!("MutState fetch ${} fail", std::any::type_name::<T>()),
@@ -455,7 +459,7 @@ pub struct WriteState<T> {
 // SAFE: component access and archetype component access are properly updated to reflect that T is
 // read
 unsafe impl<T: Component> FetchState for WriteState<T> {
-    fn init(world: &mut World) -> Self {
+    fn init(world: &mut World, _query_id: usize) -> Self {
 		let component_id = match world.components.get_id(TypeId::of::<T>()) {
 			Some(r) => r,
 			None => panic!("WriteState fetch ${} fail", std::any::type_name::<T>()),
@@ -513,9 +517,9 @@ pub struct OptionState<T: FetchState> {
 // SAFE: component access and archetype component access are properly updated according to the
 // internal Fetch
 unsafe impl<T: FetchState> FetchState for OptionState<T> {
-    fn init(world: &mut World) -> Self {
+    fn init(world: &mut World, query_id: usize) -> Self {
         Self {
-            state: T::init(world),
+            state: T::init(world, query_id),
 			matchs: false
         }
     }
@@ -601,7 +605,7 @@ pub struct OrDefaultState<T: Component>{
 // SAFE: component access and archetype component access are properly updated according to the
 // internal Fetch
 unsafe impl<T: Component + Default> FetchState for OrDefaultState<T> {
-    fn init(world: &mut World) -> Self {
+    fn init(world: &mut World, query_id: usize) -> Self {
 		let id = match world.get_resource_id::<T>() {
 			Some(r) => r.clone(),
 			None => world.insert_resource(T::default()),
@@ -609,7 +613,7 @@ unsafe impl<T: Component + Default> FetchState for OrDefaultState<T> {
 
         Self {
 			default_id: id,
-            state: ReadState::<T>::init(world),
+            state: ReadState::<T>::init(world, query_id),
 			matchs: false
         }
     }
@@ -725,8 +729,8 @@ macro_rules! impl_tuple_fetch {
         #[allow(non_snake_case)]
 		#[allow(unused_variables)]
         unsafe impl<$($name: FetchState),*> FetchState for ($($name,)*) {
-            fn init(_world: &mut World) -> Self {
-                ($($name::init(_world),)*)
+            fn init(_world: &mut World, query_id: usize) -> Self {
+                ($($name::init(_world, query_id),)*)
             }
 
 			fn update_component_access(&self, access: &mut FilteredAccess<ComponentId>) {
