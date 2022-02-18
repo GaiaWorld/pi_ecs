@@ -2,7 +2,7 @@
 use pi_ecs::{
     prelude::{
         world::{WorldMut, WorldRead},
-        Dispatcher, Res, ResMut, SingleDispatcher, StageBuilder, World,
+        Dispatcher, Res, SingleDispatcher, StageBuilder, World,
     },
     sys::system::IntoSystem,
 };

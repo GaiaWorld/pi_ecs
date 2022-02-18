@@ -6,7 +6,7 @@ use slotmap::secondary::Keys;
 use crate::{
     archetype::{ArchetypeId, ArchetypeIdent},
     query::{Fetch, FilterFetch, QueryState, WorldQuery},
-    storage::{LocalVersion},
+    storage::LocalVersion,
     world::WorldInner,
 };
 

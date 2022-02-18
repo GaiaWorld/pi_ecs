@@ -1,7 +1,6 @@
 use std::ops::{Deref, DerefMut};
 
 use crate::{
-    archetype,
     sys::param::interface::{SystemParam, SystemParamFetch, SystemParamState},
     sys::system::interface::SystemState,
     world::{World, WorldInner},
