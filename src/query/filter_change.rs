@@ -53,7 +53,7 @@ macro_rules! impl_tick_filter {
 
         pub struct $state_name<T> {
 			dirty_list: usize,
-            component_id: ComponentId,
+            pub(crate) component_id: ComponentId,
 			is_main: bool, // 是否由该过滤器添加的监听器（如果是，main_fetch会返回对应的迭代器，否则不会返回，因为重复返回会造成重复迭代）
             marker: PhantomData<T>,
         }
@@ -130,6 +130,7 @@ macro_rules! impl_tick_filter {
             fn matches_archetype(&self, archetype: &Archetype) -> bool {
                 archetype.contains(self.component_id)
             }
+			
 			fn set_archetype<A: 'static + Send + Sync>(&self, world: &mut World) {
 				if let None = unsafe{&*(self.dirty_list as *const DirtyList)}.init_list.get(&self.component_id) {
 					let component_id = self.component_id;

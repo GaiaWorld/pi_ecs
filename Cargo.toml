@@ -6,8 +6,8 @@ edition = "2018"
 
 [dependencies]
 # slotmap = "1.0"
-slotmap = { path = "slotmap"}
-fixedbitset = "0.4"
+tree = { path = "../pi_lib/tree"}
+slotmap = { path = "../pi_lib/slotmap"}
 slab = {path="../pi_lib/slab"}
 atom = {path="../pi_lib/atom"}
 map = {path="../pi_lib/map"}
@@ -21,6 +21,7 @@ debug_info = {path="../pi_lib/debug_info"}
 graph = {path="../pi_lib/graph"}
 async_graph = {path="../pi_lib/async_graph"}
 async = {path="../pi_lib/async"}
+dirty = { path= "../pi_lib/dirty"}
 pi_ecs_macros = { path = "macros"}
 paste = "0.1"
 lazy_static = "*"
@@ -28,6 +29,7 @@ log = "*"
 rand = "*"
 thiserror = "1.0"
 futures = "0.3"
+fixedbitset = "0.4"
 
 
 
