@@ -24,13 +24,17 @@ pub trait SystemParamFetch<'a>: SystemParamState {
 
 pub unsafe trait SystemParamState: Send + Sync + 'static {
     type Config: Send + Sync;
+	/// 系统状态初始化
+	/// 通常做以下事情：
+	/// * 检查当前参数是否与当前系统中的数据访问是否冲突（同一系统，不能同时读写相同数据）
+	/// * 初始化该该参数在整个系统生命周期内不会改变的其他状态（每个系统参数会有各自不同的状态，根据自身需求初始化）
     fn init(world: &mut World, system_state: &mut SystemState, config: Self::Config) -> Self;
 
-	// 不会新增原型
-    // #[inline]
-    // fn new_archetype(&mut self, _archetype: &Archetype, _system_state: &mut SystemState) {}
+	/// 每个stage运行结束后，该参数应该被调用
+	/// 通常用于刷新、整理前一阶段的数据（如延迟的指令操作需要flush、脏列表需要清理）}
     #[inline]
     fn apply(&mut self, _world: &mut World) {}
+
     fn default_config() -> Self::Config;
 }
 
