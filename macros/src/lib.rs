@@ -199,7 +199,7 @@ fn impl_listen_component(attr: TokenStream, item: TokenStream) -> proc_macro2::T
 									}
 									p.path = syn::parse::<Path>(TokenStream::from_str(path.as_str()).unwrap()).unwrap();
 								} else {
-									panic!("is not path:{:?}", e);
+									panic!("is not path:{:?}", quote!{#e}.to_string());
 								}
 							}
 						},
@@ -216,7 +216,8 @@ fn impl_listen_component(attr: TokenStream, item: TokenStream) -> proc_macro2::T
 				}
 				list.push(ListenItem(p, &r.elems));
 			} else {
-				panic!("!TypeTuple, {:?}", binding.ty);
+				let ty = &binding.ty;
+				panic!("!TypeTuple, {:?}", quote!{#ty}.to_string());
 			}
 			
 			continue;
