@@ -16,9 +16,9 @@ use std::{
 	sync::Arc,
 };
 
-use share::cell::TrustCell;
-use hash::XHashMap;
-use slotmap::SecondaryMap;
+use pi_share::cell::TrustCell;
+use pi_hash::XHashMap;
+use pi_slotmap::SecondaryMap;
 
 pub struct Archetype {
 	// 原型id

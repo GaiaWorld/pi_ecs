@@ -1,5 +1,5 @@
-use map::Map;
-use share::cell::TrustCell;
+use pi_map::Map;
+use pi_share::cell::TrustCell;
 
 use std::sync::Arc;
 use std::any::TypeId;

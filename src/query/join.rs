@@ -1,4 +1,4 @@
-use share::cell::TrustCell;
+use pi_share::cell::TrustCell;
 
 use crate::{
     archetype::{Archetype, ArchetypeId, ArchetypeComponentId},

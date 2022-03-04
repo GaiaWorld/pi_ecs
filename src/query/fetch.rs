@@ -9,7 +9,7 @@ use crate::{
 };
 
 use pi_ecs_macros::all_tuples;
-use share::cell::TrustCell;
+use pi_share::cell::TrustCell;
 use std::{
     marker::PhantomData,
 	any::TypeId, sync::Arc,
@@ -59,7 +59,7 @@ pub trait Fetch: Send + Sync + Sized {
 }
 
 pub struct MianFetch<'a> {
-	pub(crate) value: slotmap::secondary::Keys<'a, LocalVersion, ()>,
+	pub(crate) value: pi_slotmap::secondary::Keys<'a, LocalVersion, ()>,
 	pub(crate) next: Option<Box<MianFetch<'a>>>,
 }
 

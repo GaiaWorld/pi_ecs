@@ -2,9 +2,9 @@ use std::convert::From;
 use std::ops::{Deref, DerefMut};
 use std::{ops::Index, ops::IndexMut};
 
-pub use slotmap::{Key, KeyData, SlotMap, SecondaryMap as SecondaryMap1, SparseSecondaryMap as SparseSecondaryMap1, DenseSlotMap, DelaySlotMap};
-pub use map::Map;
-pub use slotmap::dense::{Iter, IterMut, Keys, Values};
+pub use pi_slotmap::{Key, KeyData, SlotMap, SecondaryMap as SecondaryMap1, SparseSecondaryMap as SparseSecondaryMap1, DenseSlotMap, DelaySlotMap};
+pub use pi_map::Map;
+pub use pi_slotmap::dense::{Iter, IterMut, Keys, Values};
 
 
 pub struct SecondaryMap<K: Key, V>(SecondaryMap1<K, V>);

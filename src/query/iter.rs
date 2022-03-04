@@ -1,7 +1,7 @@
 
 use std::marker::PhantomData;
 
-use slotmap::secondary::Keys;
+use pi_slotmap::secondary::Keys;
 
 use crate::{
     archetype::{ArchetypeId, ArchetypeIdent},
@@ -37,7 +37,7 @@ where
     fetch: &'s mut Q::Fetch,
     filter:&'s mut F::Fetch,
 	entities_iter: Option<EntityIter<'s>>,
-	all_entities_iter: slotmap::dense::Keys<'s, LocalVersion, ()>,
+	all_entities_iter: pi_slotmap::dense::Keys<'s, LocalVersion, ()>,
 	mark: PhantomData<A>,
 }
 

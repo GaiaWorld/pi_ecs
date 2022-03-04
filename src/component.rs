@@ -1,12 +1,13 @@
 /// 组件
 use std::{any::{TypeId, type_name}, ops::Index, ops::IndexMut};
 use std::collections::hash_map::Entry;
-use map::{Map, vecmap::VecMap};
 
-use share::cell::TrustCell;
+use pi_map::{Map, vecmap::VecMap};
+use pi_share::cell::TrustCell;
+use pi_hash::XHashMap;
+use pi_any::ArcAny;
+
 use thiserror::Error;
-use hash::XHashMap;
-use any::ArcAny;
 
 
 use crate::{

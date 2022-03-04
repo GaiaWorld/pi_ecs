@@ -5,8 +5,8 @@ use std::ops::{Deref, DerefMut};
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
-use map::Map;
-use share::cell::TrustCell;
+use pi_map::Map;
+use pi_share::cell::TrustCell;
 
 use crate::archetype::{Archetype, Archetypes, ArchetypeId, ArchetypeIdent, ArchetypeComponentId};
 use crate::component::{Components, ComponentId, Component};

@@ -1,8 +1,8 @@
 use std::{marker::PhantomData, sync::Arc, any::TypeId};
 
-use dirty::{LayerDirty as LayerDirty1, DirtyIterator};
-use hash::XHashMap;
-use map::Map;
+use pi_dirty::{LayerDirty as LayerDirty1, DirtyIterator};
+use pi_hash::XHashMap;
+use pi_map::Map;
 
 use crate::{
 	component::{Component, ComponentId},
@@ -15,7 +15,7 @@ use crate::{
 	monitor::{Event, ComponentListen, Create, Modify, Listen, Listeners,ListenSetup, ResourceListen},
 	prelude::{FetchState, Fetch, WorldQuery, FilterFetch, filter_change::ChangedFetch}, entity::Entity, archetype::ArchetypeIdent,
 };
-use tree::{Tree, Empty, RecursiveIterator};
+use pi_tree::{Tree, Empty, RecursiveIterator};
 
 use super::{Res, assert_component_access_compatibility, SystemParam};
 

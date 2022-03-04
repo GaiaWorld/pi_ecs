@@ -12,7 +12,7 @@ use crate::{
     world::World,
 };
 use futures::future::BoxFuture;
-use share::cell::TrustCell;
+use pi_share::cell::TrustCell;
 use std::io::Result;
 use std::sync::Arc;
 

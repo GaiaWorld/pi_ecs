@@ -1,43 +1,36 @@
 [package]
 name = "pi_ecs"
 version = "0.1.0"
-authors = ["suncy <suncy@gmail.com>"]
-edition = "2018"
+authors = ["suncy <530739162@qq.com>"]
+edition = "2021"
+description = "An excellent ECS framework"
+repository = "https://github.com/GaiaWorld/pi_ecs.git"
+license = "MIT OR Apache-2.0"
+keywords = ["pi", "ecs"]
 
 [dependencies]
 # slotmap = "1.0"
-tree = { path = "../pi_lib/tree"}
-slotmap = { path = "../pi_lib/slotmap"}
-slab = {path="../pi_lib/slab"}
-atom = {path="../pi_lib/atom"}
-map = {path="../pi_lib/map"}
-any = {path="../pi_lib/any"}
-listener = {path="../pi_lib/listener"}
-hash = {path="../pi_lib/hash"}
-time = {path="../pi_lib/time"}
-share = {path="../pi_lib/share"}
-wy_rng = {path="../pi_lib/wy_rng"}
-debug_info = {path="../pi_lib/debug_info"}
-graph = {path="../pi_lib/graph"}
-async_graph = {path="../pi_lib/async_graph"}
-async = {path="../pi_lib/async"}
-dirty = { path= "../pi_lib/dirty"}
+pi_tree = "0.1"
+pi_slotmap = "0.1"
+pi_slab = "0.1"
+pi_atom = "0.1"
+pi_map = "0.1"
+pi_any = "0.1"
+pi_listener = "0.1"
+pi_hash = "0.1"
+pi_time = "0.1"
+pi_share = "0.1"
+pi_wy_rng = "0.1"
+pi_debug_info = "0.1"
+pi_graph = "0.1"
+pi_async_graph = "0.1"
+pi_async = "0.1"
+pi_dirty = "0.1"
 pi_ecs_macros = { path = "macros"}
 paste = "0.1"
-lazy_static = "*"
-log = "*"
-rand = "*"
+lazy_static = "1.4"
+log = "0.4"
+rand = "0.8"
 thiserror = "1.0"
 futures = "0.3"
 fixedbitset = "0.4"
-
-
-
-
-# im = "*"
-
-# [dependencies.web-sys]
-# version = "*"
-# features = [
-# 	"console",
-# ]
