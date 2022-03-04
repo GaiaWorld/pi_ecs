@@ -3,7 +3,7 @@
 use std::ops::{Deref, DerefMut};
 
 use pi_ecs::{prelude::{Query, World, Entity, StageBuilder, SingleDispatcher, Dispatcher, Join}, sys::system::IntoSystem, storage::Offset};
-use r#async::rt::{multi_thread::MultiTaskRuntimeBuilder, AsyncRuntime};
+use pi_async::rt::{multi_thread::MultiTaskRuntimeBuilder, AsyncRuntime};
 use std::sync::Arc;
 
 /// 定义一个名为Node原型类型

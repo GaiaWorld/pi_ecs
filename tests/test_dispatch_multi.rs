@@ -1,6 +1,6 @@
 use futures::{future::BoxFuture, FutureExt};
 use pi_ecs::prelude::*;
-use r#async::rt::{
+use pi_async::rt::{
     multi_thread::MultiTaskRuntimeBuilder, single_thread::SingleTaskRunner, AsyncRuntime,
 };
 use std::{io::Result, sync::Arc};

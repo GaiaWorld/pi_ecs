@@ -1,7 +1,7 @@
 /// 测试组件OrDefault查询
 
 use pi_ecs::{prelude::{World, StageBuilder, SingleDispatcher, Dispatcher, Query, OrDefault}, sys::system::IntoSystem, entity::Entity, storage::Offset};
-use r#async::rt::{multi_thread::{MultiTaskRuntimeBuilder, StealableTaskPool}, AsyncRuntime};
+use pi_async::rt::{multi_thread::{MultiTaskRuntimeBuilder, StealableTaskPool}, AsyncRuntime};
 use std::sync::Arc;
 
 #[derive(Debug)]

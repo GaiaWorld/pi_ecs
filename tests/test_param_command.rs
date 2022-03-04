@@ -1,7 +1,7 @@
 /// 测试系统参数Tick
 
 use pi_ecs::{prelude::{World, StageBuilder, SingleDispatcher, Dispatcher, Commands, EntityCommands, Local, Query}, sys::system::IntoSystem, entity::Entity, storage::Offset};
-use r#async::rt::{multi_thread::{MultiTaskRuntimeBuilder, StealableTaskPool}, AsyncRuntime};
+use pi_async::rt::{multi_thread::{MultiTaskRuntimeBuilder, StealableTaskPool}, AsyncRuntime};
 use std::sync::Arc;
 
 struct Node;

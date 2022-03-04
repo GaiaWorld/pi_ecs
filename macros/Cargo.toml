@@ -1,10 +1,11 @@
 [package]
 name = "pi_ecs_macros"
 version = "0.1.0"
-description = "pi_ecs Macros"
-authors = ["suncy <suncy@gmail.com>"]
-edition = "2018"
-license = "MIT"
+authors = ["suncy <530739162@qq.com>"]
+edition = "2021"
+description = "An excellent ECS framework"
+license = "MIT OR Apache-2.0"
+keywords = ["pi", "ecs", "ecs_macros"]
 
 [lib]
 proc-macro = true

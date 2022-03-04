@@ -2,7 +2,7 @@
 
 use futures::future::{BoxFuture, FutureExt};
 use pi_ecs::{prelude::{Query, With,Res, World, Local, ResMut, Entity, StageBuilder, SingleDispatcher, Dispatcher}, sys::system::IntoSystem};
-use r#async::rt::{multi_thread::MultiTaskRuntimeBuilder, AsyncRuntime};
+use pi_async::rt::{multi_thread::MultiTaskRuntimeBuilder, AsyncRuntime};
 use std::{sync::Arc, io::Result};
 
 /// 定义一个名为Node原型类型

@@ -26,7 +26,7 @@ pi_graph = "0.1"
 pi_async_graph = "0.1"
 pi_async = "0.1"
 pi_dirty = "0.1"
-pi_ecs_macros = { path = "macros"}
+pi_ecs_macros = {version="0.1", path = "macros"}
 paste = "0.1"
 lazy_static = "1.4"
 log = "0.4"

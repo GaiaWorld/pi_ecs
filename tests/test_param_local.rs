@@ -1,7 +1,7 @@
 /// 测试系统参数Local
 
 use pi_ecs::{prelude::{World, StageBuilder, SingleDispatcher, Dispatcher, Local}, sys::system::IntoSystem, world::FromWorld};
-use r#async::rt::{multi_thread::{MultiTaskRuntimeBuilder, StealableTaskPool}, AsyncRuntime};
+use pi_async::rt::{multi_thread::{MultiTaskRuntimeBuilder, StealableTaskPool}, AsyncRuntime};
 use std::sync::Arc;
 
 #[derive(Debug)]

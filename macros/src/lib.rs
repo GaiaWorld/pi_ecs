@@ -332,7 +332,7 @@ pub fn derive_bundle(input: TokenStream) -> TokenStream {
 
     TokenStream::from(quote! {
         /// SAFE: TypeInfo is returned in field-definition-order. [from_components] and [get_components] use field-definition-order
-        unsafe impl #impl_generics #ecs_path::bundle::Bundle for #struct_name#ty_generics #where_clause {
+        unsafe impl #impl_generics #ecs_path::bundle::Bundle for #struct_name #ty_generics #where_clause {
             fn type_info() -> Vec<#ecs_path::component::TypeInfo> {
                 let mut type_info = Vec::with_capacity(#field_len);
                 #(#field_type_infos)*
@@ -562,7 +562,7 @@ pub fn derive_system_param(input: TokenStream) -> TokenStream {
     let fetch_struct_visibility = &ast.vis;
 
     TokenStream::from(quote! {
-        impl #impl_generics #path::system::SystemParam for #struct_name#ty_generics #where_clause {
+        impl #impl_generics #path::system::SystemParam for #struct_name #ty_generics #where_clause {
             type Fetch = #fetch_struct_name <(#(<#field_types as SystemParam>::Fetch,)*), #punctuated_generic_idents>;
         }
 
@@ -594,7 +594,7 @@ pub fn derive_system_param(input: TokenStream) -> TokenStream {
         }
 
         impl #impl_generics #path::system::SystemParamFetch<'a> for #fetch_struct_name <(#(<#field_types as SystemParam>::Fetch,)*), #punctuated_generic_idents> {
-            type Item = #struct_name#ty_generics;
+            type Item = #struct_name #ty_generics;
             unsafe fn get_param(
                 state: &'a mut Self,
                 system_state: &'a #path::system::SystemState,

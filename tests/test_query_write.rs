@@ -3,7 +3,7 @@
 
 use pi_ecs::{prelude::{World, StageBuilder, SingleDispatcher, Dispatcher, Query, Write}, sys::system::IntoSystem, monitor::{Event, Listeners, ListenSetup}};
 use pi_ecs_macros::listen;
-use r#async::rt::{multi_thread::{MultiTaskRuntimeBuilder, StealableTaskPool}, AsyncRuntime};
+use pi_async::rt::{multi_thread::{MultiTaskRuntimeBuilder, StealableTaskPool}, AsyncRuntime};
 use std::{sync::Arc};
 
 #[derive(Debug)]

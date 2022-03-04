@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use pi_ecs::{prelude::{Query, IntoSystem, StageBuilder, SingleDispatcher, Dispatcher, With, WithOut, Or}, entity::Entity, world::World, storage::Offset};
-use r#async::rt::{AsyncRuntime, multi_thread::{MultiTaskRuntimeBuilder, StealableTaskPool}};
+use pi_async::rt::{AsyncRuntime, multi_thread::{MultiTaskRuntimeBuilder, StealableTaskPool}};
 
 
 pub struct Node;

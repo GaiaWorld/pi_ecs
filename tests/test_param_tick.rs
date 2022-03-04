@@ -1,7 +1,7 @@
 /// 测试系统参数Tick
 
 use pi_ecs::{prelude::{World, StageBuilder, SingleDispatcher, Dispatcher, Tick}, sys::system::IntoSystem};
-use r#async::rt::{multi_thread::{MultiTaskRuntimeBuilder, StealableTaskPool}, AsyncRuntime};
+use pi_async::rt::{multi_thread::{MultiTaskRuntimeBuilder, StealableTaskPool}, AsyncRuntime};
 use std::sync::Arc;
 
 /// Tick可以获得World上的节拍
