@@ -4,7 +4,7 @@ use crate::monitor::{NotifyImpl, Notify};
 use crate::storage::{LocalVersion, DelaySlotMap, Local};
 use crate::archetype::ArchetypeId;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Hash, Eq, Ord, PartialEq, PartialOrd, Debug)]
 pub struct Entity {
 	archetype_id: ArchetypeId,
 	local: LocalVersion,
