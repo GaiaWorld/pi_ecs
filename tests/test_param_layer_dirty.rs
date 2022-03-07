@@ -5,12 +5,11 @@
 
 use std::sync::Arc;
 
-use pi_ecs::{prelude::{Query, IntoSystem, StageBuilder, SingleDispatcher, Dispatcher, LayerDirty}, entity::Entity, world::World, storage::{Offset, LocalVersion, Local}, monitor::Notify};
+use pi_ecs::{prelude::{Idtree, Query, IntoSystem, StageBuilder, SingleDispatcher, Dispatcher, LayerDirty}, entity::Entity, world::World, storage::{Offset, LocalVersion, Local, Key}, monitor::Notify};
 use pi_ecs::query::filter_change::Changed;
 use pi_async::rt::{AsyncRuntime, multi_thread::{MultiTaskRuntimeBuilder, StealableTaskPool}};
-use pi_tree::Tree;
 
-
+#[derive(Default)]
 pub struct Node;
 
 #[derive(Debug)]
@@ -40,8 +39,8 @@ fn test() {
 	world.new_archetype::<Node>()
 		.register::<Name>()
 		.create();
-	world.insert_resource(Tree::<LocalVersion, ()>::default());
-	let tree_id = world.get_resource_id::<Tree<LocalVersion, ()>>().unwrap().clone();
+	world.insert_resource(Idtree::<Node, ()>::default());
+	let tree_id = world.get_resource_id::<Idtree<Node>>().unwrap().clone();
 
 	let dispatcher = create_dispatcher(&mut world);
 
@@ -51,11 +50,11 @@ fn test() {
 	let root = world.spawn::<Node>()
 		.insert(Name(name.clone()))
 		.id();
-	unsafe{world.archetypes().get_resource_mut::<Tree<LocalVersion, ()>>(tree_id)}.unwrap().create(root.local());
-	unsafe{world.archetypes().get_resource_mut::<Tree<LocalVersion, ()>>(tree_id)}.unwrap().insert_child(root.local(), None, 0);
+	unsafe{world.archetypes().get_resource_mut::<Idtree<Node>>(tree_id)}.unwrap().create(root.local());
+	unsafe{world.archetypes().get_resource_mut::<Idtree<Node>>(tree_id)}.unwrap().insert_child(root.local(), LocalVersion::null(), 0);
 	entitys.push(root.clone());
 
-	unsafe{world.archetypes().get_resource_notify::<Tree<LocalVersion, ()>>(tree_id)}.unwrap().create_event(root.clone());
+	unsafe{world.archetypes().get_resource_notify::<Idtree<Node>>(tree_id)}.unwrap().create_event(root.clone());
 
 	create_tree(
 		name,
@@ -95,12 +94,12 @@ fn create_tree (
 			.insert(Name(name.clone()))
 			.id();
 
-			unsafe{world.archetypes().get_resource_mut::<Tree<LocalVersion, ()>>(tree_id)}.unwrap().create(id.local());
+			unsafe{world.archetypes().get_resource_mut::<Idtree<Node>>(tree_id)}.unwrap().create(id.local());
 			entitys.push(id.clone());
 			create_tree(name, id.local(), cur_layer_count + 1, layer_count, each_layer_count, world, entitys, tree_id);
 
-			unsafe{world.archetypes().get_resource_mut::<Tree<LocalVersion, ()>>(tree_id)}.unwrap().insert_child(id.local(), Some(parent), std::usize::MAX);
-			unsafe{world.archetypes().get_resource_notify::<Tree<LocalVersion, ()>>(tree_id)}.unwrap().create_event(id.clone());
+			unsafe{world.archetypes().get_resource_mut::<Idtree<Node>>(tree_id)}.unwrap().insert_child(id.local(), parent, std::usize::MAX);
+			unsafe{world.archetypes().get_resource_notify::<Idtree<Node>>(tree_id)}.unwrap().create_event(id.clone());
 		}
 	}
 }

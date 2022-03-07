@@ -1,4 +1,5 @@
 use std::{marker::PhantomData, sync::Arc, any::TypeId};
+use std::ops::{Deref, DerefMut};
 
 use pi_dirty::{LayerDirty as LayerDirty1, DirtyIterator};
 use pi_hash::XHashMap;
@@ -13,11 +14,33 @@ use crate::{
 	},
 	storage::{LocalVersion, SecondaryMap, Local}, 
 	monitor::{Event, ComponentListen, Create, Modify, Listen, Listeners,ListenSetup, ResourceListen},
-	prelude::{FetchState, Fetch, WorldQuery, FilterFetch, filter_change::ChangedFetch}, entity::Entity, archetype::ArchetypeIdent,
+	prelude::{FetchState, Fetch, WorldQuery, FilterFetch, filter_change::ChangedFetch}, entity::Entity, archetype::{ArchetypeIdent, ArchetypeId},
 };
-use pi_tree::{Tree, Empty, RecursiveIterator};
+use pi_slotmap_tree::{Tree, RecursiveIterator};
 
 use super::{Res, assert_component_access_compatibility, SystemParam};
+
+#[derive(Default)]
+pub struct Idtree<A, N: Default = ()>(Tree<LocalVersion, N>, ArchetypeId, PhantomData<A>);
+
+impl<A: ArchetypeIdent, N: Default> Deref for Idtree<A, N>  {
+	type Target = Tree<LocalVersion, N>;
+    fn deref(&self) -> &Self::Target {
+		&self.0
+	}
+}
+
+impl<A: ArchetypeIdent, N: Default> DerefMut for Idtree<A, N>  {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+		&mut self.0
+	}
+}
+
+impl<A: ArchetypeIdent, N: Default> Idtree<A, N> {
+	pub fn to_entity(&self, local: LocalVersion) -> Entity {
+		Entity::new(self.1, local)
+	}
+}
 
 /// 层脏
 /// 默认监听了组件的修改、创建事件、Tree的创建事件，当监听到这些事件，会添加到层次脏列表
@@ -50,7 +73,7 @@ impl<N: 'static + Send + Sync + Default, A: ArchetypeIdent, F: WorldQuery> Layer
 		let state = unsafe {
 			&mut *(Arc::as_ptr(&self.state) as usize as *mut LayerDirtyState<A, F, N>)
 		};
-		let tree = unsafe{&*(self.state.tree_ptr as *const Tree<LocalVersion, N>)};
+		let tree = unsafe{&*(self.state.tree_ptr as *const Idtree<A, N>)};
 		LayerDirtyIter {
 			matchs: state.is_matchs,
 			iter_inner: state.layer_inner.layer_list.iter(),
@@ -70,7 +93,7 @@ pub struct LayerDirtyIter<'s, A: ArchetypeIdent, F: WorldQuery, N: 'static + Sen
 
 	mark_inner: &'s mut SecondaryMap<LocalVersion, usize>,
 
-	tree: &'s Tree<LocalVersion, N>,
+	tree: &'s Idtree<A, N>,
 	archetype_id: Local,
 
 	pre_iter: Option<RecursiveIterator<'s, LocalVersion, N>>,
@@ -129,12 +152,6 @@ pub struct LayerDirtyInner{
 	pub(crate) is_install: XHashMap<ComponentId, ()>,
 }
 
-impl Empty for LocalVersion {
-	fn empty() -> Self {
-		LocalVersion(0)
-	}
-}
-
 impl LayerDirtyInner {
 	pub fn new() -> Self {
 		Self {
@@ -143,7 +160,7 @@ impl LayerDirtyInner {
 			is_install: XHashMap::default(),
 		}
 	}
-	pub fn insert<N: 'static + Sync + Send + Default>(&mut self, id: LocalVersion, tree: &Tree<LocalVersion, N>) {
+	pub fn insert<A: ArchetypeIdent, N: 'static + Sync + Send + Default>(&mut self, id: LocalVersion, tree: &Idtree<A, N>) {
 		match tree.get(id) {
             Some(r) => {
                 if r.layer() != 0 {
@@ -186,7 +203,7 @@ impl<T: Component> InstallLayerListen for ChangedFetch<T>{
 			let listen = move |
 				event: Event, 
 				_:Listen<ComponentListen<A, T, (Create, Modify)>>,
-				idtree: Res<Tree<LocalVersion, N>>
+				idtree: Res<Idtree<A, N>>
 			| {
 				// 标记层脏
 				unsafe{&mut *(layer as *mut LayerDirtyInner)}.insert(event.id.local(), &idtree);
@@ -200,8 +217,8 @@ impl<T: Component> InstallLayerListen for ChangedFetch<T>{
 			// 安装监听器，监听Tree的Create事件
 			let listen = move |
 				event: Event, 
-				_:Listen<ResourceListen<Tree<LocalVersion, N>, Create>>,
-				idtree: Res<Tree<LocalVersion, N>>
+				_:Listen<ResourceListen<Idtree<A, N>, Create>>,
+				idtree: Res<Idtree<A, N>>
 			| {
 				// 标记层脏
 				unsafe{&mut *(layer as *mut LayerDirtyInner)}.insert(event.id.local(), &idtree);
@@ -261,12 +278,12 @@ unsafe impl<N: 'static + Send + Sync + Default, A: ArchetypeIdent, F: WorldQuery
 			}
 		}
 		
-		let tree_resoruce_id = match world.get_resource_id::<Tree<LocalVersion, N>>() {
+		let tree_resoruce_id = match world.get_resource_id::<Idtree<A, N>>() {
 			Some(r) => r.clone(),
-			None => panic!("systemparam init fail, {:?} is not register, in system {:?}", std::any::type_name::<Tree<LocalVersion, N>>(), &system_state.name),
+			None => panic!("systemparam init fail, {:?} is not register, in system {:?}", std::any::type_name::<Idtree<A, N>>(), &system_state.name),
 		};
-		let tree = unsafe{world.archetypes().get_resource::<Tree<LocalVersion, N>>(tree_resoruce_id)}.unwrap();
-		let tree_ptr = tree as *const Tree<LocalVersion, N> as usize;
+		let tree = unsafe{world.archetypes().get_resource::<Idtree<A, N>>(tree_resoruce_id)}.unwrap();
+		let tree_ptr = tree as *const Idtree<A, N> as usize;
 
 		let r = Arc::new(LayerDirtyState {
 			layer_inner: LayerDirtyInner::new(),
@@ -280,9 +297,9 @@ unsafe impl<N: 'static + Send + Sync + Default, A: ArchetypeIdent, F: WorldQuery
         });
 
 		// 判断访问是否冲突
-		let tree_archetype_id = world.archetypes().get_archetype_resource_id::<Tree<LocalVersion, N>>().unwrap().clone();
+		let tree_archetype_id = world.archetypes().get_archetype_resource_id::<Idtree<A, N>>().unwrap().clone();
 		if archetype_component_access.has_write(tree_archetype_id) {
-			panic!("systemparam init fail, {:?} read and write conflict, in system {:?}", std::any::type_name::<Tree<LocalVersion, N>>(), &system_state.name);
+			panic!("systemparam init fail, {:?} read and write conflict, in system {:?}", std::any::type_name::<Idtree<A, N>>(), &system_state.name);
 		}
 		component_access.add_read(tree_resoruce_id);
 		archetype_component_access.add_read(tree_archetype_id);

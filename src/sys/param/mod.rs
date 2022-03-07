@@ -13,4 +13,4 @@ pub use res::{Res, ResMut};
 pub use query::Query;
 pub use tick::*;
 pub use command::{Commands, EntityCommands};
-pub use tree_layer_dirty::LayerDirty;
+pub use tree_layer_dirty::{LayerDirty, Idtree};

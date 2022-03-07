@@ -158,6 +158,17 @@ pub trait FromOffset: Offset {
 #[derive(Debug, Copy, Clone, Hash, Ord, PartialOrd, Eq, PartialEq, Default)]
 pub struct LocalVersion(pub(crate) u64);
 
+// impl Null for LocalVersion {
+// 	/// 判断当前值是否空
+// 	fn null() -> Self {
+// 		LocalVersion::new()
+// 	}
+// 	/// 判断当前值是否空
+// 	fn is_null(&self) -> bool;
+// }
+
+
+
 // impl LocalVersion {
 // 	pub(crate) fn new(idx: u32, version: u32) -> Self {
 // 		LocalVersion((version as u64) << 32 +  idx as u64)
