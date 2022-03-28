@@ -66,8 +66,8 @@ where
             let arr = g.topological_sort();
             if node_index >= arr.len() {
                 // stage结束，apply
-                for i in 0..arr.len() {
-                    let node = g.get(&arr[i]).unwrap().value();
+                for elem in arr {
+                    let node = g.get(elem).unwrap().value();
                     node.apply();
                 }
                 stage_index += 1;
@@ -76,23 +76,21 @@ where
             }
             let node = g.get(&arr[node_index]).unwrap().value();
             node_index += 1;
-            match node.is_sync() {
-                Some(sync) => {
-                    if sync {
-                        node.get_sync().run();
-                    } else {
-                        let f = node.get_async();
-                        let vec1 = vec.clone();
-                        let rt1 = rt.clone();
-                        rt.spawn(rt.alloc(), async move {
-                            let _ = f.await;
-                            // println!("ok");
-                            SingleDispatcher::exec(vec1, rt1, stage_index, node_index + 1);
-                        })
-                        .unwrap();
-                    }
+            if let Some(sync) = node.is_sync() {
+                if sync {
+                    node.get_sync().run();
+                } else {
+                    let f = node.get_async();
+                    let vec1 = vec.clone();
+                    let rt1 = rt.clone();
+                    rt.spawn(rt.alloc(), async move {
+                        let _ = f.await;
+                        // println!("ok");
+                        SingleDispatcher::exec(vec1, rt1, stage_index, node_index);
+                    })
+                    .unwrap();
+                    return;
                 }
-                None => (),
             }
         }
     }
@@ -194,8 +192,8 @@ fn single_exec<P1, P2>(
         let arr = g.topological_sort();
         if node_index >= g.node_count() {
             // stage结束，apply
-            for i in 0..g.node_count() {
-                let node = g.get(&arr[i]).unwrap().value();
+            for elem in arr {
+                let node = g.get(elem).unwrap().value();
                 node.apply();
             }
 
@@ -205,35 +203,32 @@ fn single_exec<P1, P2>(
 
         let node = g.get(&arr[node_index]).unwrap().value();
         node_index += 1;
-        match node.is_sync() {
-            Some(sync) => {
-                if sync {
-                    if stage_index > 0 && node_index == 1 {
-                        let f = node.get_sync();
-                        let d1 = d.clone();
-                        single1
-                            .spawn(single1.alloc(), async move {
-                                f.run();
-                                single_exec(d1, stage_index, node_index, single);
-                            })
-                            .unwrap();
-                        return;
-                    }
-                    // 如果是最开始的阶段， 或者非起始节点，则立即同步执行
-                    node.get_sync().run();
-                } else {
-                    let f = node.get_async();
+        if let Some(sync) = node.is_sync() {
+            if sync {
+                if stage_index > 0 && node_index == 1 {
+                    let f = node.get_sync();
                     let d1 = d.clone();
                     single1
                         .spawn(single1.alloc(), async move {
-                            let _ = f.await;
+                            f.run();
                             single_exec(d1, stage_index, node_index, single);
                         })
                         .unwrap();
                     return;
                 }
+                // 如果是最开始的阶段， 或者非起始节点，则立即同步执行
+                node.get_sync().run();
+            } else {
+                let f = node.get_async();
+                let d1 = d.clone();
+                single1
+                    .spawn(single1.alloc(), async move {
+                        let _ = f.await;
+                        single_exec(d1, stage_index, node_index, single);
+                    })
+                    .unwrap();
+                return;
             }
-            None => (),
         }
     }
 }
@@ -252,8 +247,8 @@ where
             if r.is_ok() {
                 // stage结束，apply
                 let arr = g.topological_sort();
-                for i in 0..g.node_count() {
-                    let node = g.get(&arr[i]).unwrap().value();
+                for elem in arr {
+                    let node = g.get(elem).unwrap().value();
                     node.apply();
                 }
 
@@ -350,6 +345,7 @@ impl ExecNode {
 }
 
 /// 阶段构造器
+#[derive(Default)]
 pub struct StageBuilder {
     // 所有的节点 id
     components: HashSet<usize>,
@@ -362,11 +358,7 @@ pub struct StageBuilder {
 impl StageBuilder {
     /// 创建
     pub fn new() -> Self {
-        StageBuilder {
-            components: HashSet::default(),
-            systems: Vec::new(),
-            edges: Vec::new(),
-        }
+        StageBuilder::default()
     }
 
     /// 加入节点
