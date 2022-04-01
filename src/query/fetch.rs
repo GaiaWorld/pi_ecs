@@ -1,6 +1,6 @@
 use crate::{
     archetype::{Archetype, ArchetypeId, ArchetypeComponentId},
-    component::{Component, ComponentId, MultiCaseImpl},
+    component::{Component, ComponentId, MultiCaseImpl, ComponentTicks},
     entity::Entity,
     query::{Access, FilteredAccess},
     storage::LocalVersion,
@@ -8,11 +8,12 @@ use crate::{
 	pointer::Mut, WorldInner,
 };
 
+use derive_deref::{Deref, DerefMut};
 use pi_ecs_macros::all_tuples;
 use pi_share::cell::TrustCell;
 use std::{
     marker::PhantomData,
-	any::TypeId, sync::Arc,
+	any::TypeId, sync::Arc, intrinsics::transmute,
 };
 
 /// WorldQuery 从world上fetch组件、实体、资源，需要实现该triat
@@ -52,6 +53,9 @@ pub trait Fetch: Send + Sync + Sized {
     /// Must always be called _after_ [Fetch::set_archetype]. `archetype_index` must be in the range
     /// of the current archetype
     unsafe fn archetype_fetch(&mut self, archetype_index: LocalVersion) -> Option<Self::Item>;
+
+	/// # fetch fail will panic
+	unsafe fn archetype_fetch_unchecked(&mut self, archetype_index: LocalVersion) -> Self::Item;
 
 	unsafe fn main_fetch<'a>(&'a self, _state: &Self::State, _last_change_tick: u32, _change_tick: u32) -> Option<MianFetch<'a>> {
 		None
@@ -158,7 +162,111 @@ impl Fetch for EntityFetch {
 		// 	None => None,
 		// } 
     }
+
+	unsafe fn archetype_fetch_unchecked(&mut self, local: LocalVersion) -> Self::Item {
+		Entity::new(self.archetype_id, local)
+	}
 }
+
+#[derive(Clone)]
+pub struct ChangeTrackers<T: Component> {
+    pub(crate) component_ticks: ComponentTicks,
+    pub(crate) last_change_tick: u32,
+    pub(crate) change_tick: u32,
+    marker: PhantomData<T>,
+}
+pub struct ChangeTrackersFetch<T> {
+	pub(crate) container: usize,
+	pub(crate) last_change_tick: u32,
+	pub(crate) change_tick: u32,
+	mark: PhantomData<T>,
+}
+
+impl<T: Component> ChangeTrackers<T> {
+    /// Has this component been added since the last execution of this system.
+    pub fn is_added(&self) -> bool {
+        self.component_ticks
+            .is_added(self.last_change_tick, self.change_tick)
+    }
+
+    /// Has this component been changed since the last execution of this system.
+    pub fn is_changed(&self) -> bool {
+        self.component_ticks
+            .is_changed(self.last_change_tick, self.change_tick)
+    }
+}
+
+impl<T: Component> WorldQuery for ChangeTrackers<T> {
+	type Fetch = ChangeTrackersFetch<T>;
+    type State = ReadState<T>;
+}
+
+unsafe impl<T> ReadOnlyFetch for ChangeTrackersFetch<T> {}
+
+impl<T: Component> Fetch for ChangeTrackersFetch<T> {
+    type Item = ChangeTrackers<T>;
+    type State = ReadState<T>;
+
+    unsafe fn init(
+        _world: &World,
+        _state: &Self::State
+    ) -> Self {
+        Self {
+			container: 0,
+			last_change_tick:0,
+			change_tick: 0,
+			mark: PhantomData,
+        }
+    }
+
+	unsafe fn setting(&mut self, _world: &WorldInner, last_change_tick: u32, change_tick: u32) {
+		self.last_change_tick = last_change_tick;
+		self.change_tick = change_tick;
+	}
+
+    #[inline]
+    unsafe fn set_archetype(
+        &mut self,
+        state: &Self::State,
+        archetype: &Archetype,
+		_world: &World,
+    ) {
+		let c = archetype.get_component(state.component_id);
+		match c.clone().downcast() {
+			Ok(r) => {
+				let r: Arc<TrustCell<MultiCaseImpl<T>>> = r;
+				self.container = r.as_ptr() as usize;
+			},
+			Err(_) => panic!("downcast fail")
+		}
+    }
+
+    #[inline]
+    unsafe fn archetype_fetch(&mut self, local: LocalVersion) -> Option<Self::Item> {
+		match (&mut *(self.container as *mut MultiCaseImpl<T>)).tick(local) {
+			Some(r) => {
+				Some(ChangeTrackers {
+					component_ticks: r.clone(),
+					last_change_tick: self.last_change_tick,
+					change_tick: self.change_tick,
+					marker: PhantomData
+				})
+			},
+			None => None,
+		}
+    }
+
+	unsafe fn archetype_fetch_unchecked(&mut self, local: LocalVersion) -> Self::Item {
+		ChangeTrackers {
+			component_ticks: (&mut *(self.container as *mut MultiCaseImpl<T>)).tick_uncehcked(local).clone(),
+			last_change_tick: self.last_change_tick,
+			change_tick: self.change_tick,
+			marker: PhantomData
+		}
+	}
+}
+
+
 
 impl<T: Component> WorldQuery for &T {
     type Fetch = ReadFetch<T>;
@@ -252,6 +360,10 @@ impl<T: Component> Fetch for ReadFetch<T> {
     unsafe fn archetype_fetch(&mut self, local: LocalVersion) -> Option<Self::Item> {
 		std::mem::transmute((&mut *(self.container as *mut MultiCaseImpl<T>)).get(local))
     }
+
+	unsafe fn archetype_fetch_unchecked(&mut self, local: LocalVersion) -> Self::Item {
+		std::mem::transmute((&mut *(self.container as *mut MultiCaseImpl<T>)).get_unchecked(local))
+	}
 }
 
 impl<T: Component> WorldQuery for &mut T {
@@ -304,6 +416,14 @@ impl<T: Component> Fetch for MutFetch<T> {
 			None => None,
 		}
     }
+
+	#[inline]
+    unsafe fn archetype_fetch_unchecked(&mut self, local: LocalVersion) -> Self::Item {
+        let value = std::mem::transmute((&mut *(self.container as *mut MultiCaseImpl<T>)).get_unchecked_mut(local));
+		Mut {
+			value,
+		}
+    }
 }
 
 pub struct MutState<T> {
@@ -353,11 +473,13 @@ pub struct Write<T>(PhantomData<T>);
 pub struct WriteItem<T: Component> {
 	value: Option<&'static mut T>,
 	container: usize,
+	default: &'static T,
 	local: LocalVersion,
 	tick: u32
 }
 
 impl<T: Component> WriteItem<T> {
+	/// 取到不可变引用
     pub fn get<'a>(&'a self) -> Option<&'a T> {
 		match &self.value {
 			Some(r) => Some(r),
@@ -365,6 +487,7 @@ impl<T: Component> WriteItem<T> {
 		}
 	}
 
+	/// 取到可变引用
 	pub fn get_mut<'a>(&'a mut self) -> Option<&'a mut T> {
 		match &mut self.value {
 			Some(r) => Some(r),
@@ -372,36 +495,81 @@ impl<T: Component> WriteItem<T> {
 		}
 	}
 
+	/// 通知修改
+	pub fn notify_modify(&mut self) {
+		let c = unsafe{&mut *(self.container as *mut MultiCaseImpl<T>)};
+		c.notify_modify(self.local, self.tick);
+	}
+
+	/// 修改组件并通知监听函数
 	pub fn write<'a>(&'a mut self, value: T) {
 		let c = unsafe{&mut *(self.container as *mut MultiCaseImpl<T>)};
 		c.insert(self.local,value, self.tick);
-		self.value = Some(unsafe{std::mem::transmute(c.get_mut(self.local))});
+		self.value = unsafe{std::mem::transmute(c.get_mut(self.local))};
+	}
+
+	/// 移除组件，并通知监听函数
+	pub fn remove<'a>(&'a mut self) -> Option<T> {
+		let c = unsafe{&mut *(self.container as *mut MultiCaseImpl<T>)};
+		c.delete(self.local)
+	}
+
+	pub fn get_default(&self) -> &T {
+		return unsafe{std::mem::transmute(self.default)};
+	}
+
+	pub fn get_or_default(&self) -> &T {
+		if let Some(r) = &self.value  {
+			return unsafe{std::mem::transmute(r)};
+		} else {
+			return unsafe{std::mem::transmute(self.default)};
+		}
+		// let c = unsafe{&mut *(self.container as *mut MultiCaseImpl<T>)};
+		// c.insert_no_notify(self.local, default.clone());
+		// let r: &'static mut T = unsafe{std::mem::transmute(c.get_unchecked_mut(self.local))};
+		// self.value = Some(r);
+		// self.value.as_ref().unwrap()
 	}
 }
 
-impl<T: Component> WorldQuery for Write<T> {
+impl<T: Component + Clone> WriteItem<T> {
+	pub fn get_mut_or_default(&mut self) -> &mut T {
+		if let Some(r) = &mut self.value  {
+			return unsafe{std::mem::transmute(r)};
+		}
+		let c = unsafe{&mut *(self.container as *mut MultiCaseImpl<T>)};
+		c.insert_no_notify(self.local, self.default.clone());
+		let r: &'static mut T = unsafe{std::mem::transmute(c.get_unchecked_mut(self.local))};
+		self.value = Some(r);
+		self.value.as_mut().unwrap()
+	}
+}
+
+impl<T: Component + Default> WorldQuery for Write<T> {
     type Fetch = WriteFetch<T>;
     type State = WriteState<T>;
 }
-pub struct WriteFetch<T> {
+pub struct WriteFetch<T: Component> {
 	container: usize,
+	default: &'static DefaultComponent<T>,
 	matchs: bool,
 	tick: u32,
 	mark: PhantomData<T>,
 }
 
-impl<T: Component> Fetch for WriteFetch<T> {
+impl<T: Component + Default> Fetch for WriteFetch<T> {
     type Item = WriteItem<T>;
     type State = WriteState<T>;
 
     unsafe fn init(
         _world: &World,
-        _state: &Self::State
+        state: &Self::State
     ) -> Self {
         Self {
 			container: 0,
 			matchs: false,
 			tick: 0,
+			default: state.default,
 			mark: PhantomData,
         }
     }
@@ -445,28 +613,51 @@ impl<T: Component> Fetch for WriteFetch<T> {
 		Some(WriteItem {
 			value,
 			container: self.container,
+			default: self.default,
 			local: local,
 			tick: self.tick,
 		})
     }
+
+	#[inline]
+    unsafe fn archetype_fetch_unchecked(&mut self, local: LocalVersion) -> Self::Item {
+        let value = std::mem::transmute((&mut *(self.container as *mut MultiCaseImpl<T>)).get_unchecked_mut(local));
+		WriteItem {
+			value,
+			container: self.container,
+			local: local,
+			default: self.default,
+			tick: self.tick,
+		}
+    }
 }
 
-pub struct WriteState<T> {
+pub struct WriteState<T: Component> {
     component_id: ComponentId,
+	default: &'static DefaultComponent<T>,
     marker: PhantomData<T>,
 }
 
 // SAFE: component access and archetype component access are properly updated to reflect that T is
 // read
-unsafe impl<T: Component> FetchState for WriteState<T> {
+unsafe impl<T: Component + Default> FetchState for WriteState<T> {
     fn init(world: &mut World, _query_id: usize) -> Self {
+		// DefaultComponent<T>永远不能被销毁
+		match world.get_resource_id::<DefaultComponent<T>>() {
+			Some(r) => r.clone(),
+			None => world.insert_resource(DefaultComponent(T::default())),
+		};
+
 		let component_id = match world.components.get_id(TypeId::of::<T>()) {
 			Some(r) => r,
 			None => panic!("WriteState fetch ${} fail", std::any::type_name::<T>()),
 		};
+
+		let default_value = world.get_resource_mut::<DefaultComponent<T>>().unwrap();
         let component_info = world.components.get_info(component_id).unwrap();
         WriteState {
             component_id: component_info.id(),
+			default: unsafe {transmute(default_value)},
             marker: PhantomData,
         }
     }
@@ -576,6 +767,15 @@ impl<T: Fetch> Fetch for OptionFetch<T> {
 			None
 		}
     }
+
+	#[inline]
+    unsafe fn archetype_fetch_unchecked (&mut self, local: LocalVersion) -> Self::Item {
+		if self.matches {
+        	self.fetch.archetype_fetch(local)
+		} else {
+			None
+		}
+    }
 }
 
 /// 如果组件不存在，则设置一个默认值
@@ -602,13 +802,16 @@ pub struct OrDefaultState<T: Component>{
 	matchs: bool,
 }
 
+#[derive(Deref, DerefMut)]
+pub struct DefaultComponent<T: Component>(T);
+
 // SAFE: component access and archetype component access are properly updated according to the
 // internal Fetch
 unsafe impl<T: Component + Default> FetchState for OrDefaultState<T> {
     fn init(world: &mut World, query_id: usize) -> Self {
-		let id = match world.get_resource_id::<T>() {
+		let id = match world.get_resource_id::<DefaultComponent<T>>() {
 			Some(r) => r.clone(),
-			None => world.insert_resource(T::default()),
+			None => world.insert_resource(DefaultComponent(T::default())),
 		};
 
         Self {
@@ -675,11 +878,18 @@ impl<T: Component + Default> Fetch for OrDefaultFetch<T> {
 			None
 		}
     }
+
+	unsafe fn archetype_fetch_unchecked(&mut self, local: LocalVersion) -> Self::Item {
+		if self.matches {
+			match self.fetch.archetype_fetch(local) {
+				Some(r) => std::mem::transmute(r),
+				None => std::mem::transmute(self.world.archetypes().get_resource::<T>(self.default_id).unwrap())
+			}
+		} else {
+			std::mem::transmute(self.world.archetypes().get_resource::<T>(self.default_id))
+		}
+    }
 }
-
-
-
-
 
 macro_rules! impl_tuple_fetch {
     ($(($name: ident, $state: ident)),*) => {
@@ -722,6 +932,13 @@ macro_rules! impl_tuple_fetch {
 					Some(r) => r,
 					None => return None
 				},)*))
+            }
+
+			#[inline]
+			#[allow(unused_variables)]
+            unsafe fn archetype_fetch_unchecked(&mut self, local: LocalVersion) -> Self::Item {
+                let ($($name,)*) = self;
+                ($($name.archetype_fetch_unchecked(local),)*)
             }
         }
 

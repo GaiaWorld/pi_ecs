@@ -37,7 +37,7 @@ impl Default for DirtyLists {
 macro_rules! impl_tick_filter {
     (
         $(#[$meta:meta])*
-        $name: ident, $state_name: ident, $fetch_name: ident, $is_detected: expr) => {
+        $name: ident, $state_name: ident, $fetch_name: ident, $is_detected: expr, $listen: ty) => {
         $(#[$meta])*
         pub struct $name<T>(PhantomData<T>);
 
@@ -53,7 +53,7 @@ macro_rules! impl_tick_filter {
 
         pub struct $state_name<T> {
 			dirty_list: usize,
-            pub(crate) component_id: ComponentId,
+            pub component_id: ComponentId,
 			is_main: bool, // 是否由该过滤器添加的监听器（如果是，main_fetch会返回对应的迭代器，否则不会返回，因为重复返回会造成重复迭代）
             marker: PhantomData<T>,
         }
@@ -135,10 +135,12 @@ macro_rules! impl_tick_filter {
 				if let None = unsafe{&*(self.dirty_list as *const DirtyList)}.init_list.get(&self.component_id) {
 					let component_id = self.component_id;
 					let dirty_list = self.dirty_list;
+
 					// 安装监听器，监听对应组件修改，并将改变的实体插入到脏列表中
-					let listen = move |event: Event, _:Listen<(ComponentListen<A, T, (Create, Modify)>, )> | {
+					let listen = move |event: Event, _:Listen<(ComponentListen<A, T, $listen>, )> | {
 						unsafe{&mut *(dirty_list as *mut DirtyList)}.value.insert(event.id.local(), ());
 					};
+
 					// 标记监听器已经设置，下次不需要重复设置（同一个查询可能涉及到多次相同组件的过滤）
 					unsafe{&mut *(self.dirty_list as *mut DirtyList)}.init_list.insert(component_id, ());
 					let l = listen.listeners();
@@ -202,6 +204,14 @@ macro_rules! impl_tick_filter {
 					None => None,
 				}
             }
+
+			unsafe fn archetype_fetch_unchecked(&mut self, archetype_index: LocalVersion) -> bool {
+				let value = (& *(self.container as *mut MultiCaseImpl<T>)).tick(archetype_index);
+				match value {
+					Some(r) => r.is_changed(self.last_change_tick, self.change_tick) || r.is_added(self.last_change_tick, self.change_tick),
+					None => false,
+				}
+            }
         }
 
 		impl<T: Component> FilterFetch for $fetch_name<T> {
@@ -248,5 +258,24 @@ impl_tick_filter!(
     Changed,
     ChangedState,
     ChangedFetch,
-    ComponentTicks::is_changed
+    ComponentTicks::is_changed,
+	(Create, Modify)
+
 );
+
+impl_tick_filter!(
+    Added,
+    AddedState,
+    AddedFetch,
+    ComponentTicks::is_added,
+	Create
+);
+
+impl_tick_filter!(
+    Modifyed,
+    ModifyedState,
+    ModifyedFetch,
+    ComponentTicks::is_modifyed,
+	Modify
+);
+

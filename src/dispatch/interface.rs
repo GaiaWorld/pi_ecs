@@ -8,7 +8,7 @@ use pi_async_graph::{async_graph, Runnble, Runner};
 use pi_graph::{DirectedGraph, DirectedGraphNode, NGraph, NGraphBuilder};
 
 pub trait Arrange {
-    fn arrang(&self) -> Option<GraphNode>;
+    fn arrange(&self) -> Option<GraphNode>;
 }
 
 /// Stage 是 由 可执行节点 组成的 图
@@ -41,7 +41,7 @@ where
             v1.push(i);
 
             // arrange node
-            if let Some(node) = arrange.arrang() {
+            if let Some(node) = arrange.arrange() {
                 let mut stage = StageBuilder::new();
                 stage.add_node(node);
 

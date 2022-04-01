@@ -78,9 +78,9 @@ impl< C: Component> MultiCaseImpl<C> {
         }
 	}
 
-    pub fn mem_size(&self) -> usize {
-        self.map.mem_size() + self.notify.mem_size()
-    }
+    // pub fn mem_size(&self) -> usize {
+    //     self.map.mem_size() + self.notify.mem_size()
+    // }
     pub fn get(&self, id: LocalVersion) -> Option<&C> {
         self.map.get(&id)
     }
@@ -109,8 +109,18 @@ impl< C: Component> MultiCaseImpl<C> {
         r
     }
 
+	// 通知修改
+	pub fn notify_modify(&mut self, id: LocalVersion, tick: u32) {
+		self.ticks[id.offset()].changed = tick;
+		self.notify.modify_event(Entity::new(self.archetype_id, id), "", 0)
+	}
+
 	pub fn tick(&self, id: LocalVersion) -> Option<&ComponentTicks> {
 		self.ticks.get(id.offset())
+	}
+
+	pub fn tick_uncehcked(&self, id: LocalVersion) -> &ComponentTicks {
+		&self.ticks[id.offset()]
 	}
 
     pub fn insert_no_notify(&mut self, id: LocalVersion, c: C) -> Option<C> {
@@ -326,6 +336,7 @@ pub struct ComponentTicks {
 }
 
 impl ComponentTicks {
+	/// 是否为新增组件
     #[inline]
     pub fn is_added(&self, last_change_tick: u32, change_tick: u32) -> bool {
         // The comparison is relative to `change_tick` so that we can detect changes over the whole
@@ -337,18 +348,30 @@ impl ComponentTicks {
         component_delta < system_delta
     }
 
+	/// 是否新增或修改
     #[inline]
     pub fn is_changed(&self, last_change_tick: u32, change_tick: u32) -> bool {
         let component_delta = change_tick.wrapping_sub(self.changed);
         let system_delta = change_tick.wrapping_sub(last_change_tick);
 
+		let component_delta1 = change_tick.wrapping_sub(self.added);
+        let system_delta1 = change_tick.wrapping_sub(last_change_tick);
+
+        component_delta < system_delta || component_delta1 < system_delta1
+    }
+
+	/// 是否修改
+	#[inline]
+    pub fn is_modifyed(&self, last_change_tick: u32, change_tick: u32) -> bool {
+        let component_delta = change_tick.wrapping_sub(self.changed);
+        let system_delta = change_tick.wrapping_sub(last_change_tick);
         component_delta < system_delta
     }
 
     pub(crate) fn new(change_tick: u32) -> Self {
         Self {
             added: change_tick,
-            changed: change_tick,
+            changed: 0,
         }
     }
 

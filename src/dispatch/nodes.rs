@@ -126,7 +126,7 @@ where
 }
 
 impl Arrange for World {
-    fn arrang(&self) -> Option<GraphNode> {
+    fn arrange(&self) -> Option<GraphNode> {
         let mut w = self.clone();
         let id = w.archetype_component_grow();
         let sys = move || {

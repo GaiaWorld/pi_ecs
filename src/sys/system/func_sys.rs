@@ -10,7 +10,7 @@ use pi_ecs_macros::all_tuples;
 // use bevy_ecs_macros::all_tuples;
 use std::{borrow::Cow, marker::PhantomData};
 
-use super::SystemId;
+use super::{SystemId, In};
 
 /// The [`System`] counter part of an ordinary function.
 ///
@@ -64,6 +64,7 @@ impl<In, Out, Param: SystemParam, InMarker, F> FunctionSystem<In, Out, Param, In
 pub trait SysInput {}
 
 impl SysInput for () {}
+impl<T> SysInput for In<T> {}
 
 pub struct SyncMarker;
 

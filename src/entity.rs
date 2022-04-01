@@ -1,5 +1,7 @@
 use std::ops::{Deref, DerefMut};
 
+use pi_null::Null;
+
 use crate::monitor::{NotifyImpl, Notify};
 use crate::storage::{LocalVersion, DelaySlotMap, Local};
 use crate::archetype::ArchetypeId;
@@ -9,6 +11,20 @@ pub struct Entity {
 	archetype_id: ArchetypeId,
 	local: LocalVersion,
 }
+
+impl Null for Entity {
+	fn null() -> Self {
+		Self {
+			archetype_id: ArchetypeId::new(0),
+			local: LocalVersion::null(),
+		}
+	}
+
+	fn is_null(&self) -> bool {
+		self.local().is_null()
+	}
+}
+
 impl Default for Entity { 
 	fn default() -> Self {
 		Self{archetype_id: ArchetypeId::new(0), local: LocalVersion(0)}
@@ -16,7 +32,7 @@ impl Default for Entity {
 }
 
 impl Entity {
-	pub(crate) fn new(archetype_id: ArchetypeId, local: LocalVersion) -> Self {
+	pub fn new(archetype_id: ArchetypeId, local: LocalVersion) -> Self {
 		Self{archetype_id, local}
 	}
 

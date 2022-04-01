@@ -5,6 +5,7 @@ use std::{ops::Index, ops::IndexMut};
 pub use pi_slotmap::{Key, KeyData, SlotMap, SecondaryMap as SecondaryMap1, SparseSecondaryMap as SparseSecondaryMap1, DenseSlotMap, DelaySlotMap};
 pub use pi_map::Map;
 pub use pi_slotmap::dense::{Iter, IterMut, Keys, Values};
+pub use pi_null::Null;
 
 
 pub struct SecondaryMap<K: Key, V>(SecondaryMap1<K, V>);
@@ -158,14 +159,18 @@ pub trait FromOffset: Offset {
 #[derive(Debug, Copy, Clone, Hash, Ord, PartialOrd, Eq, PartialEq, Default)]
 pub struct LocalVersion(pub(crate) u64);
 
-// impl Null for LocalVersion {
-// 	/// 判断当前值是否空
-// 	fn null() -> Self {
-// 		LocalVersion::new()
-// 	}
-// 	/// 判断当前值是否空
-// 	fn is_null(&self) -> bool;
-// }
+impl Null for LocalVersion {
+	/// 判断当前值是否空
+	#[inline]
+	fn null() -> Self {
+		<Self as Key>::null()
+	}
+	/// 判断当前值是否空
+	#[inline]
+	fn is_null(&self) -> bool {
+		Key::is_null(self)
+	}
+}
 
 
 

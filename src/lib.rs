@@ -34,6 +34,8 @@ pub mod prelude {
 		},
         world::World,
 		dispatch::interface::*,
+		archetype::{ArchetypeId, Archetype},
+		entity::Entities,
     };
 }
 

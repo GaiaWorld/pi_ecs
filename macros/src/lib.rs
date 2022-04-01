@@ -87,7 +87,7 @@ pub fn all_tuples(input: TokenStream) -> TokenStream {
 static BUNDLE_ATTRIBUTE_NAME: &str = "bundle";
 
 
-/// 实现组件，冲下组件存储
+/// 实现组件，重载组件存储
 /// example:
 /// 	#[derive(Component)]
 /// 	#[storage=XXX]
@@ -109,7 +109,6 @@ pub fn listen(attr: TokenStream, item: TokenStream) -> TokenStream {
 fn impl_component(ast: &DeriveInput) -> proc_macro2::TokenStream {
     let name = &ast.ident;
     let (impl_generics, ty_generics, where_clause) = ast.generics.split_for_impl();
-
     let storage = ast
         .attrs
         .iter()
@@ -118,12 +117,16 @@ fn impl_component(ast: &DeriveInput) -> proc_macro2::TokenStream {
             syn::parse2::<StorageAttribute>(attr.tokens.clone())
                 .unwrap()
                 .storage
-        })
-        .unwrap_or_else(|| parse_quote!(VecMap));
+        });
+	// 如果没有指定存储容器，没有必要重载实现
+	let storage = match storage {
+		Some(r) => r,
+		None => return quote! {}
+	};
 
     quote! {
-        impl #impl_generics Component for #name #ty_generics #where_clause {
-            type Storage = #storage<Self>;
+        impl #impl_generics pi_ecs::component::Component for #name #ty_generics #where_clause {
+            type Storage = #storage;
         }
     }
 }

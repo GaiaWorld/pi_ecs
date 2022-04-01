@@ -87,7 +87,7 @@ macro_rules! impl_system_param_tuple {
 
 all_tuples!(impl_system_param_tuple, 0, 16, P);
 
-pub(crate) fn assert_component_access_compatibility(
+pub fn assert_component_access_compatibility(
     system_name: &str,
     query_type: &'static str,
     filter_type: &'static str,

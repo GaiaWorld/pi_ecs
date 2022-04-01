@@ -84,7 +84,7 @@ pub struct SystemState {
 }
 
 impl SystemState {
-    pub(crate) fn new<T>() -> Self {
+    pub fn new<T>() -> Self {
         Self {
             name: std::any::type_name::<T>().into(),
             archetype_component_access: Access::default(),
@@ -93,6 +93,30 @@ impl SystemState {
             last_change_tick: 0,
         }
     }
+
+	pub fn name(&self) -> &str {
+		&self.name
+	}
+
+	pub fn last_change_tick(&self) -> u32 {
+		self.last_change_tick
+	}
+
+	pub fn component_access_set(&self) -> &FilteredAccessSet<ComponentId> {
+		&self.component_access_set
+	}
+
+	pub fn component_access_set_mut(&mut self) -> &mut FilteredAccessSet<ComponentId> {
+		&mut self.component_access_set
+	}
+
+	pub fn archetype_component_access(&self) -> &Access<ArchetypeComponentId>{
+		&self.archetype_component_access
+	}
+
+	pub fn archetype_component_access_mut(&mut self) -> &mut Access<ArchetypeComponentId>{
+		&mut self.archetype_component_access
+	}
 
     /// Returns true if the system is [`Send`].
     #[inline]
@@ -161,6 +185,7 @@ impl<Sys: System> IntoSystem<(), Sys> for Sys {
 ///     input * input
 /// }
 /// ```
+
 pub struct In<In>(pub In);
 pub struct InputMarker;
 

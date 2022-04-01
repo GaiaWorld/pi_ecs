@@ -246,6 +246,12 @@ impl WorldInner {
         &self.archetypes()[arch_id].entities
     }
 
+	/// 取 所有的 Entity
+    #[inline]
+    pub fn entities_mut(&mut self, arch_id: Local) -> &mut Entities {
+        &mut self.archetypes[arch_id].entities
+    }
+
     /// 取到WorldId
     #[inline]
     pub fn id(&self) -> WorldId {
@@ -350,7 +356,7 @@ pub trait FromWorld {
     fn from_world(world: &mut World) -> Self;
 }
 
-impl<T: Default> FromWorld for T {
+default impl<T: Default> FromWorld for T {
     fn from_world(_world: &mut World) -> Self {
         T::default()
     }

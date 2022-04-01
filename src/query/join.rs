@@ -88,6 +88,22 @@ impl<C: Component + Deref<Target = Entity>, A: Send + Sync + 'static, Q: Fetch, 
 			None => None
 		}
     }
+
+	#[inline]
+    unsafe fn archetype_fetch_unchecked(&mut self, local: LocalVersion) -> Self::Item {
+		let c: &C = std::mem::transmute((&mut *(self.container as *mut MultiCaseImpl<C>)).get_unchecked_mut(local));
+		// if self.filter.archetype_filter_fetch((**r).local()){
+			self.fetch.archetype_fetch_unchecked((**c).local())
+		// }
+		// match c {
+		// 	Some(r) => if self.filter.archetype_filter_fetch((**r).local()){
+		// 		self.fetch.archetype_fetch((**r).local())
+		// 	} else {
+		// 		None
+		// 	},
+		// 	None => None
+		// }
+    }
 }
 
 

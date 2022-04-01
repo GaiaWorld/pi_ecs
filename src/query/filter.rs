@@ -95,6 +95,11 @@ impl<T: Component> Fetch for WithFetch<T> {
     unsafe fn archetype_fetch(&mut self, _local: LocalVersion) -> Option<Self::Item> {
         Some(true)
     }
+
+	#[inline]
+    unsafe fn archetype_fetch_unchecked(&mut self, _local: LocalVersion) -> Self::Item {
+        true
+    }
 }
 
 impl<T: Component> FilterFetch for WithFetch<T> {
@@ -175,6 +180,11 @@ impl<T: Component> Fetch for WithOutFetch<T> {
     unsafe fn archetype_fetch(&mut self, _archetype_index: LocalVersion) -> Option<Self::Item> {
         Some(true)
     }
+
+	#[inline]
+    unsafe fn archetype_fetch_unchecked(&mut self, _local: LocalVersion) -> Self::Item {
+        true
+    }
 }
 
 impl<T: Component> FilterFetch for WithOutFetch<T> {
@@ -192,7 +202,7 @@ impl<T: Component> FilterFetch for WithOutFetch<T> {
 
 pub struct Or<T>(pub T);
 pub struct OrFetch<T: FilterFetch> {
-    fetch: T,
+    pub fetch: T,
     matches: bool,
 }
 
@@ -272,6 +282,11 @@ macro_rules! impl_query_filter_tuple {
             unsafe fn archetype_fetch(&mut self, archetype_index: LocalVersion) -> Option<bool> {
                 Some(true)
             }
+
+			#[inline]
+			unsafe fn archetype_fetch_unchecked(&mut self, _local: LocalVersion) -> Self::Item {
+				true
+			}
         }
 
         // SAFE: update_component_access and update_archetype_component_access are called for each item in the tuple
@@ -487,6 +502,14 @@ macro_rules! impl_tick_filter {
 				match value {
 					Some(r) => Some(r.is_changed(self.last_change_tick, self.change_tick) || r.is_added(self.last_change_tick, self.change_tick)),
 					None => None,
+				}
+            }
+
+			unsafe fn archetype_fetch_unchecked(&mut self, archetype_index: LocalVersion) -> bool {
+				let value = (& *(self.container as *mut MultiCaseImpl<T>)).tick(archetype_index);
+				match value {
+					Some(r) => r.is_changed(self.last_change_tick, self.change_tick) || r.is_added(self.last_change_tick, self.change_tick),
+					None => false,
 				}
             }
         }

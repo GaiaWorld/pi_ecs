@@ -95,8 +95,8 @@ where
     /// This can only be called for read-only queries, see [`Self::get_mut`] for write-queries.
     #[inline]
     pub fn get(&self, entity: Entity) -> Option<<Q::Fetch as Fetch>::Item>
-    where
-        Q::Fetch: ReadOnlyFetch,
+    // where
+    //     Q::Fetch: ReadOnlyFetch,
     {
         // SAFE: system runs without conflicts with other systems.
         // same-system queries have runtime borrow checks when they conflict
@@ -109,6 +109,39 @@ where
             )
         }
     }
+
+	/// Gets the query result for the given [`Entity`].
+    ///
+    /// This can only be called for read-only queries, see [`Self::get_mut`] for write-queries.
+    #[inline]
+    pub fn get_unchecked(&self, entity: Entity) -> <Q::Fetch as Fetch>::Item
+    // where
+    //     Q::Fetch: ReadOnlyFetch,
+    {
+        // SAFE: system runs without conflicts with other systems.
+        // same-system queries have runtime borrow checks when they conflict
+        unsafe {
+            self.state.get_unchecked(
+				self.world_ref,
+                entity,
+            )
+        }
+	}
+
+	#[inline]
+    pub fn get_unchecked_mut(&mut self, entity: Entity) -> <Q::Fetch as Fetch>::Item
+    // where
+    //     Q::Fetch: ReadOnlyFetch,
+    {
+        // SAFE: system runs without conflicts with other systems.
+        // same-system queries have runtime borrow checks when they conflict
+        unsafe {
+            self.state.get_unchecked(
+				self.world_ref,
+                entity,
+            )
+        }
+	}
 
     /// Gets the query result for the given [`Entity`].
     #[inline]
@@ -128,24 +161,24 @@ where
         }
     }
 
-    /// Gets the query result for the given [`Entity`].
-    ///
-    /// # Safety
-    ///
-    /// This function makes it possible to violate Rust's aliasing guarantees. You must make sure
-    /// this call does not result in multiple mutable references to the same component
-    #[inline]
-    pub unsafe fn get_unchecked(
-        &self,
-        entity: Entity,
-    ) -> Option<<Q::Fetch as Fetch>::Item> {
-        // SEMI-SAFE: system runs without conflicts with other systems.
-        // same-system queries have runtime borrow checks when they conflict
-		self.state
-            .get_unchecked_manual(self.world_ref, entity, self.last_change_tick, self.change_tick)
-        // self.state
-        //     .get_unchecked_manual(self.world_ref, entity)
-    }
+    // /// Gets the query result for the given [`Entity`].
+    // ///
+    // /// # Safety
+    // ///
+    // /// This function makes it possible to violate Rust's aliasing guarantees. You must make sure
+    // /// this call does not result in multiple mutable references to the same component
+    // #[inline]
+    // pub unsafe fn get_unchecked(
+    //     &self,
+    //     entity: Entity,
+    // ) -> Option<<Q::Fetch as Fetch>::Item> {
+    //     // SEMI-SAFE: system runs without conflicts with other systems.
+    //     // same-system queries have runtime borrow checks when they conflict
+	// 	self.state
+    //         .get_unchecked_manual(self.world_ref, entity, self.last_change_tick, self.change_tick)
+    //     // self.state
+    //     //     .get_unchecked_manual(self.world_ref, entity)
+    // }
 }
 
 pub struct QueryFetch<Q, F>(PhantomData<(Q, F)>);

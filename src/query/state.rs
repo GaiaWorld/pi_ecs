@@ -114,7 +114,7 @@ where
         Q::Fetch: ReadOnlyFetch,
     {
         // SAFE: query is read only
-        unsafe { self.get_unchecked(world, entity) }
+        unsafe { self.get_unchecked_inner(world, entity) }
     }
 
     #[inline]
@@ -124,14 +124,25 @@ where
         entity: Entity,
     ) -> Option<<Q::Fetch as Fetch>::Item> {
         // SAFE: query has unique world access
-        unsafe { self.get_unchecked(world, entity) }
+        unsafe { self.get_unchecked_inner(world, entity) }
     }
 
+	#[allow(mutable_transmutes)]
+    pub unsafe fn get_unchecked<'w>(
+        &self,
+        _world: &'w WorldInner,
+        entity: Entity,
+    ) -> <Q::Fetch as Fetch>::Item {
+		// let last_change_tick = world.last_change_tick();
+        // let change_tick = world.read_change_tick();
+		
+        std::mem::transmute::<&Q::Fetch, &mut Q::Fetch>(&self.fetch_fetch).archetype_fetch_unchecked(entity.local())
+    }
     /// # Safety
     /// This does not check for mutable query correctness. To be safe, make sure mutable queries
     /// have unique access to the components they query.
     #[inline]
-    pub unsafe fn get_unchecked<'w>(
+    pub unsafe fn get_unchecked_inner<'w>(
         &self,
         world: &'w WorldInner,
         entity: Entity,
