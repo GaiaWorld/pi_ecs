@@ -12,8 +12,7 @@ use derive_deref::{Deref, DerefMut};
 use pi_ecs_macros::all_tuples;
 use pi_share::cell::TrustCell;
 use std::{
-    marker::PhantomData,
-	any::TypeId, sync::Arc, intrinsics::transmute,
+    marker::PhantomData, sync::Arc, intrinsics::transmute,
 };
 
 /// WorldQuery 从world上fetch组件、实体、资源，需要实现该triat
@@ -76,7 +75,7 @@ pub struct MianFetch<'a> {
 /// [Fetch::table_fetch]
 pub unsafe trait FetchState: Send + Sync + Sized {
 	/// 创建FetchState实例
-    fn init(world: &mut World, query_id: usize) -> Self;
+    fn init(world: &mut World, query_id: usize, archetype_id: ArchetypeId) -> Self;
 	/// 更新组件
 	fn update_component_access(&self, access: &mut FilteredAccess<ComponentId>);
     fn update_archetype_component_access(&self, archetype: &Archetype, access: &mut Access<ArchetypeComponentId>);
@@ -113,7 +112,7 @@ pub struct EntityState;
 // SAFE: no component or archetype access
 unsafe impl FetchState for EntityState {
 	#[inline]
-    fn init(_world: &mut World, _query_id: usize) -> Self {
+    fn init(_world: &mut World, _query_id: usize, _archetype_id: ArchetypeId) -> Self {
         Self
     }
 
@@ -281,14 +280,10 @@ pub struct ReadState<T> {
 // SAFE: component access and archetype component access are properly updated to reflect that T is
 // read
 unsafe impl<T: Component> FetchState for ReadState<T> {
-    fn init(world: &mut World, _query_id: usize) -> Self {
-		let component_id = match world.components.get_id(TypeId::of::<T>()) {
-			Some(r) => r,
-			None => panic!("ReadState fetch ${} fail", std::any::type_name::<T>()),
-		};
-        let component_info = world.components.get_info(component_id).unwrap();
+    fn init(world: &mut World, _query_id: usize, archetype_id: ArchetypeId) -> Self {
+		let component_id = world.get_or_register_component::<T>(archetype_id);
         ReadState {
-            component_id: component_info.id(),
+            component_id,
             marker: PhantomData,
         }
     }
@@ -302,6 +297,7 @@ unsafe impl<T: Component> FetchState for ReadState<T> {
 	}
 
     fn update_archetype_component_access(&self, archetype: &Archetype, access: &mut Access<ArchetypeComponentId>) {
+		// world.components.get_or_insert_id::<T>()
 		let archetype_component_id = unsafe { archetype.archetype_component_id(self.component_id)};
         if access.has_write(archetype_component_id) {
             panic!("&{} conflicts with a previous access in this query. Shared access cannot coincide with exclusive access.",
@@ -434,14 +430,10 @@ pub struct MutState<T> {
 // SAFE: component access and archetype component access are properly updated to reflect that T is
 // read
 unsafe impl<T: Component> FetchState for MutState<T> {
-    fn init(world: &mut World, _query_id: usize) -> Self {
-		let component_id = match world.components.get_id(TypeId::of::<T>()) {
-			Some(r) => r,
-			None => panic!("MutState fetch ${} fail", std::any::type_name::<T>()),
-		};
-        let component_info = world.components.get_info(component_id).unwrap();
+    fn init(world: &mut World, _query_id: usize, archetype_id: ArchetypeId) -> Self {
+		let component_id = world.get_or_register_component::<T>(archetype_id);
         MutState {
-            component_id: component_info.id(),
+            component_id,
             marker: PhantomData,
         }
     }
@@ -641,22 +633,18 @@ pub struct WriteState<T: Component> {
 // SAFE: component access and archetype component access are properly updated to reflect that T is
 // read
 unsafe impl<T: Component + Default> FetchState for WriteState<T> {
-    fn init(world: &mut World, _query_id: usize) -> Self {
+    fn init(world: &mut World, _query_id: usize, archetype_id: ArchetypeId) -> Self {
 		// DefaultComponent<T>永远不能被销毁
 		match world.get_resource_id::<DefaultComponent<T>>() {
 			Some(r) => r.clone(),
 			None => world.insert_resource(DefaultComponent(T::default())),
 		};
 
-		let component_id = match world.components.get_id(TypeId::of::<T>()) {
-			Some(r) => r,
-			None => panic!("WriteState fetch ${} fail", std::any::type_name::<T>()),
-		};
+		let component_id = world.get_or_register_component::<T>(archetype_id);
 
 		let default_value = world.get_resource_mut::<DefaultComponent<T>>().unwrap();
-        let component_info = world.components.get_info(component_id).unwrap();
         WriteState {
-            component_id: component_info.id(),
+            component_id,
 			default: unsafe {transmute(default_value)},
             marker: PhantomData,
         }
@@ -708,9 +696,9 @@ pub struct OptionState<T: FetchState> {
 // SAFE: component access and archetype component access are properly updated according to the
 // internal Fetch
 unsafe impl<T: FetchState> FetchState for OptionState<T> {
-    fn init(world: &mut World, query_id: usize) -> Self {
+    fn init(world: &mut World, query_id: usize, archetype_id: ArchetypeId) -> Self {
         Self {
-            state: T::init(world, query_id),
+            state: T::init(world, query_id, archetype_id),
 			matchs: false
         }
     }
@@ -808,7 +796,7 @@ pub struct DefaultComponent<T: Component>(T);
 // SAFE: component access and archetype component access are properly updated according to the
 // internal Fetch
 unsafe impl<T: Component + Default> FetchState for OrDefaultState<T> {
-    fn init(world: &mut World, query_id: usize) -> Self {
+    fn init(world: &mut World, query_id: usize, archetype_id: ArchetypeId) -> Self {
 		let id = match world.get_resource_id::<DefaultComponent<T>>() {
 			Some(r) => r.clone(),
 			None => world.insert_resource(DefaultComponent(T::default())),
@@ -816,7 +804,7 @@ unsafe impl<T: Component + Default> FetchState for OrDefaultState<T> {
 
         Self {
 			default_id: id,
-            state: ReadState::<T>::init(world, query_id),
+            state: ReadState::<T>::init(world, query_id, archetype_id),
 			matchs: false
         }
     }
@@ -946,8 +934,8 @@ macro_rules! impl_tuple_fetch {
         #[allow(non_snake_case)]
 		#[allow(unused_variables)]
         unsafe impl<$($name: FetchState),*> FetchState for ($($name,)*) {
-            fn init(_world: &mut World, query_id: usize) -> Self {
-                ($($name::init(_world, query_id),)*)
+            fn init(_world: &mut World, query_id: usize, archetype_id: ArchetypeId) -> Self {
+                ($($name::init(_world, query_id, archetype_id),)*)
             }
 
 			fn update_component_access(&self, access: &mut FilteredAccess<ComponentId>) {

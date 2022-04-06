@@ -4,15 +4,15 @@ use crate::{
     component::{ComponentId, CellMultiCase, MultiCase, Component, MultiCaseImpl},
     entity::{Entity, Entities},
     storage::{Offset, LocalVersion, Local},
-	monitor::{NotifyImpl, Listener, EventType}, 
-	resource::{SingleCase, SingleCaseImpl},
+	monitor::{Listener, EventType}, 
+	resource::Singles,
 	prelude::FilteredAccessSet,
 };
 use std::{
     borrow::Cow,
     hash::Hash,
     ops::{Index, IndexMut},
-	any::{TypeId, type_name},
+	any::TypeId,
 	sync::Arc,
 };
 
@@ -237,7 +237,7 @@ pub struct Archetypes {
 	pub(crate) archetype_component_count: usize,
 
 	/// 资源map， 通过资源id查询到资源
-	pub(crate) resources: XHashMap<ComponentId, Arc<dyn SingleCase>>,
+	pub(crate) resources: Singles,
 
 	/// 资源类型到原型组件id的映射
 	pub(crate) archetype_resource_indices: XHashMap<TypeId, ArchetypeComponentId>,
@@ -255,7 +255,7 @@ impl Archetypes {
 			archetype_component_count: 0,
 
 			archetype_resource_indices: XHashMap::default(),
-			resources: XHashMap::default(),
+			resources: Singles::new(),
 			listener_component_access: XHashMap::default(),
 		}
 	}
@@ -273,6 +273,28 @@ impl Archetypes {
 		archetype
     }
 
+	/// 取到原型，如果原型不存在，则创建原型
+	pub fn get_or_create_archetype<T: Send + Sync + 'static>(&mut self) -> ArchetypeId {
+		let type_id = TypeId::of::<T>();
+		if let Some(archetype) = self.archetype_ids.get(&ArchetypeIdentity::Identity(type_id)) {
+			return archetype.clone();
+		}
+
+		let archetype = self.create_archetype_by_ident(type_id);
+		let archetype_id = archetype.id();
+		self.add_archetype(archetype, type_id);
+		archetype_id
+	}
+
+	/// 创建原型
+	pub fn create_archetype<T: Send + Sync + 'static>(&mut self) -> ArchetypeId {
+		let type_id = TypeId::of::<T>();
+		let archetype = self.create_archetype_by_ident(type_id);
+		let archetype_id = archetype.id();
+		self.add_archetype(archetype, type_id);
+		archetype_id
+	}
+
 	/// 添加原型，将原型管理起来
 	pub(crate) fn add_archetype(&mut self, archetype: Archetype, type_id: TypeId) {
 		self.archetype_ids.insert(ArchetypeIdentity::Identity(type_id), archetype.id);
@@ -285,18 +307,16 @@ impl Archetypes {
     }
 
 	/// 插入资源
-	/// 如果资源已经存在，则无法插入（资源不能覆盖）
 	pub(crate) fn insert_resource<T: Component>(&mut self, value: T, id: ComponentId) {
-		if self.resources.contains_key(&id) {
-			log::error!("insert resource fail, resource is exist: {:?} ", type_name::<T>());
-			return;
-		}
-
-		let archetype_component_id = self.archetype_component_grow();
-		self.archetype_resource_indices.insert(TypeId::of::<T>(), ArchetypeComponentId::new(archetype_component_id));
-		let v = Arc::new(SingleCaseImpl::new(value));
-		self.resources.insert(id, v);
+		// self.archetype_resource_indices.insert(TypeId::of::<T>(), ArchetypeComponentId::new(archetype_component_id));
+		unsafe { self.resources.insert(id, value); };
 	}
+
+	pub(crate) fn register_resource<T: Component>(&mut self, component_id: ComponentId, archetype_component_id: usize) {
+		self.archetype_resource_indices.insert(TypeId::of::<T>(), ArchetypeComponentId::new(archetype_component_id));
+		self.resources.register::<T>(component_id);
+	}
+	
 
 	/// 取到原型组件id（不同原型相同类型的组件，id不同）
 	pub fn get_archetype_resource_id<T: Component>(&self) -> Option<&ArchetypeComponentId> {
@@ -305,42 +325,17 @@ impl Archetypes {
 
 	/// 根据资源的id, 取到资源的只读引用
 	pub unsafe fn get_resource<T: Component>(&self, id: ComponentId) -> Option<&T> {
-		match self.resources.get(&id) {
-			Some(r) => match r.downcast_ref::<TrustCell<SingleCaseImpl<T>>>() {
-				Some(r) => {
-					Some(&*(r.get()))
-				},
-				None => panic!(),
-			},
-			None => None,
-		}
-		
+		self.resources.get(id)
 	}
 
 	/// 根据资源的id, 取到资源的只读引用
 	pub unsafe fn get_resource_mut<T: Component>(&self, id: ComponentId) -> Option<&mut T> {
-		match self.resources.get(&id) {
-			Some(r) => match r.downcast_ref::<TrustCell<SingleCaseImpl<T>>>() {
-				Some(r) => {
-					Some(&mut **(r.as_ptr()))
-				},
-				None => panic!(),
-			},
-			None => None,
-		}
+		self.resources.get_mut(id)
 	}
 
-	pub unsafe fn get_resource_notify<T: Component>(&self, id: ComponentId) -> Option<NotifyImpl> {
-		match self.resources.get(&id) {
-			Some(r) => match r.downcast_ref::<TrustCell<SingleCaseImpl<T>>>() {
-				Some(r) => {
-					Some(r.get().get_notify())
-				},
-				None => panic!(),
-			},
-			None => None,
-		}
-	}
+	// pub unsafe fn get_resource_notify<T: Component>(&self, id: ComponentId) -> Option<NotifyImpl> {
+	// 	// self.resources.get_notify(id)
+	// }
 
 	/// 原型组件id增长
 	#[inline]
@@ -371,15 +366,7 @@ impl Archetypes {
 
 	/// 添加资源监听器
 	pub fn add_resource_listener<T: EventType, R: Component>(&mut self, listener: Listener, id: ComponentId) {
-		match self.resources.get(&id) {
-			Some(r) => match r.downcast_ref::<TrustCell<SingleCaseImpl<R>>>() {
-				Some(r) => {
-					T::add(r, listener);
-				}
-				None => panic!(),
-			}
-			None => panic!("add_resource_listener fail, resource is not exist: {:?}", std::any::type_name::<R>()),
-		};
+		self.resources.add_listener::<T, R>(id, listener);
 	}
 
 	/// 取到当前原型id

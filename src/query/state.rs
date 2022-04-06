@@ -1,5 +1,4 @@
 use std::marker::PhantomData;
-use std::any::TypeId;
 
 use crate::world::World;
 use crate::{
@@ -41,15 +40,12 @@ where
     F::Fetch: FilterFetch,
 {
     pub fn new(world:  &mut World) -> Self {
-		let archetype_id = match world.archetypes().get_id_by_ident(TypeId::of::<A>()) {
-			Some(r) => r.clone(),
-			None => panic!(),
-		};
+		let archetype_id = world.archetypes_mut().get_or_create_archetype::<A>();
 		let q_id = world.gen_query_id();
 
-        let fetch_state = <Q::State as FetchState>::init(world, q_id);
-        let filter_state = <F::State as FetchState>::init(world, q_id);
-		let entity_state = <EntityState as FetchState>::init(world, q_id) ;
+        let fetch_state = <Q::State as FetchState>::init(world, q_id, archetype_id);
+        let filter_state = <F::State as FetchState>::init(world, q_id, archetype_id);
+		let entity_state = <EntityState as FetchState>::init(world, q_id, archetype_id) ;
 		let fetch_fetch =
             unsafe{ <Q::Fetch as Fetch>::init(world, &fetch_state) };
         let filter_fetch =

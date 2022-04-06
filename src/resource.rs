@@ -1,81 +1,173 @@
-use std::ops::{Deref, DerefMut};
-
-use pi_any::ArcAny;
-use pi_share::cell::TrustCell;
+use pi_map::Map;
+use pi_null::Null;
 
 use crate::{
-	monitor::{Notify, NotifyImpl, Listener},
-	entity::Entity, component::Component,
+	monitor::{Notify, NotifyImpl, Listener, EventType},
+	entity::Entity, storage::SecondaryMap, component::ComponentId
 };
 
-pub trait SingleCase: Notify + ArcAny {}
-impl_downcast_arc!(SingleCase);
-
-pub type CellSingleCase<T> = TrustCell<SingleCaseImpl<T>>;
-
-impl<T: Component> SingleCase for CellSingleCase<T> {}
-
 // TODO 以后用宏生成
-impl<T: Component> Notify for CellSingleCase<T> {
+impl Notify for SingleMeta {
     fn add_create(&self, listener: Listener) {
-        self.borrow_mut().notify.add_create(listener);
+        self.notify.add_create(listener);
     }
     fn add_delete(&self, listener: Listener) {
-        self.borrow_mut().notify.add_delete(listener)
+        self.notify.add_delete(listener)
     }
     fn add_modify(&self, listener: Listener) {
-        self.borrow_mut().notify.add_modify(listener)
+        self.notify.add_modify(listener)
     }
     fn create_event(&self, id: Entity) {
-        self.borrow().notify.create_event(id);
+        self.notify.create_event(id);
     }
     fn delete_event(&self, id: Entity) {
-        self.borrow().notify.delete_event(id);
+        self.notify.delete_event(id);
     }
     fn modify_event(&self, id: Entity, field: &'static str, index: usize) {
-        self.borrow().notify.modify_event(id, field, index);
+        self.notify.modify_event(id, field, index);
     }
     fn remove_create(&self, listener: &Listener) {
-        self.borrow_mut().notify.remove_create(listener);
+        self.notify.remove_create(listener);
     }
     fn remove_delete(&self, listener: &Listener) {
-        self.borrow_mut().notify.remove_delete(listener);
+        self.notify.remove_delete(listener);
     }
     fn remove_modify(&self, listener: &Listener) {
-        self.borrow_mut().notify.remove_modify(listener);
+        self.notify.remove_modify(listener);
     }
 }
 
-pub struct SingleCaseImpl<T: 'static> {
-    value: T,
+pub(crate) struct SingleMeta {
+    // value: usize, // *mut T
+	size: usize,
+	index: usize,
     notify: NotifyImpl,
+	drop_fn: fn(*const u8),
 }
 
-impl<T: 'static> Deref for SingleCaseImpl<T> {
-    type Target = T;
-    fn deref(&self) -> &Self::Target {
-        &self.value
-    }
-}
-
-impl<T: 'static> DerefMut for SingleCaseImpl<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.value
-    }
-}
-
-impl<T: 'static> SingleCaseImpl<T> {
-    pub fn new(value: T) -> TrustCell<Self> {
-        TrustCell::new(SingleCaseImpl {
-            value,
+impl SingleMeta {
+    pub fn new<T>(size: usize, index: usize) -> Self {
+        Self {
+            size,
+			index,
             notify: NotifyImpl::default(),
-        })
-    }
-    pub fn get_notify(&self) -> NotifyImpl {
-        self.notify.clone()
+			drop_fn: drop::<T>,
+        }
     }
 
     pub fn get_notify_ref(&self) -> &NotifyImpl {
         &self.notify
     }
 }
+
+pub(crate) struct Singles {
+	buffer: Vec<u8>,
+	metas: SecondaryMap<ComponentId, SingleMeta>,
+}
+
+impl Singles {
+	pub fn new() -> Self {
+		Self {
+			buffer: Vec::new(),
+			metas: SecondaryMap::with_capacity(0),
+		}
+	}
+
+	pub fn register<T>(&mut self, component_id: ComponentId) {
+		// 不存在元信息，插入元信息
+		if self.metas.get(&component_id).is_none() {
+			let size = std::mem::size_of::<T>();
+
+			// 设置长度
+			self.buffer.reserve(size);
+			unsafe{self.buffer.set_len(self.buffer.len() + size)};
+			self.metas.insert(component_id, SingleMeta::new::<T>(usize::null(), 0));
+		};
+	}
+
+	pub fn add_listener<E: EventType, T>(&mut self, component_id: ComponentId, listener: Listener) {
+		if let Some(meta) = self.metas.get(&component_id) {
+			E::add(&meta.notify, listener);
+		} else {
+			log::warn!("add_resource_listener fail, resource is not exist: {:?}", std::any::type_name::<T>());
+		}
+	}
+
+	/// 安全： 确保T和component_id的一致性, 同时存在meta
+	pub unsafe fn insert<T: 'static + Send + Sync>(&mut self, component_id: ComponentId, value: T) {
+		let size = std::mem::size_of::<T>();
+		let len = self.buffer.len();
+
+		std::ptr::copy_nonoverlapping(
+			&value as *const T as *const u8,
+			self.buffer.as_mut_ptr().add(len),
+			size,
+		);
+
+		let meta = &mut self.metas[component_id];
+
+		if meta.size.is_null() {
+			meta.size = size;
+			meta.get_notify_ref().create_event(Entity::null());
+		} else {
+			meta.get_notify_ref().modify_event(Entity::null(), "", 0);
+		}
+	}
+
+	/// 安全： 确保T和component_id的一致性
+	pub unsafe fn get<T>(&self, component_id: ComponentId) -> Option<&T> {
+		if let Some(meta) = self.metas.get(&component_id) {
+			Some(&*(self.buffer.as_ptr().add(meta.index) as usize as *mut T))
+		} else {
+			None
+		}
+	}
+
+	/// 安全： 确保T和component_id的一致性
+	pub unsafe fn get_mut<T>(&self, component_id: ComponentId) -> Option<&mut T> {
+		if let Some(meta) = self.metas.get(&component_id) {
+			Some(&mut *(self.buffer.as_ptr().add(meta.index) as usize as *mut T))
+		} else {
+			None
+		}
+	}
+
+	// ///  确保T和component_id的一致性
+	// pub unsafe fn remove<T>(&mut self, component_id: ComponentId) -> Option<T> {
+	// 	if let Some(meta) = self.metas.get_mut(&component_id) {
+	// 		if meta.size.is_null() {
+	// 			return None;
+	// 		}
+	// 		meta.size = usize::null();
+	// 		Some(self.buffer.as_ptr().add(meta.index).cast::<T>().read_unaligned())
+	// 	} else {
+	// 		None
+	// 	}
+	// }
+
+	pub fn get_notify_ref(&self, component_id: ComponentId) -> &NotifyImpl {
+		if let Some(meta) = self.metas.get(&component_id) {
+			&meta.notify
+		} else {
+			log::error!("get_notify err");
+			panic!()
+		}
+	}
+}
+
+/// 销毁T
+fn drop<T>(ptr: *const u8) {
+	unsafe {ptr.cast::<T>().read_unaligned()};
+}
+
+impl Drop for Singles {
+	fn drop(&mut self) {
+		for (_local, meta) in self.metas.iter() {
+			(meta.drop_fn)(unsafe { self.buffer.as_ptr().add(meta.index) });
+		}
+	}
+}
+
+// fn drop<T>(ptr: usize) {
+// 	unsafe {ptr as usize as *mut T}
+// }

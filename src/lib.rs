@@ -3,6 +3,7 @@
 #![feature(proc_macro_hygiene)]
 #![feature(specialization)]
 #![feature(if_let_guard)]
+#![feature(associated_type_defaults)]
 
 #[macro_use]
 extern crate pi_any;
@@ -32,6 +33,7 @@ pub mod prelude {
 			system::*,
 			param::*,
 		},
+		monitor::{Listeners, Monitor, Event, ListenSetup, ComponentListen, ResourceListen, EntityListen, Create, Modify, Delete},
         world::World,
 		dispatch::interface::*,
 		archetype::{ArchetypeId, Archetype},

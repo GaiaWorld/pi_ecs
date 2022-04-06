@@ -9,7 +9,7 @@ use std::{sync::Arc};
 #[derive(Debug)]
 pub struct Archetype1;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Component1(pub usize);
 
 

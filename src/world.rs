@@ -116,6 +116,19 @@ impl WorldInner {
         self.components.get_resource_id::<T>()
     }
 
+	#[inline]
+    pub fn get_or_insert_resource_id<T: Component>(&mut self) -> ComponentId {
+		match self.components.get_resource_id::<T>() {
+			Some(r) => r.clone(),
+			None => {
+				let archetype_component_id = self.archetypes.archetype_component_grow();
+				let component_id = self.components.get_or_insert_resource_id::<T>();
+				self.archetypes.register_resource::<T>(component_id, archetype_component_id);
+				component_id
+			},
+		}
+    }
+
     /// 取 资源
     #[inline]
     pub fn get_resource<T: Component>(&self) -> Option<&T> {
@@ -240,6 +253,12 @@ impl WorldInner {
         &self.archetypes
     }
 
+	/// 取到原型
+    #[inline]
+    pub fn archetypes_mut(&mut self) -> &mut Archetypes {
+        &mut self.archetypes
+    }
+
     /// 取 所有的 Entity
     #[inline]
     pub fn entities(&self, arch_id: Local) -> &Entities {
@@ -289,6 +308,26 @@ impl WorldInner {
         // }
 
         self.last_change_tick = self.increment_change_tick();
+    }
+
+	/// 取到组件，如果不存在组件，则注册组件
+	pub fn get_or_register_component<C: Component>(&mut self, archetype_id: ArchetypeId) -> ComponentId {
+		let archetype = self.archetypes.get_mut(archetype_id);
+		if let Some(archetype) = archetype {
+			let id = self.components.get_or_insert_id::<C>();
+			if archetype.contains(id) {
+				return id;
+			}
+			let g = self.archetypes.archetype_component_grow();
+			let archetype = &mut self.archetypes[archetype_id];
+            archetype.register_component_type::<C>(
+                id,
+                Local::new(g),
+            );
+			id
+		} else {
+			panic!("archetype is not exist, get_or_register_component fail, archetype:{:?}", archetype_id);// 原型不存在
+		}
     }
 }
 
@@ -356,8 +395,8 @@ pub trait FromWorld {
     fn from_world(world: &mut World) -> Self;
 }
 
-default impl<T: Default> FromWorld for T {
-    fn from_world(_world: &mut World) -> Self {
+impl<T: Default> FromWorld for T {
+    default fn from_world(_world: &mut World) -> Self {
         T::default()
     }
 }

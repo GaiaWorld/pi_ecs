@@ -2,11 +2,10 @@ use pi_map::Map;
 use pi_share::cell::TrustCell;
 
 use std::sync::Arc;
-use std::any::TypeId;
 use std::default::Default;
 
 use crate::{
-    archetype::{Archetype, ArchetypeComponentId},
+    archetype::{Archetype, ArchetypeComponentId, ArchetypeId},
 	monitor::{Event, Listen, ComponentListen, Create, Modify, Listeners, ListenSetup},
     component::{Component, ComponentId, MultiCaseImpl},
     query::{Fetch, FetchState, Access, FilteredAccess, WorldQuery, MianFetch, FilterFetch},
@@ -66,11 +65,8 @@ macro_rules! impl_tick_filter {
 
         // SAFE: this reads the T component. archetype component access and component access are updated to reflect that
         unsafe impl<T: Component> FetchState for $state_name<T> {
-            fn init(world: &mut World, query_id: usize) -> Self {
-                let component_id = match world.components.get_id(TypeId::of::<T>()){
-					Some(r) => r,
-					None => panic!("FetchState error: {}", std::any::type_name::<T>()),
-				};
+            fn init(world: &mut World, query_id: usize, archetype_id: ArchetypeId) -> Self {
+                let component_id = world.get_or_register_component::<T>(archetype_id);
 
 				// 如果world上没有Dirty资源，则插入Dirty资源
 				let dirty_id = world.get_resource_id::<DirtyLists>();

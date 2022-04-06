@@ -1,4 +1,4 @@
-/// 测试监听器
+/// 测试函数类型的监听器
 
 use pi_ecs::{
 	prelude::{ World, Local, Entity},

@@ -10,7 +10,7 @@ use crate::{
 	entity::Entity, 
 	component::Component, 
 	query::Access,
-	sys::{system::{System, IntoSystem, SystemState, InputMarker, func_sys::{FunctionSystem, SystemParamFunction, SysInput}}, 
+	sys::{system::{System, IntoSystem, SystemState, InputMarker, func_sys::{FunctionSystem, SystemParamFunction, SysInput}, runner::{Runner, ShareSystem, RunnerSystem}}, 
 	param::{SystemParam, SystemParamFetch, SystemParamState}}, archetype::ArchetypeComponentId};
 
 
@@ -46,6 +46,48 @@ where
 	}
 }
 
+pub trait Monitor: Sync + Send + 'static {
+	type Listen: ListenInit;
+	type Param: SystemParam;
+	fn monitor(&mut self, e: Event, param: <<Self::Param as SystemParam>::Fetch as SystemParamFetch>::Item);
+}
+
+impl<L: ListenInit, P: SystemParam + 'static, S: Monitor<Listen=L, Param = P>> Runner for S {
+	type Input = Event;
+	type Out = ();
+	type Param = P;
+	fn run(&mut self, input: Self::Input, param: <<Self::Param as SystemParam>::Fetch as SystemParamFetch>::Item ) {
+		<Self as Monitor>::monitor(self, input, param);
+	}
+}
+
+impl<L: ListenInit, P: SystemParam + 'static, S> ListenSetup for ShareSystem<S>
+where S: 
+	Runner<Input=Event, Param = P, Out = ()>+
+	Monitor<Listen = L, Param = P> 
+	{
+	fn setup(self, world: &mut World) {
+		let sys =  IntoSystem::<P, RunnerSystem<Event, (), P, InputMarker, ShareSystem<S>>>::system(self, world);
+
+		let sys = TrustCell::new(sys);
+		let listener = Listener(Arc::new(move |e: Event| {
+			sys.borrow_mut().run(e);
+		}));
+		L::init(world, listener.clone());
+	}
+}
+
+impl<L: ListenInit, P: SystemParam + 'static, S> Listeners<(Listen<L>, P), S> for S
+where S: 
+	IntoSystem<P, RunnerSystem<Event, (), P, InputMarker, ShareSystem<S>>> +
+	Runner<Input=Event, Param = P, Out = ()> + 
+	Monitor<Listen = L, Param = P> +
+	Clone {
+	fn listeners(&self) -> S {
+		self.clone()
+	}
+}
+
 pub trait ListenInit: Send + Sync + 'static {
 	fn init(world: &mut World, listener: Listener);
 	fn add_access(world: &mut World, access: Access<ArchetypeComponentId>);
@@ -62,6 +104,7 @@ pub fn add_access(world: &mut World, access: Access<ArchetypeComponentId>, a_c_i
 	};
 	arr.push(access);
 }
+
 pub struct ComponentListen<A, C, T>(PhantomData<(A, C, T)>);
 impl<A, C, T> ListenInit for ComponentListen<A, C, T> where 
 	A: 'static + Send + Sync,

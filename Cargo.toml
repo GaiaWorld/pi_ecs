@@ -1,6 +1,6 @@
 [package]
 name = "pi_ecs"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["suncy <530739162@qq.com>"]
 edition = "2021"
 description = "An excellent ECS framework"
@@ -11,7 +11,6 @@ keywords = ["pi", "ecs"]
 [dependencies]
 # slotmap = "1.0"
 pi_null = "0.1"
-pi_slotmap_tree = "0.2"
 pi_slotmap = "0.1"
 pi_slab = "0.1"
 pi_atom = "0.1"
@@ -36,6 +35,3 @@ thiserror = "1.0"
 futures = "0.3"
 fixedbitset = "0.4"
 derive_deref = "1.1"
-
-[patch.crates-io]
-pi_slotmap_tree = { path = "../pi_slotmap_tree" }

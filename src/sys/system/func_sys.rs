@@ -21,14 +21,14 @@ pub struct FunctionSystem<In, Out, Param, InMarker, F>
 where
     Param: SystemParam,
 {
-    func: F,
-    param_state: Option<Param::Fetch>,
-    system_state: SystemState,
-    config: Option<<Param::Fetch as SystemParamState>::Config>,
-	world: World,
-	id: SystemId,
+    pub(crate) func: F,
+    pub(crate) param_state: Option<Param::Fetch>,
+    pub(crate) system_state: SystemState,
+    pub(crate) config: Option<<Param::Fetch as SystemParamState>::Config>,
+	pub(crate) world: World,
+	pub(crate) id: SystemId,
     // NOTE: PhantomData<fn()-> T> gives this safe Send/Sync impls
-    mark: PhantomData<fn() -> (In, Out, InMarker)>,
+    pub(crate) mark: PhantomData<fn() -> (In, Out, InMarker)>,
 }
 
 impl<In, Out, Param: SystemParam, InMarker, F> FunctionSystem<In, Out, Param, InMarker, F> {
