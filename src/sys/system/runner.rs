@@ -7,7 +7,7 @@ use crate::{
     world::World,
 };
 use derive_deref::{Deref, DerefMut};
-use pi_share::ShareCell;
+use pi_share::{ShareCell, Share};
 // use bevy_ecs_macros::all_tuples;
 use std::{borrow::Cow, marker::PhantomData};
 
@@ -175,10 +175,15 @@ pub trait Runner: Sync + Send + 'static {
 }
 
 #[derive(Deref, DerefMut)]
-pub struct ShareSystem<R: Runner>(ShareCell<R>);
+pub struct ShareSystem<R>(Share<ShareCell<R>>);
 
-impl<R: Runner> ShareSystem<R> {
+impl<R> ShareSystem<R> {
 	pub fn new(r: R) -> Self {
-		ShareSystem(ShareCell::new(r))
+		ShareSystem(Share::new(ShareCell::new(r)))
 	}
+}
+impl<R> Clone for ShareSystem<R> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
 }

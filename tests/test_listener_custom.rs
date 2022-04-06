@@ -1,7 +1,7 @@
 /// 测试自定义监听器
 
 use pi_ecs::{
-	prelude::{ World, Local, Monitor, Event, ShareSystem, ComponentListen, Modify, EntityListen, Delete, ListenSetup}
+	prelude::{ World, Local, Monitor, Event, ShareSystem, ComponentListen, Modify, EntityListen, Delete, ListenSetup, Listeners}
 };
 
 /// 定义一个名为Node原型类型
@@ -58,7 +58,7 @@ fn test() {
 
 	let monitor = ShareSystem::new(MyListenner::default());
 	
-	monitor.setup(&mut world);
+	monitor.listeners().setup(&mut world);
 
 	// 会触发组件修改事件
 	println!("component will modify");

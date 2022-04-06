@@ -77,13 +77,11 @@ where S:
 	}
 }
 
-impl<L: ListenInit, P: SystemParam + 'static, S> Listeners<(Listen<L>, P), S> for S
+impl<L: ListenInit, P: SystemParam + 'static, S> Listeners<(Listen<L>, P), ShareSystem<S>> for ShareSystem<S>
 where S: 
-	IntoSystem<P, RunnerSystem<Event, (), P, InputMarker, ShareSystem<S>>> +
 	Runner<Input=Event, Param = P, Out = ()> + 
-	Monitor<Listen = L, Param = P> +
-	Clone {
-	fn listeners(&self) -> S {
+	Monitor<Listen = L, Param = P> + {
+	fn listeners(&self) -> ShareSystem<S> {
 		self.clone()
 	}
 }
