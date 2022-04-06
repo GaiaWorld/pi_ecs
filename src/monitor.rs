@@ -10,7 +10,7 @@ use crate::{
 	entity::Entity, 
 	component::Component, 
 	query::Access,
-	sys::{system::{System, IntoSystem, SystemState, InputMarker, func_sys::{FunctionSystem, SystemParamFunction, SysInput}, runner::{Runner, ShareSystem, RunnerSystem}}, 
+	sys::{system::{System, IntoSystem, SystemState, InputMarker, func_sys::{FunctionSystem, SystemParamFunction, SysInput}, runner::{ShareSystem, RunnerSystem, RunnerInner}}, 
 	param::{SystemParam, SystemParamFetch, SystemParamState}}, archetype::ArchetypeComponentId};
 
 
@@ -21,6 +21,11 @@ pub trait Listeners<P, ListenerType> {
 
 pub struct FunctionListeners<L: ListenInit, F, P> {
 	f: F,
+	mark: PhantomData<( P, L)>,
+}
+
+pub struct ShareListener<L: ListenInit, P, R> {
+	v: R,
 	mark: PhantomData<( P, L)>,
 }
 
@@ -46,28 +51,23 @@ where
 	}
 }
 
-pub trait Monitor: Sync + Send + 'static {
-	type Listen: ListenInit;
+pub trait Monitor<Listen: ListenInit>: Sync + Send + 'static {
 	type Param: SystemParam;
 	fn monitor(&mut self, e: Event, param: <<Self::Param as SystemParam>::Fetch as SystemParamFetch>::Item);
 }
 
-impl<L: ListenInit, P: SystemParam + 'static, S: Monitor<Listen=L, Param = P>> Runner for S {
-	type Input = Event;
-	type Out = ();
-	type Param = P;
-	fn run(&mut self, input: Self::Input, param: <<Self::Param as SystemParam>::Fetch as SystemParamFetch>::Item ) {
-		<Self as Monitor>::monitor(self, input, param);
+impl<L: ListenInit, P: SystemParam + 'static + Send + Sync, S: Monitor<L, Param = P>> RunnerInner<Event, (), P> for ShareListener<L, P, ShareSystem<S>> {
+	fn run(&mut self, input: Event, param: <<P as SystemParam>::Fetch as SystemParamFetch>::Item ) {
+		self.v.borrow_mut().monitor(input, param);
 	}
 }
 
-impl<L: ListenInit, P: SystemParam + 'static, S> ListenSetup for ShareSystem<S>
+impl<L: ListenInit, P: SystemParam + 'static + Send + Sync, S> ListenSetup for ShareListener<L, P, ShareSystem<S>>
 where S: 
-	Runner<Input=Event, Param = P, Out = ()>+
-	Monitor<Listen = L, Param = P> 
+	Monitor<L, Param = P>
 	{
 	fn setup(self, world: &mut World) {
-		let sys =  IntoSystem::<P, RunnerSystem<Event, (), P, InputMarker, ShareSystem<S>>>::system(self, world);
+		let sys =  IntoSystem::<P, RunnerSystem<Event, (), P, InputMarker, ShareListener<L, P, ShareSystem<S>>>>::system(self, world);
 
 		let sys = TrustCell::new(sys);
 		let listener = Listener(Arc::new(move |e: Event| {
@@ -77,12 +77,14 @@ where S:
 	}
 }
 
-impl<L: ListenInit, P: SystemParam + 'static, S> Listeners<(Listen<L>, P), ShareSystem<S>> for ShareSystem<S>
+impl<L: ListenInit, P: SystemParam + 'static, S> Listeners<(Listen<L>, P), ShareListener<L, P, ShareSystem<S>>> for ShareSystem<S>
 where S: 
-	Runner<Input=Event, Param = P, Out = ()> + 
-	Monitor<Listen = L, Param = P> + {
-	fn listeners(&self) -> ShareSystem<S> {
-		self.clone()
+	Monitor<L, Param = P> + {
+	fn listeners(&self) -> ShareListener<L, P, ShareSystem<S>> {
+		ShareListener {
+			v: self.clone(),
+			mark: PhantomData,
+		}
 	}
 }
 

@@ -1,7 +1,7 @@
 /// 测试自定义监听器
 
 use pi_ecs::{
-	prelude::{ World, Local, Monitor, Event, ShareSystem, ComponentListen, Modify, EntityListen, Delete, ListenSetup, Listeners}
+	prelude::{ World, Local, Monitor, Event, ShareSystem, ComponentListen, Modify, EntityListen, Delete, ListenSetup, Listeners, Runner, IntoSystem, runner::{RunnerSystem, RunnerInner}, SystemParam}, monitor::ListenInit
 };
 
 /// 定义一个名为Node原型类型
@@ -19,14 +19,24 @@ pub struct Local1(pub u32);
 pub struct MyListenner;
 
 /// 自定义监听器需要实现Monitor trait
-impl Monitor for MyListenner {
-	type Listen = (ComponentListen<Node, Position, Modify>, EntityListen<Node, Delete>);
+impl Monitor<(ComponentListen<Node, Position, Modify>, EntityListen<Node, Delete>)> for MyListenner where {
 	type Param = Local<Local1>;
 
 	fn monitor(&mut self, e: Event, mut local: Self::Param) {
 		local.0 += 1;
 		println!("run monitor_component_entity, count: {:?}, entity: {:?}", local.0, e.id);
 	}
+}
+
+/// 实现runner
+impl Runner for MyListenner {
+	type In = ();
+    type Out = ();
+    type Param = Local<Local1>;
+
+    fn run(&mut self, _input: (), _param: Self::Param ) -> () {
+        todo!()
+    }
 }
 
 #[test]
@@ -56,9 +66,14 @@ fn test() {
 		vec.push(id);
 	}
 
-	let monitor = ShareSystem::new(MyListenner::default());
+	let s = ShareSystem::new(MyListenner::default());
 	
-	monitor.listeners().setup(&mut world);
+	// 穿件system的方法，这里没有使用
+	let _system: RunnerSystem<(), (), Local<Local1>, (), ShareSystem<MyListenner>> = s.clone().system(&mut world);
+
+	// mm(s.listeners());
+	let listenner = s.listeners();
+	listenner.setup(&mut world);
 
 	// 会触发组件修改事件
 	println!("component will modify");

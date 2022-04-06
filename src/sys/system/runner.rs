@@ -59,15 +59,40 @@ impl<In, Out, Param: SystemParam, InMarker, F> RunnerSystem<In, Out, Param, InMa
 // #[derive(Deref, DerefMut)]
 // pub struct RunnerSystem<In, Out, Param: SystemParam, InMarker, R>(DefaultSystem<In, Out, Param, InMarker, R>);
 
-impl<In, Out, Param, InMarker, R> IntoSystem<Param, RunnerSystem<In, Out, Param, InMarker, ShareSystem<R>>> for ShareSystem<R>
+// impl<In, Out, Param, InMarker, R> IntoSystem<Param, RunnerSystem<In, Out, Param, InMarker, ShareSystem<R>>> for ShareSystem<R>
+// where
+//     In: 'static + Send + Sync,
+//     Out: 'static + Send + Sync,
+//     Param: SystemParam + 'static,
+//     InMarker: 'static,
+//     R:  RunnerInner<In, Out, Param>,
+// {
+//     fn system(self, world: &mut World) -> RunnerSystem<In, Out, Param, InMarker, ShareSystem<R>> {
+//         let id = SystemId::new(world.archetype_component_grow());
+// 		let mut r = RunnerSystem {
+//             func: self,
+//             param_state: None,
+// 			world: world.clone(),
+//             config: Some(<Param::Fetch as SystemParamState>::default_config()),
+//             system_state: SystemState::new::<R>(),
+// 			id,
+//             mark: PhantomData,
+//         };
+// 		r.initialize(world);
+// 		r
+// 		// RunnerSystem(r)
+//     }
+// }
+
+impl<In, Out, Param, InMarker, R> IntoSystem<Param, RunnerSystem<In, Out, Param, InMarker, R>> for R
 where
     In: 'static + Send + Sync,
     Out: 'static + Send + Sync,
     Param: SystemParam + 'static,
     InMarker: 'static,
-    R: Runner<Input = In, Out=Out, Param=Param>,
+    R:  RunnerInner<In, Out, Param>,
 {
-    fn system(self, world: &mut World) -> RunnerSystem<In, Out, Param, InMarker, ShareSystem<R>> {
+    fn system(self, world: &mut World) -> RunnerSystem<In, Out, Param, InMarker, R> {
         let id = SystemId::new(world.archetype_component_grow());
 		let mut r = RunnerSystem {
             func: self,
@@ -84,14 +109,13 @@ where
     }
 }
 
-
-impl<In, Out, Param, InMarker, R> System for RunnerSystem<In, Out, Param, InMarker, ShareSystem<R>>
+impl<In, Out, Param, InMarker, R> System for RunnerSystem<In, Out, Param, InMarker, R>
 where
 	In: 'static + Send + Sync,
 	Out: 'static + Send + Sync,
 	Param: SystemParam + 'static,
 	InMarker: 'static,
-	R: Runner<Input = In, Out=Out, Param=Param>,
+	R:  RunnerInner<In, Out, Param>,
 {
     type In = In;
     type Out = Out;
@@ -133,7 +157,7 @@ where
 		let change_tick = self.world.read_change_tick();
 
 		let p = <<Param as SystemParam>::Fetch as SystemParamFetch>::get_param(self.param_state.as_mut().unwrap(), &self.system_state, &self.world, change_tick);
-        let out = self.func.0.borrow_mut().run(
+        let out = self.func.run(
             input,
             p
         );
@@ -167,11 +191,114 @@ where
     }
 }
 
+
+// impl<In, Out, Param, InMarker, R> System for RunnerSystem<In, Out, Param, InMarker, ShareSystem<R>>
+// where
+// 	In: 'static + Send + Sync,
+// 	Out: 'static + Send + Sync,
+// 	Param: SystemParam + 'static,
+// 	InMarker: 'static,
+// 	R:  RunnerInner<In, Out, Param>,
+// {
+//     type In = In;
+//     type Out = Out;
+
+//     #[inline]
+//     fn name(&self) -> Cow<'static, str> {
+//         self.system_state.name.clone()
+//     }
+
+//     #[inline]
+//     fn id(&self) -> SystemId {
+//         self.id
+//     }
+
+//     // #[inline]
+//     // fn new_archetype(&mut self, archetype: &Archetype) {
+//     //     let param_state = self.param_state.as_mut().unwrap();
+//     //     param_state.new_archetype(archetype, &mut self.system_state);
+//     // }
+
+//     #[inline]
+//     fn component_access(&self) -> &Access<ComponentId> {
+//         &self.system_state.component_access_set.combined_access()
+//     }
+
+//     #[inline]
+//     fn archetype_component_access(&self) -> &Access<ArchetypeComponentId> {
+//         &self.system_state.archetype_component_access
+//     }
+
+//     #[inline]
+//     fn is_send(&self) -> bool {
+//         self.system_state.is_send
+//     }
+
+//     #[inline]
+//     unsafe fn run_unsafe(&mut self, input: Self::In) -> Self::Out {
+//         // let change_tick = world.increment_change_tick();
+// 		let change_tick = self.world.read_change_tick();
+
+// 		let p = <<Param as SystemParam>::Fetch as SystemParamFetch>::get_param(self.param_state.as_mut().unwrap(), &self.system_state, &self.world, change_tick);
+//         let out = self.func.0.borrow_mut().run(
+//             input,
+//             p
+//         );
+//         self.system_state.last_change_tick = change_tick;
+//         // self.system_state.last_change_tick = change_tick;
+//         out
+//     }
+
+//     #[inline]
+//     fn apply_buffers(&mut self) {
+//         let param_state = self.param_state.as_mut().unwrap();
+//         param_state.apply(&mut self.world);
+//     }
+
+//     #[inline]
+//     fn initialize(&mut self, world: &mut World) {
+//         self.param_state = Some(<Param::Fetch as SystemParamState>::init(
+//             world,
+//             &mut self.system_state,
+//             self.config.take().unwrap(),
+//         ));
+//     }
+
+//     #[inline]
+//     fn check_change_tick(&mut self, _change_tick: u32) {
+//         // check_system_change_tick(
+//         //     &mut self.system_state.last_change_tick,
+//         //     change_tick,
+//         //     self.system_state.name.as_ref(),
+//         // );
+//     }
+// }
+
 pub trait Runner: Sync + Send + 'static {
-	type Input: 'static + Sync + Send = ();
+	type In: 'static + Sync + Send = ();
 	type Out: 'static + Sync + Send = ();
-	type Param: SystemParam;
-	fn run(&mut self, input: Self::Input, param: <<Self::Param as SystemParam>::Fetch as SystemParamFetch>::Item ) -> Self::Out;
+	type Param: SystemParam = ();
+	fn run(&mut self, input: Self::In, param: <<Self::Param as SystemParam>::Fetch as SystemParamFetch>::Item ) -> Self::Out;
+}
+
+impl<In, Out, Param, S> RunnerInner<In, Out, Param> for ShareSystem<S> where
+	In: 'static + Sync + Send,
+	Out: 'static + Sync + Send,
+	Param: SystemParam,
+	S: Runner<In = In, Out = Out, Param = Param> {
+
+	fn run(&mut self, input: In, param: <<Param as SystemParam>::Fetch as SystemParamFetch>::Item ) -> Out {
+		// let r: &mut S = ;
+		Runner::run(&mut *(*self.0).borrow_mut(), input, param)
+    }
+}
+
+pub trait RunnerInner<In, Out, Param>: Sync + Send + 'static 
+	where
+		In: 'static + Sync + Send,
+		Out: 'static + Sync + Send,
+		Param: SystemParam {
+	fn run(&mut self, input: In, param: <<Param as SystemParam>::Fetch as SystemParamFetch>::Item ) -> Out;
 }
 
 #[derive(Deref, DerefMut)]
