@@ -105,9 +105,16 @@ impl WorldInner {
     /// 插入资源
     #[inline]
     pub fn insert_resource<T: Component>(&mut self, value: T) -> ComponentId {
-        let id = self.components.get_or_insert_resource_id::<T>();
-        self.archetypes.insert_resource::<T>(value, id);
-        id
+		let component_id = if let None = self.components.get_resource_id::<T>() {
+			let component_id = self.components.get_or_insert_resource_id::<T>();
+			let archetype_component_id = self.archetypes.archetype_component_grow();
+			self.archetypes.register_resource::<T>(component_id, archetype_component_id);
+			component_id
+		} else {
+			self.components.get_or_insert_resource_id::<T>()
+		};
+        self.archetypes.insert_resource::<T>(value, component_id);
+        component_id
     }
 
     /// 取 资源id

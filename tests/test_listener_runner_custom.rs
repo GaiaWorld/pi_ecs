@@ -1,8 +1,7 @@
 /// 测试自定义监听器
 
-use pi_ecs::{
-	prelude::{ World, Local, Monitor, Event, ShareSystem, ComponentListen, Modify, EntityListen, Delete, ListenSetup, Listeners, Runner, IntoSystem, runner::{RunnerSystem, RunnerInner}, SystemParam}, monitor::ListenInit
-};
+use pi_ecs::
+	prelude::{ World, Local, Monitor, Event, ShareSystem, ComponentListen, Modify, EntityListen, Delete, ListenSetup, Listeners, Runner, IntoSystem, runner::RunnerSystem};
 
 /// 定义一个名为Node原型类型
 pub struct Node;
