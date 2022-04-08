@@ -35,6 +35,22 @@ where
 	mark: PhantomData<A>,
 }
 
+// fn aa(q: Query<(&C, &X)>, q1: Query<&B>) {
+// 	for q.iter()
+
+// 	q.get(entity);
+// }
+
+// Query Fetch SyatemState QueryState
+
+// // [a1, a4]
+// // ComponentId
+
+// // [a1, a2, a3, a4]
+
+// // ABC a1
+// // AC a4
+
 impl<A: ArchetypeIdent, Q: WorldQuery, F: WorldQuery> QueryState<A, Q, F>
 where
     F::Fetch: FilterFetch,

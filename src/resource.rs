@@ -1,3 +1,5 @@
+use std::mem::forget;
+
 use pi_map::Map;
 use pi_null::Null;
 
@@ -78,10 +80,10 @@ impl Singles {
 		if self.metas.get(&component_id).is_none() {
 			let size = std::mem::size_of::<T>();
 
+			self.metas.insert(component_id, SingleMeta::new::<T>(usize::null(), self.buffer.len()));
 			// 设置长度
 			self.buffer.reserve(size);
 			unsafe{self.buffer.set_len(self.buffer.len() + size)};
-			self.metas.insert(component_id, SingleMeta::new::<T>(usize::null(), 0));
 		};
 	}
 
@@ -96,15 +98,14 @@ impl Singles {
 	/// 安全： 确保T和component_id的一致性, 同时存在meta
 	pub unsafe fn insert<T: 'static + Send + Sync>(&mut self, component_id: ComponentId, value: T) {
 		let size = std::mem::size_of::<T>();
-		let len = self.buffer.len();
+		let meta = &mut self.metas[component_id];
 
 		std::ptr::copy_nonoverlapping(
 			&value as *const T as *const u8,
-			self.buffer.as_mut_ptr().add(len),
+			self.buffer.as_mut_ptr().add(meta.index),
 			size,
 		);
-
-		let meta = &mut self.metas[component_id];
+		forget(value);
 
 		if meta.size.is_null() {
 			meta.size = size;
@@ -112,6 +113,7 @@ impl Singles {
 		} else {
 			meta.get_notify_ref().modify_event(Entity::null(), "", 0);
 		}
+
 	}
 
 	/// 安全： 确保T和component_id的一致性
