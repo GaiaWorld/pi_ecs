@@ -1,5 +1,5 @@
 //! Event 事件
-//! 
+//!
 use super::{SystemParam, SystemParamFetch, SystemParamState};
 use crate::{
     component::Component,
@@ -63,7 +63,7 @@ enum State {
 }
 
 /// [`Events`] 事件集合，收集两次 [`Events::update`] 调用 之间的 事件；
-/// 
+///
 /// Events 用 [`EventWriter`] 写
 /// Events 用 [`EventReader`] 读
 ///
@@ -74,7 +74,7 @@ enum State {
 /// [`Events::update`] 只能 一帧 更新一次；
 ///
 /// 用 [`add_event`]初始化时，[`Events::update_system`] 会做更新操作；
-/// 
+///
 /// [`EventReader`] are expected to read events from this collection at least once per loop/frame.
 /// Events will persist across a single frame boundary and so ordering of event producers and
 /// consumers is not critical (although poorly-planned ordering may cause accumulating lag).
@@ -111,7 +111,7 @@ enum State {
 /// # 细节
 ///
 /// [`Events`] 用 双缓冲 实现
-/// 
+///
 /// 每次调用 [`update`](Events::update) 都会 交换缓冲区，清掉 旧的那个；
 /// - [`EventReader`] 从两个Buffer 读 Event
 /// - [`EventReader`] 如果每次更新至少读取一次，则 不会 丢弃事件。
@@ -122,7 +122,7 @@ enum State {
 ///
 /// 可选的模式 是 调用 [`update`](Events::update) 手动跨帧控制事件何时被清除。
 /// 如果不清理，这会使消耗变得复杂，并且存在内存使用量不断扩大的风险，
-/// 但可以通过将事件作为Res 而不是 使用[`add_event`] 来完成 
+/// 但可以通过将事件作为Res 而不是 使用[`add_event`] 来完成
 #[derive(Debug)]
 pub struct Events<T> {
     events_a: Vec<EventInstance<T>>,
@@ -346,20 +346,9 @@ unsafe impl<TSystemParamState: SystemParamState, T: Component> SystemParamState
     type Config = ();
 
     fn init(world: &mut World, system_state: &mut SystemState, _config: Self::Config) -> Self {
-        let component_id = world.get_or_insert_resource_id::<T>();
-
-        let combined_access = system_state.component_access_set.combined_access_mut();
-        if combined_access.has_write(component_id) {
-            panic!(
-                "Res<{}> in system {} conflicts with a previous ResMut<{0}> access. Allowing this would break Rust's mutability rules. Consider removing the duplicate access.",
-                std::any::type_name::<T>(), system_state.name);
-        }
-        combined_access.add_read(component_id);
-
-        let archetype_component_id = world.archetypes.get_archetype_resource_id::<T>().unwrap();
-        system_state
-            .archetype_component_access
-            .add_read(*archetype_component_id);
+        // 注：这里的读写冲突标记都不需要加上，加上后反而有问题；
+        // 因为 state的初始化实际上就是 Res<Events<T>> 的 init 的过程；
+        // 下面函数 init 会 加上；
         Self {
             state: TSystemParamState::init(
                 world,
@@ -397,6 +386,7 @@ impl<'a, T: Component> SystemParamFetch<'a>
     ) -> Self::Item {
         Self::Item {
                 last_event_count: <<Local<(usize,PhantomData<T>)> as SystemParam> ::Fetch as SystemParamFetch> ::get_param(&mut state.state.0,system_state,world, change_tick),
+                
                 events: <<Res<Events<T> >as SystemParam> ::Fetch as SystemParamFetch> ::get_param(&mut state.state.1,system_state,world,change_tick),
         }
     }
@@ -440,37 +430,6 @@ impl<T: Component> ManualEventReader<T> {
     pub fn is_empty(&self, events: &Events<T>) -> bool {
         self.len(events) == 0
     }
-}
-
-/// Like [`iter_with_id`](EventReader::iter_with_id) except not emitting any traces for read
-/// messages.
-fn internal_event_reader<'a, T>(
-    last_event_count: &'a mut usize,
-    events: &'a Events<T>,
-) -> impl DoubleEndedIterator<Item = (&'a T, EventId<T>)> {
-    // if the reader has seen some of the events in a buffer, find the proper index offset.
-    // otherwise read all events in the buffer
-    let a_index = if *last_event_count > events.a_start_event_count {
-        *last_event_count - events.a_start_event_count
-    } else {
-        0
-    };
-    let b_index = if *last_event_count > events.b_start_event_count {
-        *last_event_count - events.b_start_event_count
-    } else {
-        0
-    };
-    let a = events.events_a.get(a_index..).unwrap_or_default();
-    let b = events.events_b.get(b_index..).unwrap_or_default();
-    let unread_count = a.len() + b.len();
-    *last_event_count = events.event_count - unread_count;
-    let iterator = match events.state {
-        State::A => b.iter().chain(a.iter()),
-        State::B => a.iter().chain(b.iter()),
-    };
-    iterator
-        .map(map_instance_event_with_id)
-        .inspect(move |(_, id)| *last_event_count = (id.id + 1).max(*last_event_count))
 }
 
 impl<T: Component> EventReader<T> {
@@ -541,29 +500,9 @@ unsafe impl<TSystemParamState: SystemParamState, T: Component> SystemParamState
     type Config = ();
 
     fn init(world: &mut World, system_state: &mut SystemState, _config: Self::Config) -> Self {
-        let component_id = world.get_or_insert_resource_id::<T>();
-        let archetype_component_id = world.archetypes.get_archetype_resource_id::<T>().unwrap();
-        let component_name = std::any::type_name::<T>();
-
-        let combined_access = system_state.component_access_set.combined_access_mut();
-        if combined_access.has_write(component_id) {
-            panic!(
-                "ResMut<{}> in system {} conflicts with a previous ResMut<{0}> access. Allowing this would break Rust's mutability rules. Consider removing the duplicate access.",
-                component_name, system_state.name);
-        }
-
-        if combined_access.has_read(component_id) {
-            panic!(
-                "ResMut<{}> in system {} conflicts with a previous Res<{0}> access. Allowing this would break Rust's mutability rules. Consider removing the duplicate access.",
-                component_name, system_state.name);
-        }
-
-        combined_access.add_write(component_id);
-
-        system_state
-            .archetype_component_access
-            .add_read(*archetype_component_id);
-
+        // 注：这里的读写冲突标记都不需要加上，加上后反而有问题；
+        // 因为 state的初始化实际上就是 ResMut<Events<T>> 的 init 的过程；
+        // 下面函数 init 会 加上；
         Self {
             state: TSystemParamState::init(
                 world,
@@ -610,6 +549,37 @@ fn map_instance_event_with_id<T>(event_instance: &EventInstance<T>) -> (&T, Even
 
 fn map_instance_event<T>(event_instance: &EventInstance<T>) -> &T {
     &event_instance.event
+}
+
+/// Like [`iter_with_id`](EventReader::iter_with_id) except not emitting any traces for read
+/// messages.
+fn internal_event_reader<'a, T>(
+    last_event_count: &'a mut usize,
+    events: &'a Events<T>,
+) -> impl DoubleEndedIterator<Item = (&'a T, EventId<T>)> {
+    // if the reader has seen some of the events in a buffer, find the proper index offset.
+    // otherwise read all events in the buffer
+    let a_index = if *last_event_count > events.a_start_event_count {
+        *last_event_count - events.a_start_event_count
+    } else {
+        0
+    };
+    let b_index = if *last_event_count > events.b_start_event_count {
+        *last_event_count - events.b_start_event_count
+    } else {
+        0
+    };
+    let a = events.events_a.get(a_index..).unwrap_or_default();
+    let b = events.events_b.get(b_index..).unwrap_or_default();
+    let unread_count = a.len() + b.len();
+    *last_event_count = events.event_count - unread_count;
+    let iterator = match events.state {
+        State::A => b.iter().chain(a.iter()),
+        State::B => a.iter().chain(b.iter()),
+    };
+    iterator
+        .map(map_instance_event_with_id)
+        .inspect(move |(_, id)| *last_event_count = (id.id + 1).max(*last_event_count))
 }
 
 #[cfg(test)]

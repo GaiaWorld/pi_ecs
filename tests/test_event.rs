@@ -17,11 +17,11 @@ fn test_event() {
     let events = Events::<MyEvent>::default();
     world.insert_resource(events);
     let dispatcher = create_dispatcher(&mut world);
-    
+
     // 单线程 异步运行时，哪个线程推，就由哪个线程执行 future
     let mut r = 0;
     loop {
-        // 这是一帧：预期是 上面的 3个阶段的 3个system 都要执行一遍。
+        // 这是一帧：预期是 上面的 2个阶段的 3个system 都要执行一遍。
         r += 1;
         println!("==================== frame {}", r);
 
@@ -37,20 +37,17 @@ fn create_dispatcher(world: &mut World) -> SingleDispatcher<StealableTaskPool<()
 
     let mut stages = Vec::new();
 
-    let mut stage = StageBuilder::new();
-    let update_system = Events::<MyEvent>::update_system.system(world);
-    stage.add_node(update_system);
-    stages.push(Arc::new(stage.build()));
+    let mut stage1 = StageBuilder::new();
+    // 更新 Event：交换缓冲区，必须在 所有事件系统 运行 之前 执行
+    // 所以：单独设置一个阶段
+    stage1.add_node(Events::<MyEvent>::update_system.system(world));
+    stages.push(Arc::new(stage1.build()));
 
-    let mut stage = StageBuilder::new();
-    let sending_system = sending_system.system(world);
-    stage.add_node(sending_system);
-    stages.push(Arc::new(stage.build()));
-
-    let mut stage = StageBuilder::new();
-    let receiving_system = receiving_system.system(world);
-    stage.add_node(receiving_system);
-    stages.push(Arc::new(stage.build()));
+    // 所以：Event的实现，EventWritter 先于 EvenReader 执行
+    let mut stage2 = StageBuilder::new();
+    stage2.add_node(sending_system.system(world));
+    stage2.add_node(receiving_system.system(world));
+    stages.push(Arc::new(stage2.build()));
 
     SingleDispatcher::new(stages, world, rt)
 }
@@ -63,8 +60,11 @@ struct MyEvent {
 
 // In every frame we will send an event with a 50/50 chance
 fn sending_system(mut event_writer: EventWriter<MyEvent>) {
+    println!("2 execute sending_system");
+
     let random_value: f32 = rand::random();
     if random_value > 0.5 {
+        println!("============ send MyEvent");
         event_writer.send(MyEvent {
             message: "A random event with value > 0.5".to_string(),
             random_value,
@@ -72,9 +72,8 @@ fn sending_system(mut event_writer: EventWriter<MyEvent>) {
     }
 }
 
-// This system listens for events of the type MyEvent
-// If an event is received it will be printed to the console
 fn receiving_system(mut event_reader: EventReader<MyEvent>) {
+    println!("3 execute receiving_system");
     for my_event in event_reader.iter() {
         println!(
             "    Received message {:?}, with random value of {}",
