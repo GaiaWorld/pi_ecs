@@ -121,7 +121,7 @@ where
         &self,
         world: &'w WorldInner,
         entity: Entity,
-    ) -> Option<<Q::Fetch as Fetch>::Item>
+    ) -> Option<<Q::Fetch as Fetch<'w>>::Item>
     where
         Q::Fetch: ReadOnlyFetch,
     {
@@ -134,7 +134,7 @@ where
         &mut self,
         world: &'w mut WorldInner,
         entity: Entity,
-    ) -> Option<<Q::Fetch as Fetch>::Item> {
+    ) -> Option<<Q::Fetch as Fetch<'w>>::Item> {
         // SAFE: query has unique world access
         unsafe { self.get_unchecked_inner(world, entity) }
     }
@@ -144,7 +144,7 @@ where
         &self,
         _world: &'w WorldInner,
         entity: Entity,
-    ) -> <Q::Fetch as Fetch>::Item {
+    ) -> <Q::Fetch as Fetch<'w>>::Item {
 		// let last_change_tick = world.last_change_tick();
         // let change_tick = world.read_change_tick();
 		
@@ -158,7 +158,7 @@ where
         &self,
         world: &'w WorldInner,
         entity: Entity,
-    ) -> Option<<Q::Fetch as Fetch>::Item> {
+    ) -> Option<<Q::Fetch as Fetch<'w>>::Item> {
         // self.validate_world_and_update_archetypes(world);
         self.get_unchecked_manual(
             world,
@@ -178,7 +178,7 @@ where
         entity: Entity,
         _last_change_tick: u32,
         _change_tick: u32,
-    ) -> Option<<Q::Fetch as Fetch>::Item> {
+    ) -> Option<<Q::Fetch as Fetch<'w>>::Item> {
 		if !self.matchs || entity.archetype_id() != self.archetype_id {
 			return None;
 		}

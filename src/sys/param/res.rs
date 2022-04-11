@@ -17,24 +17,24 @@ use std::{
 /// Panics when used as a [`SystemParameter`](SystemParam) if the resource does not exist.
 ///
 /// Use `Option<Res<T>>` instead if the resource might not always exist.
-pub struct Res<T: Component> {
-    value: &'static T,
+pub struct Res<'w, T: Component> {
+    value: &'w T,
     _world: World,
     // ticks: &'w ComponentTicks,
     // last_change_tick: u32,
     // change_tick: u32,
 }
 
-pub struct ResMut<T: Component> {
-    value: &'static mut T,
-	resource_notify: &'static NotifyImpl,
+pub struct ResMut<'w, T: Component> {
+    value: &'w mut T,
+	resource_notify: &'w NotifyImpl,
     _world: World,
     // ticks: &'w mut ComponentTicks,
     // last_change_tick: u32,
     // change_tick: u32,
 }
 
-impl<T: Component> ResMut<T> {
+impl<'w, T: Component> ResMut<'w, T> {
     pub fn create_event(&self, id: Entity) {
         self.resource_notify.create_event(id);
     }
@@ -46,10 +46,10 @@ impl<T: Component> ResMut<T> {
     }
 }
 
-impl<T: Component> Deref for Res<T> {
+impl<'w, T: Component> Deref for Res<'w, T> {
     type Target = T;
 
-    fn deref(&self) -> &Self::Target {
+    fn deref(&self) -> &'w Self::Target {
         // let v1 = self.value;
         // let r = unsafe{std::mem::transmute(v1)};
         // let t = r;
@@ -64,7 +64,7 @@ pub struct ResState<T> {
     pub(crate) marker: PhantomData<T>,
 }
 
-impl<T: Component> SystemParam for Res<T> {
+impl<'w, T: Component> SystemParam for Res<'w, T> {
     type Fetch = ResState<T>;
 }
 
@@ -98,14 +98,14 @@ unsafe impl<T: Component> SystemParamState for ResState<T> {
     fn default_config() {}
 }
 
-impl<'a, T: Component> SystemParamFetch<'a> for ResState<T> {
-    type Item = Res<T>;
+impl<'w, T: Component> SystemParamFetch<'w> for ResState<T> {
+    type Item = Res<'w, T>;
 
     #[inline]
     unsafe fn get_param(
-        state: &'a mut Self,
-        system_state: &'a SystemState,
-        world: &'a World,
+        state: &'w mut Self,
+        system_state: &'w SystemState,
+        world: &'w World,
         _change_tick: u32,
     ) -> Self::Item {
         let value = world
@@ -128,7 +128,7 @@ impl<'a, T: Component> SystemParamFetch<'a> for ResState<T> {
     }
 }
 
-impl<T: Component> Deref for ResMut<T> {
+impl<'w, T: Component> Deref for ResMut<'w, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -137,7 +137,7 @@ impl<T: Component> Deref for ResMut<T> {
     }
 }
 
-impl<T: Component> DerefMut for ResMut<T> {
+impl<'w, T: Component> DerefMut for ResMut<'w, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.value
     }
@@ -199,7 +199,7 @@ impl<T: Component> ResState<T> {
     }
 }
 
-impl<T: Component> SystemParam for ResMut<T> {
+impl<'w, T: Component> SystemParam for ResMut<'w, T> {
     type Fetch = ResMutState<T>;
 }
 
@@ -242,14 +242,14 @@ unsafe impl<T: Component> SystemParamState for ResMutState<T> {
     fn default_config() {}
 }
 
-impl<'a, T: Component> SystemParamFetch<'a> for ResMutState<T> {
-    type Item = ResMut<T>;
+impl<'w, T: Component> SystemParamFetch<'w> for ResMutState<T> {
+    type Item = ResMut<'w, T>;
 
     #[inline]
     unsafe fn get_param(
-        state: &'a mut Self,
-        system_state: &'a SystemState,
-        world: &'a World,
+        state: &'w mut Self,
+        system_state: &'w SystemState,
+        world: &'w World,
         _change_tick: u32,
     ) -> Self::Item {
         let (value, resource_notify) = (
@@ -277,7 +277,7 @@ impl<'a, T: Component> SystemParamFetch<'a> for ResMutState<T> {
 
 pub struct OptionResState<T>(ResState<T>);
 
-impl<'a, T: Component> SystemParam for Option<Res<T>> {
+impl<'w, T: Component> SystemParam for Option<Res<'w, T>> {
     type Fetch = OptionResState<T>;
 }
 
@@ -291,14 +291,14 @@ unsafe impl<T: Component> SystemParamState for OptionResState<T> {
     fn default_config() {}
 }
 
-impl<'a, T: Component> SystemParamFetch<'a> for OptionResState<T> {
-    type Item = Option<Res<T>>;
+impl<'w, T: Component> SystemParamFetch<'w> for OptionResState<T> {
+    type Item = Option<Res<'w, T>>;
 
     #[inline]
     unsafe fn get_param(
-        state: &'a mut Self,
-        _system_state: &'a SystemState,
-        world: &'a World,
+        state: &'w mut Self,
+        _system_state: &'w SystemState,
+        world: &'w World,
         _change_tick: u32,
     ) -> Self::Item {
 		match world.archetypes.get_resource_mut::<T>(state.0.component_id) {
@@ -315,7 +315,7 @@ impl<'a, T: Component> SystemParamFetch<'a> for OptionResState<T> {
 
 pub struct OptionResMutState<T>(ResMutState<T>);
 
-impl<'a, T: Component> SystemParam for Option<ResMut<T>> {
+impl<'w, T: Component> SystemParam for Option<ResMut<'w, T>> {
     type Fetch = OptionResMutState<T>;
 }
 
@@ -329,14 +329,14 @@ unsafe impl<T: Component> SystemParamState for OptionResMutState<T> {
     fn default_config() {}
 }
 
-impl<'a, T: Component> SystemParamFetch<'a> for OptionResMutState<T> {
-    type Item = Option<ResMut<T>>;
+impl<'w, T: Component> SystemParamFetch<'w> for OptionResMutState<T> {
+    type Item = Option<ResMut<'w, T>>;
 
     #[inline]
     unsafe fn get_param(
-        state: &'a mut Self,
-        _system_state: &'a SystemState,
-        world: &'a World,
+        state: &'w mut Self,
+        _system_state: &'w SystemState,
+        world: &'w World,
         _change_tick: u32,
     ) -> Self::Item {
 		match world.archetypes.get_resource_mut::<T>(state.0.component_id) {

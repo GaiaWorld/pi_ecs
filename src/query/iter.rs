@@ -112,7 +112,7 @@ impl<'w, 's, A: ArchetypeIdent, Q: WorldQuery, F: WorldQuery> Iterator for Query
 where
     F::Fetch: FilterFetch,
 {
-    type Item = <Q::Fetch as Fetch<'s>>::Item;
+    type Item = <Q::Fetch as Fetch<'w>>::Item;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {

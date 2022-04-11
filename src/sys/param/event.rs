@@ -319,16 +319,16 @@ impl<T> std::iter::Extend<T> for Events<T> {
 }
 
 /// Reads events of type `T` in order and tracks which events have already been read.
-pub struct EventReader<T: Component> {
-    last_event_count: Local<(usize, PhantomData<T>)>,
-    events: Res<Events<T>>,
+pub struct EventReader<'w, T: Component> {
+    last_event_count: Local<'w, (usize, PhantomData<T>)>,
+    events: Res<'w, Events<T>>,
 }
 
-impl<T: Component> SystemParam for EventReader<T> {
+impl<'w, T: Component> SystemParam for EventReader<'w, T> {
     type Fetch = EventReaderState<
         (
-            <Local<(usize, PhantomData<T>)> as SystemParam>::Fetch,
-            <Res<Events<T>> as SystemParam>::Fetch,
+            <Local<'w, (usize, PhantomData<T>)> as SystemParam>::Fetch,
+            <Res<'w, Events<T>> as SystemParam>::Fetch,
         ),
         T,
     >;
@@ -366,22 +366,22 @@ unsafe impl<TSystemParamState: SystemParamState, T: Component> SystemParamState
     fn default_config() {}
 }
 
-impl<'a, T: Component> SystemParamFetch<'a>
+impl<'w, T: Component> SystemParamFetch<'w>
     for EventReaderState<
         (
-            <Local<(usize, PhantomData<T>)> as SystemParam>::Fetch,
-            <Res<Events<T>> as SystemParam>::Fetch,
+            <Local<'w, (usize, PhantomData<T>)> as SystemParam>::Fetch,
+            <Res<'w, Events<T>> as SystemParam>::Fetch,
         ),
         T,
     >
 {
-    type Item = EventReader<T>;
+    type Item = EventReader<'w, T>;
 
     #[inline]
     unsafe fn get_param(
-        state: &'a mut Self,
-        system_state: &'a SystemState,
-        world: &'a World,
+        state: &'w mut Self,
+        system_state: &'w SystemState,
+        world: &'w World,
         change_tick: u32,
     ) -> Self::Item {
         Self::Item {
@@ -432,7 +432,7 @@ impl<T: Component> ManualEventReader<T> {
     }
 }
 
-impl<T: Component> EventReader<T> {
+impl<'w, T: Component> EventReader<'w, T> {
     /// Iterates over the events this [`EventReader`] has not seen yet. This updates the
     /// [`EventReader`]'s event counter, which means subsequent event reads will not include events
     /// that happened before now.
@@ -460,11 +460,11 @@ impl<T: Component> EventReader<T> {
 }
 
 /// Sends events of type `T`.
-pub struct EventWriter<T: Component> {
-    events: ResMut<Events<T>>,
+pub struct EventWriter<'w, T: Component> {
+    events: ResMut<'w, Events<T>>,
 }
 
-impl<T: Component> EventWriter<T> {
+impl<'w, T: Component> EventWriter<'w, T> {
     /// Sends an `event`. [`EventReader`]s can then read the event.
     /// See [`Events`] for details.
     pub fn send(&mut self, event: T) {
@@ -484,8 +484,8 @@ impl<T: Component> EventWriter<T> {
     }
 }
 
-impl<T: Component> SystemParam for EventWriter<T> {
-    type Fetch = EventWriterState<(<ResMut<Events<T>> as SystemParam>::Fetch,), T>;
+impl<'w, T: Component> SystemParam for EventWriter<'w, T> {
+    type Fetch = EventWriterState<(<ResMut<'w, Events<T>> as SystemParam>::Fetch,), T>;
 }
 
 #[doc(hidden)]
@@ -520,16 +520,16 @@ unsafe impl<TSystemParamState: SystemParamState, T: Component> SystemParamState
     }
 }
 
-impl<'a, T: Component> SystemParamFetch<'a>
-    for EventWriterState<(<ResMut<Events<T>> as SystemParam>::Fetch,), T>
+impl<'w, T: Component> SystemParamFetch<'w>
+    for EventWriterState<(<ResMut<'w, Events<T>> as SystemParam>::Fetch,), T>
 {
-    type Item = EventWriter<T>;
+    type Item = EventWriter<'w, T>;
 
     #[inline]
     unsafe fn get_param(
-        state: &'a mut Self,
-        system_state: &'a SystemState,
-        world: &'a World,
+        state: &'w mut Self,
+        system_state: &'w SystemState,
+        world: &'w World,
         change_tick: u32,
     ) -> Self::Item {
         Self::Item {

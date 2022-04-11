@@ -94,7 +94,7 @@ where
     ///
     /// This can only be called for read-only queries, see [`Self::get_mut`] for write-queries.
     #[inline]
-    pub fn get(&self, entity: Entity) -> Option<<Q::Fetch as Fetch>::Item>
+    pub fn get<'s>(&'s self, entity: Entity) -> Option<<Q::Fetch as Fetch<'s>>::Item>
     // where
     //     Q::Fetch: ReadOnlyFetch,
     {
@@ -114,7 +114,7 @@ where
     ///
     /// This can only be called for read-only queries, see [`Self::get_mut`] for write-queries.
     #[inline]
-    pub fn get_unchecked(&self, entity: Entity) -> <Q::Fetch as Fetch>::Item
+    pub fn get_unchecked<'s>(&'s self, entity: Entity) -> <Q::Fetch as Fetch<'s>>::Item
     // where
     //     Q::Fetch: ReadOnlyFetch,
     {
@@ -129,7 +129,7 @@ where
 	}
 
 	#[inline]
-    pub fn get_unchecked_mut(&mut self, entity: Entity) -> <Q::Fetch as Fetch>::Item
+    pub fn get_unchecked_mut<'s>(&'s mut self, entity: Entity) -> <Q::Fetch as Fetch>::Item
     // where
     //     Q::Fetch: ReadOnlyFetch,
     {
@@ -145,10 +145,10 @@ where
 
     /// Gets the query result for the given [`Entity`].
     #[inline]
-    pub fn get_mut(
-        &mut self,
+    pub fn get_mut<'s>(
+        &'s mut self,
         entity: Entity,
-    ) -> Option<<Q::Fetch as Fetch>::Item> {
+    ) -> Option<<Q::Fetch as Fetch<'s>>::Item> {
         // SAFE: system runs without conflicts with other systems.
         // same-system queries have runtime borrow checks when they conflict
         unsafe {

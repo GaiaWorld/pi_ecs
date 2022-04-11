@@ -7,9 +7,9 @@ use crate::{
 use std::ops::{Deref, DerefMut};
 
 
-pub struct Local<T: Component>(&'static mut T);
+pub struct Local<'s, T: Component>(&'s mut T);
 
-impl<T: Component> Deref for Local<T> {
+impl<'s, T: Component> Deref for Local<'s, T> {
     type Target = T;
 
     #[inline]
@@ -19,7 +19,7 @@ impl<T: Component> Deref for Local<T> {
     }
 }
 
-impl<T: Component> DerefMut for Local<T> {
+impl<'s, T: Component> DerefMut for Local<'s, T> {
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
 		self.0
@@ -30,7 +30,7 @@ impl<T: Component> DerefMut for Local<T> {
 /// The [`SystemParamState`] of [`Local`].
 pub struct LocalState<T: Component>(T);
 
-impl<T: Component + FromWorld> SystemParam for Local<T> {
+impl<'s, T: Component + FromWorld> SystemParam for Local<'s, T> {
     type Fetch = LocalState<T>;
 }
 
@@ -47,14 +47,14 @@ unsafe impl<T: Component + FromWorld> SystemParamState for LocalState<T> {
     }
 }
 
-impl<'a, T: Component + FromWorld> SystemParamFetch<'a> for LocalState<T> {
-    type Item = Local<T>;
+impl<'s, T: Component + FromWorld> SystemParamFetch<'s> for LocalState<T> {
+    type Item = Local<'s, T>;
 
     #[inline]
     unsafe fn get_param(
-        state: &'a mut Self,
-        _system_state: &'a SystemState,
-        _world: &'a World,
+        state: &'s mut Self,
+        _system_state: &'s SystemState,
+        _world: &'s World,
         _last_change_tick: u32,
     ) -> Self::Item {
         Local(std::mem::transmute(&mut state.0))
