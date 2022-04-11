@@ -426,13 +426,3 @@ unsafe impl Sync for WorldInner {}
 
 unsafe impl Send for WorldInner {}
 
-#[cfg(test)]
-mod test {
-    use super::World;
-
-	#[test]
-	fn test() {
-		let mut world = World::new();
-		world.new_archetype::<usize>();
-	}
-}

@@ -463,7 +463,7 @@ unsafe impl<T: Component> FetchState for MutState<T> {
 
 pub struct Write<T>(PhantomData<T>);
 pub struct WriteItem<T: Component> {
-	value: Option<&'static mut T>,
+	value: Option<&'static T>,
 	container: usize,
 	default: &'static T,
 	local: LocalVersion,
@@ -481,8 +481,8 @@ impl<T: Component> WriteItem<T> {
 
 	/// 取到可变引用
 	pub fn get_mut<'a>(&'a mut self) -> Option<&'a mut T> {
-		match &mut self.value {
-			Some(r) => Some(r),
+		match self.value {
+			Some(r) => Some(unsafe { &mut *(r as *const T as usize as *mut T)}),
 			None => None
 		}
 	}
@@ -511,8 +511,8 @@ impl<T: Component> WriteItem<T> {
 	}
 
 	pub fn get_or_default(&self) -> &T {
-		if let Some(r) = &self.value  {
-			return unsafe{std::mem::transmute(r)};
+		if let Some(r) = self.value  {
+			return unsafe{std::mem::transmute(&mut *(r as *const T as usize as *mut T))}
 		} else {
 			return unsafe{std::mem::transmute(self.default)};
 		}
@@ -533,7 +533,7 @@ impl<T: Component + Clone> WriteItem<T> {
 		c.insert_no_notify(self.local, self.default.clone());
 		let r: &'static mut T = unsafe{std::mem::transmute(c.get_unchecked_mut(self.local))};
 		self.value = Some(r);
-		self.value.as_mut().unwrap()
+		unsafe { &mut *(r as *const T as usize as *mut T)}
 	}
 }
 
@@ -613,7 +613,7 @@ impl<T: Component + Default> Fetch for WriteFetch<T> {
 
 	#[inline]
     unsafe fn archetype_fetch_unchecked(&mut self, local: LocalVersion) -> Self::Item {
-        let value = std::mem::transmute((&mut *(self.container as *mut MultiCaseImpl<T>)).get_unchecked_mut(local));
+        let value: Option<&'static T> = std::mem::transmute((&mut *(self.container as *mut MultiCaseImpl<T>)).get(local));
 		WriteItem {
 			value,
 			container: self.container,
