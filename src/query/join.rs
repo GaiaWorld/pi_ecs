@@ -39,9 +39,9 @@ unsafe impl<C, A, Q, F> ReadOnlyFetch for JoinFetch<C, A, Q, F>
 		  C: Component + Deref<Target = Entity> {}
 
 
-impl<C: Component + Deref<Target = Entity>, A: Send + Sync + 'static, Q: Fetch, F: FilterFetch> Fetch for JoinFetch<C, A, Q, F> {
+impl<'s, C: Component + Deref<Target = Entity>, A: Send + Sync + 'static, Q: Fetch<'s>, F: FilterFetch> Fetch<'s> for JoinFetch<C, A, Q, F> {
     type Item = Q::Item;
-    type State = JoinState<C, A, Q::State, <F as Fetch>::State>;
+    type State = JoinState<C, A, Q::State, <F as Fetch<'s>>::State>;
 
     unsafe fn init(
         world: &World,

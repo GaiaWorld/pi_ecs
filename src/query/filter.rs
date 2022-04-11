@@ -21,7 +21,7 @@ use std::{marker::PhantomData};
 
 /// Fetch methods used by query filters. This trait exists to allow "short circuit" behaviors for
 /// relevant query filter fetches.
-pub trait FilterFetch: Fetch {
+pub trait FilterFetch: for<'s> Fetch<'s> {
     /// # Safety
     /// Must always be called _after_ [Fetch::set_archetype]. `archetype_index` must be in the range
     /// of the current archetype
@@ -66,7 +66,7 @@ unsafe impl<T: Component> FetchState for WithState<T> {
     }
 }
 
-impl<T: Component> Fetch for WithFetch<T> {
+impl<'s, T: Component> Fetch<'s> for WithFetch<T> {
     type Item = bool;
     type State = WithState<T>;
 
@@ -147,7 +147,7 @@ unsafe impl<T: Component> FetchState for WithOutState<T> {
     }
 }
 
-impl<T: Component> Fetch for WithOutFetch<T> {
+impl<'s, T: Component> Fetch<'s> for WithOutFetch<T> {
     type Item = bool;
     type State = WithOutState<T>;
 
@@ -228,8 +228,8 @@ macro_rules! impl_query_filter_tuple {
 
         #[allow(unused_variables)]
         #[allow(non_snake_case)]
-        impl<$($filter: FilterFetch),*> Fetch for Or<($(OrFetch<$filter>,)*)> {
-            type State = Or<($(<$filter as Fetch>::State,)*)>;
+        impl<'s, $($filter: FilterFetch),*> Fetch<'s> for Or<($(OrFetch<$filter>,)*)> {
+            type State = Or<($(<$filter as Fetch<'s>>::State,)*)>;
             type Item = bool;
 
             unsafe fn init(world: &World, state: &Self::State) -> Self {
@@ -295,7 +295,7 @@ macro_rules! impl_query_filter_tuple {
             fn init(world: &mut World, query_id: usize, archetype_id: ArchetypeId) -> Self {
                 Or(($($filter::init(world, query_id, archetype_id),)*))
             }
-			fn set_archetype<A: 'static + Send + Sync>(&self, _world: &mut World)  {
+			fn init_archetype<A: 'static + Send + Sync>(&self, _world: &mut World)  {
 				// let ($($filter,)*) = &mut self.0;
                 // let ($($state,)*) = &state.0;
                 // $(
@@ -422,7 +422,7 @@ macro_rules! impl_tick_filter {
             fn matches_archetype(&self, archetype: &Archetype) -> bool {
                 archetype.contains(self.component_id)
             }
-			fn set_archetype<A: 'static + Send + Sync>(&self, world: &mut World) {
+			fn init_archetype<A: 'static + Send + Sync>(&self, world: &mut World) {
 				match unsafe{&*(self.dirty as *const Dirty)}.1.get(&self.component_id) {
 					Some(r) if *r == true => (),
 					_ => {
@@ -441,7 +441,7 @@ macro_rules! impl_tick_filter {
 			}
         }
 
-        impl<T: Component> Fetch for $fetch_name<T> {
+        impl<'s, T: Component> Fetch<'s> for $fetch_name<T> {
             type State = $state_name<T>;
             type Item = bool;
 

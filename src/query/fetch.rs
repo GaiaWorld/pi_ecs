@@ -17,11 +17,11 @@ use std::{
 
 /// WorldQuery 从world上fetch组件、实体、资源，需要实现该triat
 pub trait WorldQuery {
-    type Fetch: Fetch<State = Self::State>;
+    type Fetch: for<'s> Fetch<'s, State = Self::State>;
     type State: FetchState;
 }
 
-pub trait Fetch: Send + Sync + Sized {
+pub trait Fetch<'s>: Send + Sync + Sized {
     type Item;
     type State: FetchState;
 
@@ -81,7 +81,7 @@ pub unsafe trait FetchState: Send + Sync + Sized {
     fn update_archetype_component_access(&self, archetype: &Archetype, access: &mut Access<ArchetypeComponentId>);
     fn matches_archetype(&self, archetype: &Archetype) -> bool;
 	// fn get_matches(&self) -> bool;
-	fn set_archetype<A: 'static + Send + Sync>(&self, _world: &mut World) {}
+	fn init_archetype<A: 'static + Send + Sync>(&self, _world: &mut World) {}
     // fn matches_table(&self, table: &Table) -> bool;
 
 	fn apply(&self, _world: &mut World) {
@@ -129,7 +129,7 @@ unsafe impl FetchState for EntityState {
     }
 }
 
-impl Fetch for EntityFetch {
+impl<'s> Fetch<'s> for EntityFetch {
     type Item = Entity;
     type State = EntityState;
 
@@ -202,7 +202,7 @@ impl<T: Component> WorldQuery for ChangeTrackers<T> {
 
 unsafe impl<T> ReadOnlyFetch for ChangeTrackersFetch<T> {}
 
-impl<T: Component> Fetch for ChangeTrackersFetch<T> {
+impl<'s, T: Component> Fetch<'s> for ChangeTrackersFetch<T> {
     type Item = ChangeTrackers<T>;
     type State = ReadState<T>;
 
@@ -321,8 +321,8 @@ pub struct ReadFetch<T> {
 /// SAFE: access is read only
 unsafe impl<T> ReadOnlyFetch for ReadFetch<T> {}
 
-impl<T: Component> Fetch for ReadFetch<T> {
-    type Item = &'static T;
+impl<'s, T: Component> Fetch<'s> for ReadFetch<T> {
+    type Item = &'s T;
     type State = ReadState<T>;
 
     unsafe fn init(
@@ -371,8 +371,8 @@ pub struct MutFetch<T> {
 	mark: PhantomData<T>,
 }
 
-impl<T: Component> Fetch for MutFetch<T> {
-    type Item = Mut<'static, T>;
+impl<'s, T: Component> Fetch<'s> for MutFetch<T> {
+    type Item = Mut<'s, T>;
     type State = MutState<T>;
 
     unsafe fn init(
@@ -427,7 +427,7 @@ pub struct MutState<T> {
     marker: PhantomData<T>,
 }
 
-// SAFE: component access and archetype component access are properly updated to reflect that T is
+// SAFE: component access and archetype component access are properly updated to reflect that T IS
 // read
 unsafe impl<T: Component> FetchState for MutState<T> {
     fn init(world: &mut World, _query_id: usize, archetype_id: ArchetypeId) -> Self {
@@ -462,15 +462,15 @@ unsafe impl<T: Component> FetchState for MutState<T> {
 }
 
 pub struct Write<T>(PhantomData<T>);
-pub struct WriteItem<T: Component> {
-	value: Option<&'static T>,
+pub struct WriteItem<'s, T: Component> {
+	value: Option<&'s T>,
 	container: usize,
-	default: &'static T,
+	default: &'s T,
 	local: LocalVersion,
 	tick: u32
 }
 
-impl<T: Component> WriteItem<T> {
+impl<'s, T: Component> WriteItem<'s, T> {
 	/// 取到不可变引用
     pub fn get<'a>(&'a self) -> Option<&'a T> {
 		match &self.value {
@@ -497,7 +497,11 @@ impl<T: Component> WriteItem<T> {
 	pub fn write<'a>(&'a mut self, value: T) {
 		let c = unsafe{&mut *(self.container as *mut MultiCaseImpl<T>)};
 		c.insert(self.local,value, self.tick);
-		self.value = unsafe{std::mem::transmute(c.get_mut(self.local))};
+		let xx = c.get_mut(self.local);
+		if xx.is_some() {
+			self.value = unsafe{std::mem::transmute(c.get_mut(self.local))};
+		}
+		
 	}
 
 	/// 移除组件，并通知监听函数
@@ -524,7 +528,7 @@ impl<T: Component> WriteItem<T> {
 	}
 }
 
-impl<T: Component + Clone> WriteItem<T> {
+impl<'s, T: Component + Clone> WriteItem<'s, T> {
 	pub fn get_mut_or_default(&mut self) -> &mut T {
 		if let Some(r) = &mut self.value  {
 			return unsafe{std::mem::transmute(r)};
@@ -549,8 +553,8 @@ pub struct WriteFetch<T: Component> {
 	mark: PhantomData<T>,
 }
 
-impl<T: Component + Default> Fetch for WriteFetch<T> {
-    type Item = WriteItem<T>;
+impl<'s, T: Component + Default> Fetch<'s> for WriteFetch<T> {
+    type Item = WriteItem<'s, T>;
     type State = WriteState<T>;
 
     unsafe fn init(
@@ -718,7 +722,7 @@ unsafe impl<T: FetchState> FetchState for OptionState<T> {
 	}
 }
 
-impl<T: Fetch> Fetch for OptionFetch<T> {
+impl<'s, T: Fetch<'s>> Fetch<'s> for OptionFetch<T> {
     type Item = Option<T::Item>;
     type State = OptionState<T::State>;
 
@@ -824,8 +828,8 @@ unsafe impl<T: Component + Default> FetchState for OrDefaultState<T> {
 	}
 }
 
-impl<T: Component + Default> Fetch for OrDefaultFetch<T> {
-    type Item = &'static T;
+impl<'s, T: Component + Default> Fetch<'s> for OrDefaultFetch<T> {
+    type Item = &'s T;
     type State = OrDefaultState<T>;
 
     unsafe fn init(
@@ -882,7 +886,7 @@ impl<T: Component + Default> Fetch for OrDefaultFetch<T> {
 macro_rules! impl_tuple_fetch {
     ($(($name: ident, $state: ident)),*) => {
         #[allow(non_snake_case)]
-        impl<'a, $($name: Fetch),*> Fetch for ($($name,)*) {
+        impl<'s, $($name: Fetch<'s>),*> Fetch<'s> for ($($name,)*) {
             type Item = ($($name::Item,)*);
             type State = ($($name::State,)*);
 
@@ -943,9 +947,9 @@ macro_rules! impl_tuple_fetch {
 				$($name.update_component_access(access);)*
 			}
 
-			fn set_archetype<A: 'static + Send + Sync>(&self, _world: &mut World)  {
+			fn init_archetype<A: 'static + Send + Sync>(&self, _world: &mut World)  {
 				let ($($name,)*) = self;
-                $($name.set_archetype::<A>(_world);)*
+                $($name.init_archetype::<A>(_world);)*
 			}
 
             fn update_archetype_component_access(&self, archetype: &Archetype, _access: &mut Access<ComponentId>) {

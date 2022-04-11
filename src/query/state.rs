@@ -110,8 +110,8 @@ where
 			unsafe{ self.fetch_fetch.set_archetype(&self.fetch_state, archetype, world)};
 			unsafe{ self.filter_fetch.set_archetype(&self.filter_state, archetype, world)};
 
-			self.fetch_state.set_archetype::<A>(world);
-			self.filter_state.set_archetype::<A>(world);
+			self.fetch_state.init_archetype::<A>(world);
+			self.filter_state.init_archetype::<A>(world);
 
 		}
 	}

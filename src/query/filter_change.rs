@@ -127,7 +127,7 @@ macro_rules! impl_tick_filter {
                 archetype.contains(self.component_id)
             }
 			
-			fn set_archetype<A: 'static + Send + Sync>(&self, world: &mut World) {
+			fn init_archetype<A: 'static + Send + Sync>(&self, world: &mut World) {
 				if let None = unsafe{&*(self.dirty_list as *const DirtyList)}.init_list.get(&self.component_id) {
 					let component_id = self.component_id;
 					let dirty_list = self.dirty_list;
@@ -152,7 +152,7 @@ macro_rules! impl_tick_filter {
 			}
         }
 
-        impl<T: Component> Fetch for $fetch_name<T> {
+        impl<'s, T: Component> Fetch<'s> for $fetch_name<T> {
             type State = $state_name<T>;
             type Item = bool;
 
