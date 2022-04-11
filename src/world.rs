@@ -159,9 +159,9 @@ impl WorldInner {
     /// 创建原型
     pub fn new_archetype<T: Send + Sync + 'static>(&mut self) -> ArchetypeInfo {
         ArchetypeInfo {
-            archetype: self.archetypes.create_archetype_by_ident(TypeId::of::<T>()),
+            archetype_id: self.archetypes.get_or_create_archetype::<T>(),
             world: self,
-            type_id: TypeId::of::<T>(),
+            // type_id: TypeId::of::<T>(),
             components: HashSet::default(),
         }
     }
@@ -343,9 +343,9 @@ pub struct WorldId(pub(crate) usize);
 
 /// 原型信息
 pub struct ArchetypeInfo<'a> {
-    archetype: Archetype,
+    archetype_id: ArchetypeId,
     pub(crate) world: &'a mut WorldInner,
-    pub(crate) type_id: TypeId,
+    // pub(crate) type_id: TypeId,
     pub(crate) components: HashSet<ComponentId>,
 }
 
@@ -356,9 +356,10 @@ impl<'a> ArchetypeInfo<'a> {
         let r = self.components.insert(id);
 
         if r {
-            self.archetype.register_component_type::<C>(
+			let archetype_component_id = self.world.archetypes.archetype_component_grow();
+            self.world.archetypes[self.archetype_id].register_component_type::<C>(
                 id,
-                Local::new(self.world.archetypes.archetype_component_grow()),
+                Local::new(archetype_component_id),
             );
         }
         self
@@ -366,9 +367,9 @@ impl<'a> ArchetypeInfo<'a> {
 
     /// 创建原型
     pub fn create(self) {
-        self.world
-            .archetypes
-            .add_archetype(self.archetype, self.type_id);
+        // self.world
+        //     .archetypes
+        //     .add_archetype(self.archetype, self.type_id);
     }
 }
 
@@ -424,3 +425,14 @@ impl DerefMut for World {
 unsafe impl Sync for WorldInner {}
 
 unsafe impl Send for WorldInner {}
+
+#[cfg(test)]
+mod test {
+    use super::World;
+
+	#[test]
+	fn test() {
+		let mut world = World::new();
+		world.new_archetype::<usize>();
+	}
+}
