@@ -1,9 +1,10 @@
 use crate::{
     component::{Component, ComponentId},
-    monitor::{NotifyImpl, Notify},
+    entity::Entity,
+    monitor::{Notify, NotifyImpl},
     sys::param::interface::{SystemParam, SystemParamFetch, SystemParamState},
     sys::system::interface::SystemState,
-    world::{World, WorldInner}, entity::Entity,
+    world::{World, WorldInner},
 };
 use std::{
     marker::PhantomData,
@@ -25,9 +26,15 @@ pub struct Res<'w, T: Component> {
     // change_tick: u32,
 }
 
+impl<'w, T: Component> Res<'w, T> {
+    pub fn into_inner(self) -> &'w T {
+        self.value
+    }
+}
+
 pub struct ResMut<'w, T: Component> {
     value: &'w mut T,
-	resource_notify: &'w NotifyImpl,
+    resource_notify: &'w NotifyImpl,
     _world: World,
     // ticks: &'w mut ComponentTicks,
     // last_change_tick: u32,
@@ -183,8 +190,7 @@ impl<T: Component> ResState<T> {
                             std::any::type_name::<T>()
                         )
                     }),
-                world
-                    .archetypes.resources.get_notify_ref(self.component_id),
+                world.archetypes.resources.get_notify_ref(self.component_id),
             )
         };
 
@@ -211,8 +217,8 @@ unsafe impl<T: Component> SystemParamState for ResMutState<T> {
     fn init(world: &mut World, system_state: &mut SystemState, _config: Self::Config) -> Self {
         let world: &mut WorldInner = world;
         let component_id = world.get_or_insert_resource_id::<T>();
-		let archetype_component_id = world.archetypes.get_archetype_resource_id::<T>().unwrap();
-		let component_name = std::any::type_name::<T>();
+        let archetype_component_id = world.archetypes.get_archetype_resource_id::<T>().unwrap();
+        let component_name = std::any::type_name::<T>();
 
         let combined_access = system_state.component_access_set.combined_access_mut();
         if combined_access.has_write(component_id) {
@@ -229,7 +235,6 @@ unsafe impl<T: Component> SystemParamState for ResMutState<T> {
 
         combined_access.add_write(component_id);
 
-        
         system_state
             .archetype_component_access
             .add_read(*archetype_component_id);
@@ -264,7 +269,8 @@ impl<'w, 's, T: Component> SystemParamFetch<'w, 's> for ResMutState<T> {
                     )
                 }),
             world
-                .archetypes.resources
+                .archetypes
+                .resources
                 .get_notify_ref(state.component_id),
         );
         ResMut {
@@ -284,7 +290,7 @@ impl<'w, T: Component> SystemParam for Option<Res<'w, T>> {
 unsafe impl<T: Component> SystemParamState for OptionResState<T> {
     type Config = ();
 
-	fn init(world: &mut World, system_state: &mut SystemState, _config: Self::Config) -> Self {
+    fn init(world: &mut World, system_state: &mut SystemState, _config: Self::Config) -> Self {
         Self(ResState::init(world, system_state, ()))
     }
 
@@ -301,15 +307,13 @@ impl<'w, 's, T: Component> SystemParamFetch<'w, 's> for OptionResState<T> {
         world: &'w World,
         _change_tick: u32,
     ) -> Self::Item {
-		match world.archetypes.get_resource_mut::<T>(state.0.component_id) {
-			Some(value) => {
-				Some(Res {
-					value: std::mem::transmute(value),
-					_world: world.clone(),
-				})
-			},
-			None => None,
-		}
+        match world.archetypes.get_resource_mut::<T>(state.0.component_id) {
+            Some(value) => Some(Res {
+                value: std::mem::transmute(value),
+                _world: world.clone(),
+            }),
+            None => None,
+        }
     }
 }
 
@@ -322,7 +326,7 @@ impl<'w, T: Component> SystemParam for Option<ResMut<'w, T>> {
 unsafe impl<T: Component> SystemParamState for OptionResMutState<T> {
     type Config = ();
 
-	fn init(world: &mut World, system_state: &mut SystemState, _config: Self::Config) -> Self {
+    fn init(world: &mut World, system_state: &mut SystemState, _config: Self::Config) -> Self {
         Self(ResMutState::init(world, system_state, ()))
     }
 
@@ -339,18 +343,19 @@ impl<'w, 's, T: Component> SystemParamFetch<'w, 's> for OptionResMutState<T> {
         world: &'w World,
         _change_tick: u32,
     ) -> Self::Item {
-		match world.archetypes.get_resource_mut::<T>(state.0.component_id) {
-			Some(value) => {
-				let resource_notify = world
-				.archetypes.resources.get_notify_ref(state.0.component_id);
-				Some(ResMut {
-					value: std::mem::transmute(value),
-					_world: world.clone(),
-					resource_notify: std::mem::transmute(resource_notify),
-				})
-			},
-			None => None,
-		}
+        match world.archetypes.get_resource_mut::<T>(state.0.component_id) {
+            Some(value) => {
+                let resource_notify = world
+                    .archetypes
+                    .resources
+                    .get_notify_ref(state.0.component_id);
+                Some(ResMut {
+                    value: std::mem::transmute(value),
+                    _world: world.clone(),
+                    resource_notify: std::mem::transmute(resource_notify),
+                })
+            }
+            None => None,
+        }
     }
 }
-
