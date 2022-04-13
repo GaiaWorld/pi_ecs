@@ -11,22 +11,23 @@ use crate::{
     },
     world::World,
 };
+use futures::Future;
 use futures::future::BoxFuture;
 use pi_share::cell::TrustCell;
 use std::io::Result;
 use std::sync::Arc;
 
-pub struct SyncRun<Param: SystemParam + 'static, F>(
-    pub(crate) TrustCell<FunctionSystem<(), (), Param, (), F>>,
+pub struct SyncRun<Param: SystemParam + 'static, Out, F>(
+    pub(crate) TrustCell<FunctionSystem<(), Out, Param, (), F>>,
 );
 
-pub struct AsyncRun<Param: SystemParam + 'static, F>(
-    pub(crate) TrustCell<FunctionSystem<(), BoxFuture<'static, Result<()>>, Param, (), F>>,
+pub struct AsyncRun<Param: SystemParam + 'static, Out: Future<Output=Result<()>>, F>(
+    pub(crate) Arc<TrustCell<FunctionSystem<(), Out, Param, (), F>>>,
 );
 
-impl<Param: SystemParam + 'static, F> Operate for SyncRun<Param, F>
+impl<Param: SystemParam + 'static, Out: 'static + Send + Sync, F> Operate for SyncRun<Param, Out, F>
 where
-    F: Send + Sync + SystemParamFunction<(), (), Param, ()>,
+    F: Send + Sync + SystemParamFunction<(), Out, Param, ()>,
 {
     type R = ();
 
@@ -39,23 +40,25 @@ where
     }
 }
 
-impl<Param: SystemParam + 'static, F> Operate for AsyncRun<Param, F>
+impl<Param, Out, F> Operate for AsyncRun<Param, Out, F>
 where
-    F: Send + Sync + SystemParamFunction<(), BoxFuture<'static, Result<()>>, Param, ()>,
+    F: Send + Sync + SystemParamFunction<(), Out, Param, ()>,
+	Out: Future<Output = Result<()>  > + Send + Sync + 'static,
+	Param: SystemParam + 'static
 {
     type R = BoxFuture<'static, Result<()>>;
 
     fn run(&self) -> BoxFuture<'static, Result<()>> {
-        self.0.borrow_mut().run(())
+		Box::pin(self.0.borrow_mut().run(()))
     }
     fn apply(&self) {
         self.0.borrow_mut().apply_buffers();
     }
 }
 
-impl<Param: SystemParam + 'static, F> Into<GraphNode> for FunctionSystem<(), (), Param, (), F>
+impl<Param: SystemParam + 'static, Out: 'static + Send + Sync, F> Into<GraphNode> for FunctionSystem<(), Out, Param, (), F>
 where
-    F: Send + Sync + SystemParamFunction<(), (), Param, ()>,
+    F: Send + Sync + SystemParamFunction<(), Out, Param, ()>,
 {
     default fn into(self) -> GraphNode {
         let id = self.id();
@@ -101,10 +104,12 @@ where
     }
 }
 
-impl<Param: SystemParam + 'static, F> Into<GraphNode>
-    for FunctionSystem<(), BoxFuture<'static, Result<()>>, Param, (), F>
+impl<Param, Out, F> Into<GraphNode>
+    for FunctionSystem<(), Out, Param, (), F>
 where
-    F: Send + Sync + SystemParamFunction<(), BoxFuture<'static, Result<()>>, Param, ()>,
+    F: Send + Sync + SystemParamFunction<(), Out, Param, ()>,
+	Param: SystemParam + 'static,
+	Out: 'static + Send + Sync + Future<Output = Result<()>>
 {
     fn into(self) -> GraphNode {
         let id = self.id();
@@ -115,7 +120,7 @@ where
             .difference(component_access.get_writes())
             .collect();
         let writes = component_access.get_writes().ones().into_iter().collect();
-        let sys = TrustCell::new(self);
+        let sys = Arc::new(TrustCell::new(self));
         GraphNode {
             id: id.id(),
             reads: reads,

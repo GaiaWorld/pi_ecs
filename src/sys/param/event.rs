@@ -13,7 +13,7 @@ use log::trace;
 use std::{
     fmt::{self},
     hash::Hash,
-    marker::PhantomData,
+    marker::PhantomData, intrinsics::transmute,
 };
 
 /// `EventId` 事件的唯一标志
@@ -366,7 +366,7 @@ unsafe impl<TSystemParamState: SystemParamState, T: Component> SystemParamState
     fn default_config() {}
 }
 
-impl<'w, T: Component> SystemParamFetch<'w>
+impl<'w, 's, T: Component> SystemParamFetch<'w, 's>
     for EventReaderState<
         (
             <Local<'w, (usize, PhantomData<T>)> as SystemParam>::Fetch,
@@ -375,17 +375,17 @@ impl<'w, T: Component> SystemParamFetch<'w>
         T,
     >
 {
-    type Item = EventReader<'w, T>;
+    type Item = EventReader<'static, T>;
 
     #[inline]
     unsafe fn get_param(
-        state: &'w mut Self,
-        system_state: &'w SystemState,
+        state: &'s mut Self,
+        system_state: &SystemState,
         world: &'w World,
         change_tick: u32,
     ) -> Self::Item {
         Self::Item {
-                last_event_count: <<Local<(usize,PhantomData<T>)> as SystemParam> ::Fetch as SystemParamFetch> ::get_param(&mut state.state.0,system_state,world, change_tick),
+                last_event_count: <<Local<(usize,PhantomData<T>)> as SystemParam> ::Fetch as SystemParamFetch> ::get_param(transmute(&mut state.state.0), system_state, world, change_tick),
                 
                 events: <<Res<Events<T> >as SystemParam> ::Fetch as SystemParamFetch> ::get_param(&mut state.state.1,system_state,world,change_tick),
         }
@@ -520,15 +520,15 @@ unsafe impl<TSystemParamState: SystemParamState, T: Component> SystemParamState
     }
 }
 
-impl<'w, T: Component> SystemParamFetch<'w>
+impl<'w, 's, T: Component> SystemParamFetch<'w, 's>
     for EventWriterState<(<ResMut<'w, Events<T>> as SystemParam>::Fetch,), T>
 {
-    type Item = EventWriter<'w, T>;
+    type Item = EventWriter<'static, T>;
 
     #[inline]
     unsafe fn get_param(
-        state: &'w mut Self,
-        system_state: &'w SystemState,
+        state: &'s mut Self,
+        system_state: &SystemState,
         world: &'w World,
         change_tick: u32,
     ) -> Self::Item {

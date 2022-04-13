@@ -4,22 +4,22 @@ use crate::sys::system::interface::SystemState;
 use crate::world::World;
 use pi_ecs_macros::all_tuples;
 
-pub trait SystemParam: Sized {
-    type Fetch: for<'a> SystemParamFetch<'a>;
+pub trait SystemParam: Sized + Send + Sync {
+    type Fetch: for<'w, 's> SystemParamFetch<'w, 's>;
 }
 
-pub type SystemParamItem<'a, P> = <<P as SystemParam>::Fetch as SystemParamFetch<'a>>::Item;
+pub type SystemParamItem<'w, 's, P> = <<P as SystemParam>::Fetch as SystemParamFetch<'w, 's>>::Item;
 
-pub trait SystemParamFetch<'a>: SystemParamState {
+pub trait SystemParamFetch<'w, 's>: SystemParamState {
     type Item;
     /// # Safety
     ///
     /// This call might access any of the input parameters in an unsafe way. Make sure the data
     /// access is safe in the context of the system scheduler.
     unsafe fn get_param(
-        state: &'a mut Self,
-        system_state: &'a SystemState,
-        world: &'a World,
+        state: &'s mut Self,
+        system_state: &SystemState,
+        world: &'w World,
         change_tick: u32,
     ) -> Self::Item;
 }
@@ -47,14 +47,14 @@ macro_rules! impl_system_param_tuple {
         }
         #[allow(unused_variables)]
         #[allow(non_snake_case)]
-        impl<'a, $($param: SystemParamFetch<'a>),*> SystemParamFetch<'a> for ($($param,)*) {
+        impl<'w, 's, $($param: SystemParamFetch<'w, 's>),*> SystemParamFetch<'w, 's> for ($($param,)*) {
             type Item = ($($param::Item,)*);
 
             #[inline]
             unsafe fn get_param(
-                state: &'a mut Self,
-                system_state: &'a SystemState,
-                world: &'a World,
+                state: &'s mut Self,
+                system_state: &SystemState,
+                world: &'w World,
                 change_tick: u32,
             ) -> Self::Item {
 

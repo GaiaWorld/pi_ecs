@@ -47,14 +47,14 @@ unsafe impl<T: Component + FromWorld> SystemParamState for LocalState<T> {
     }
 }
 
-impl<'s, T: Component + FromWorld> SystemParamFetch<'s> for LocalState<T> {
-    type Item = Local<'s, T>;
+impl<'w, 's, T: Component + FromWorld> SystemParamFetch<'w, 's> for LocalState<T> {
+    type Item = Local<'static, T>;
 
     #[inline]
     unsafe fn get_param(
         state: &'s mut Self,
-        _system_state: &'s SystemState,
-        _world: &'s World,
+        _system_state: &SystemState,
+        _world: &'w World,
         _last_change_tick: u32,
     ) -> Self::Item {
         Local(std::mem::transmute(&mut state.0))

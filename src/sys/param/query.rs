@@ -229,7 +229,7 @@ where
 	}
 }
 
-impl<'a, A: ArchetypeIdent, Q: WorldQuery + 'static, F: WorldQuery + 'static> SystemParamFetch<'a> for Arc<QueryState<A, Q, F>>
+impl<'w, 's, A: ArchetypeIdent, Q: WorldQuery + 'static, F: WorldQuery + 'static> SystemParamFetch<'w, 's> for Arc<QueryState<A, Q, F>>
 where
     F::Fetch: FilterFetch,
 {
@@ -237,9 +237,9 @@ where
 
     #[inline]
     unsafe fn get_param(
-        state: &'a mut Self,
-        system_state: &'a SystemState,
-        world: &'a World,
+        state: &'s mut Self,
+        system_state: &SystemState,
+        world: &'w World,
         change_tick: u32,
     ) -> Self::Item {
         Query::new(world, state, system_state.last_change_tick, change_tick)

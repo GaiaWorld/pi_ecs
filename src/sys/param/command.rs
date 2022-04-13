@@ -171,14 +171,14 @@ unsafe impl<T: Component> SystemParamState for CommandQueues<T> {
 	}
 }
 
-impl<'a, T: Component> SystemParamFetch<'a> for CommandQueues<T> {
+impl<'w, 's, T: Component> SystemParamFetch<'w, 's> for CommandQueues<T> {
     type Item = Commands<T>;
 
     #[inline]
     unsafe fn get_param(
-        state: &'a mut Self,
-        _system_state: &'a SystemState,
-        world: &'a World,
+        state: &'s mut Self,
+        _system_state: & SystemState,
+        world: &'w World,
         _last_change_tick: u32,
     ) -> Self::Item {
 		Commands::new(std::mem::transmute(state), world)
@@ -213,14 +213,14 @@ unsafe impl<T: 'static + Send + Sync> SystemParamState for CommandQueue<EntityDe
 	}
 }
 
-impl<'a, T: 'static + Send + Sync> SystemParamFetch<'a> for CommandQueue<EntityDelete<T>> {
+impl<'w, 's, T: 'static + Send + Sync> SystemParamFetch<'w, 's> for CommandQueue<EntityDelete<T>> {
     type Item = EntityCommands<T>;
 
     #[inline]
     unsafe fn get_param(
-        state: &'a mut Self,
-        _system_state: &'a SystemState,
-        world: &'a World,
+        state: &'s mut Self,
+        _system_state: & SystemState,
+        world: &'w World,
         _last_change_tick: u32,
     ) -> Self::Item {
 		EntityCommands::new(std::mem::transmute(state), world)

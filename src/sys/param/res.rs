@@ -98,13 +98,13 @@ unsafe impl<T: Component> SystemParamState for ResState<T> {
     fn default_config() {}
 }
 
-impl<'w, T: Component> SystemParamFetch<'w> for ResState<T> {
-    type Item = Res<'w, T>;
+impl<'w, 's, T: Component> SystemParamFetch<'w, 's> for ResState<T> {
+    type Item = Res<'static, T>;
 
     #[inline]
     unsafe fn get_param(
-        state: &'w mut Self,
-        system_state: &'w SystemState,
+        state: &'s mut Self,
+        system_state: &SystemState,
         world: &'w World,
         _change_tick: u32,
     ) -> Self::Item {
@@ -242,13 +242,13 @@ unsafe impl<T: Component> SystemParamState for ResMutState<T> {
     fn default_config() {}
 }
 
-impl<'w, T: Component> SystemParamFetch<'w> for ResMutState<T> {
-    type Item = ResMut<'w, T>;
+impl<'w, 's, T: Component> SystemParamFetch<'w, 's> for ResMutState<T> {
+    type Item = ResMut<'static, T>;
 
     #[inline]
     unsafe fn get_param(
-        state: &'w mut Self,
-        system_state: &'w SystemState,
+        state: &'s mut Self,
+        system_state: &SystemState,
         world: &'w World,
         _change_tick: u32,
     ) -> Self::Item {
@@ -291,13 +291,13 @@ unsafe impl<T: Component> SystemParamState for OptionResState<T> {
     fn default_config() {}
 }
 
-impl<'w, T: Component> SystemParamFetch<'w> for OptionResState<T> {
-    type Item = Option<Res<'w, T>>;
+impl<'w, 's, T: Component> SystemParamFetch<'w, 's> for OptionResState<T> {
+    type Item = Option<Res<'static, T>>;
 
     #[inline]
     unsafe fn get_param(
-        state: &'w mut Self,
-        _system_state: &'w SystemState,
+        state: &'s mut Self,
+        _system_state: &SystemState,
         world: &'w World,
         _change_tick: u32,
     ) -> Self::Item {
@@ -329,13 +329,13 @@ unsafe impl<T: Component> SystemParamState for OptionResMutState<T> {
     fn default_config() {}
 }
 
-impl<'w, T: Component> SystemParamFetch<'w> for OptionResMutState<T> {
-    type Item = Option<ResMut<'w, T>>;
+impl<'w, 's, T: Component> SystemParamFetch<'w, 's> for OptionResMutState<T> {
+    type Item = Option<ResMut<'static, T>>;
 
     #[inline]
     unsafe fn get_param(
-        state: &'w mut Self,
-        _system_state: &'w SystemState,
+        state: &'s mut Self,
+        _system_state: &SystemState,
         world: &'w World,
         _change_tick: u32,
     ) -> Self::Item {

@@ -30,14 +30,14 @@ unsafe impl SystemParamState for TickState {
     }
 }
 
-impl<'a> SystemParamFetch<'a> for TickState {
+impl<'w, 's> SystemParamFetch<'w, 's> for TickState {
     type Item = Tick;
 
     #[inline]
     unsafe fn get_param(
-        _state: &'a mut Self,
-        _system_state: &'a SystemState,
-        _world: &'a World,
+        _state: &'s mut Self,
+        _system_state: &SystemState,
+        _world: &'w World,
         change_tick: u32,
     ) -> Self::Item {
 		Tick{

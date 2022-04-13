@@ -1,6 +1,5 @@
 /// 测试System
 
-use futures::future::{BoxFuture, FutureExt};
 use pi_ecs::{prelude::{Query, With,Res, World, Local, ResMut, Entity, StageBuilder, SingleDispatcher, Dispatcher}, sys::system::IntoSystem};
 use pi_async::rt::{multi_thread::MultiTaskRuntimeBuilder, AsyncRuntime};
 use std::{sync::Arc, io::Result};
@@ -44,26 +43,41 @@ fn _sync_sys(
 }
 
 // 异步系统()
-fn _async_sys1(
-	_query1: Query<Node, &Velocity>,
-	mut query2: Query<Node, (Entity, &'static mut Position), With<Velocity>>, // Query<Node, &mut Position, WithOut<Velocity>>
-	local: Local<DirtyMark>,
-	res: Res<Resource1>,
-	res_mut: ResMut<Resource2>,
-) -> BoxFuture<'static, Result<()>> {
-	async move {
-		// let r1 = &*res;
-		// let r2 = &*res_mut;
-		// let r2 = &*local;
-		println!("run _async_sys1, res1: {:?}, {:?}, {:?}", &*res, &*res_mut, &*local);
-		println!("run _async_sys1, res1: {:?}, {:?}, {:?}", 1, 2,3);
-		for (entity, position) in query2.iter_mut() {
-			println!("run _async_sys1, entity: {:?}, position:{:?}",entity, &*position);
-		}
-		Ok(())
-	}.boxed()
-
+async fn _async_sys1<'a>(
+	_query1: Query<Node, &'a Velocity>,
+	mut query2: Query<Node, (Entity, &'a mut Position), With<Velocity>>, // Query<Node, &mut Position, WithOut<Velocity>>
+	local: Local<'a, DirtyMark>,
+	res: Res<'a, Resource1>,
+	res_mut: ResMut<'a, Resource2>,
+) -> Result<()> {
+	// async move {
+	// 	// let r1 = &*res;
+	// 	// let r2 = &*res_mut;
+	// 	// let r2 = &*local;
+	// 	// println!("run _async_sys1, res1: {:?}, {:?}, {:?}", &*res, &*res_mut, &*local);
+	// 	println!("run _async_sys1, res1: {:?}, {:?}, {:?}", 1, 2,3);
+	// 	for (entity, position) in query2.iter_mut() {
+	// 		println!("run _async_sys1, entity: {:?}, position:{:?}",entity, &*position);
+	// 	}
+	// 	Ok(())
+	// }.boxed()
+	println!("run _async_sys1, res1: {:?}, {:?}, {:?}", &*res, &*res_mut, &*local);
+	println!("run _async_sys1, res1: {:?}, {:?}, {:?}", 1, 2,3);
+	for (entity, position) in query2.iter_mut() {
+		println!("run _async_sys1, entity: {:?}, position:{:?}",entity, &*position);
+	}
+	Ok(())
 }
+
+// async fn aa(x: &usize) {
+
+// }
+
+// async fn bb() {
+// 	let x = 0;
+// 	aa(&x).await;
+// }
+
 #[test]
 fn test() {
 	

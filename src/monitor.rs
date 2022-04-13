@@ -174,14 +174,14 @@ unsafe impl<T: ListenInit> SystemParamState for ListenState<T> {
     }
 }
 
-impl<'a, T: ListenInit> SystemParamFetch<'a> for ListenState<T> {
+impl<'w, 's, T: ListenInit> SystemParamFetch<'w, 's> for ListenState<T> {
     type Item = Listen<T>;
 
     #[inline]
     unsafe fn get_param(
-        _state: &'a mut Self,
-        _system_state: &'a SystemState,
-        _world: &'a World,
+        _state: &'s mut Self,
+        _system_state: &SystemState,
+        _world: &'w World,
         _change_tick: u32,
     ) -> Self::Item {
         Listen(PhantomData)

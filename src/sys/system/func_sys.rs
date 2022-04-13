@@ -9,6 +9,8 @@ use crate::{
 use pi_ecs_macros::all_tuples;
 // use bevy_ecs_macros::all_tuples;
 use std::{borrow::Cow, marker::PhantomData};
+use std::future::Future;
+use std::mem::transmute;
 
 use super::{SystemId, In};
 
@@ -204,6 +206,7 @@ pub trait SystemParamFunction<In, Out, Param: SystemParam, InMarker>: Send + Syn
 
 macro_rules! impl_system_function {
     ($($param: ident),*) => {
+		// 同步实现
 		#[allow(non_snake_case)]
         impl<Out, Func, $($param: SystemParam),*> SystemParamFunction<(), Out, ($($param,)*), ()> for Func
         where
@@ -211,10 +214,10 @@ macro_rules! impl_system_function {
                 FnMut($($param),*) -> Out +
                 FnMut($(<<$param as SystemParam>::Fetch as SystemParamFetch>::Item),*) -> Out + 
 				Send + Sync + 'static, 
-			Out: 'static
+			// Out: 'static
         {
             #[inline]
-            fn run(&mut self, _input: (), state: &mut <($($param,)*) as SystemParam>::Fetch, system_state: &SystemState, world: &World, change_tick: u32) -> Out {
+            default fn run(&mut self, _input: (), state: &mut <($($param,)*) as SystemParam>::Fetch, system_state: &SystemState, world: &World, change_tick: u32) -> Out {
                 unsafe {
                     let ($($param,)*) = <<($($param,)*) as SystemParam>::Fetch as SystemParamFetch>::get_param(state, system_state, world, change_tick);
                     self($($param),*)
@@ -227,10 +230,12 @@ macro_rules! impl_system_function {
         where
             Func:
                 FnMut(Input, $($param),*) -> Out +
-                FnMut(Input, $(<<$param as SystemParam>::Fetch as SystemParamFetch>::Item),*) -> Out + Send + Sync + 'static, Out: 'static
+                FnMut(Input, $(<<$param as SystemParam>::Fetch as SystemParamFetch>::Item),*) -> Out + 
+				Send + Sync + 'static, 
+			// Out: 'static
         {
             #[inline]
-            fn run(&mut self, input: Input, state: &mut <($($param,)*) as SystemParam>::Fetch, system_state: &SystemState, world: &World, change_tick: u32) -> Out {
+            default fn run(&mut self, input: Input, state: &mut <($($param,)*) as SystemParam>::Fetch, system_state: &SystemState, world: &World, change_tick: u32) -> Out {
                 unsafe {
                     let ($($param,)*) = <<($($param,)*) as SystemParam>::Fetch as SystemParamFetch>::get_param(state, system_state, world, change_tick);
                     self(input, $($param),*)
@@ -238,7 +243,41 @@ macro_rules! impl_system_function {
             }
         }
 
-        
+		// 异步实现
+		#[allow(non_snake_case)]
+        impl<Out, Func, $($param: SystemParam + 'static),*> SystemParamFunction<(), Out, ($($param,)*), ()> for Func
+        where
+            Func:
+                FnMut($($param),*) -> Out +
+                FnMut($(<<$param as SystemParam>::Fetch as SystemParamFetch>::Item),*) -> Out + 
+				Send + Sync + 'static, 
+			Out: Future,
+        {
+            #[inline]
+            fn run(&mut self, _input: (), state: &mut <($($param,)*) as SystemParam>::Fetch, system_state: &SystemState, world: &World, change_tick: u32) -> Out {
+                unsafe {
+                    let ($($param,)*) = <<($($param,)*) as SystemParam>::Fetch as SystemParamFetch<'static, 'static>>::get_param(transmute(state), system_state, transmute(world), change_tick);
+                    self($($param),*)
+                }
+            }
+        }
+
+		#[allow(non_snake_case)]
+        impl<Input: SysInput, Out, Func, $($param: SystemParam),*> SystemParamFunction<Input, Out, ($($param,)*), InputMarker> for Func
+        where
+            Func:
+                FnMut(Input, $($param),*) -> Out +
+                FnMut(Input, $(<<$param as SystemParam>::Fetch as SystemParamFetch>::Item),*) -> Out + Send + Sync + 'static, 
+			Out: Future,
+        {
+            #[inline]
+            fn run(&mut self, input: Input, state: &mut <($($param,)*) as SystemParam>::Fetch, system_state: &SystemState, world: &World, change_tick: u32) -> Out {
+                unsafe {
+                    let ($($param,)*) = <<($($param,)*) as SystemParam>::Fetch as SystemParamFetch<'static, 'static>>::get_param(transmute(state) , system_state, transmute(world), change_tick);
+                    self(input, $($param),*)
+                }
+            }
+        }
     };
 }
 

@@ -1,7 +1,7 @@
 /// 测试自定义监听器
 
 use pi_ecs::
-	prelude::{ World, Local, Monitor, Event, ShareSystem, ComponentListen, Modify, EntityListen, Delete, ListenSetup, Listeners, Runner, IntoSystem, runner::RunnerSystem};
+	prelude::{ World, Local, Monitor, Event, ShareSystem, ComponentListen, Modify, EntityListen, Delete, ListenSetup, Listeners, Runner, IntoSystem, runner::RunnerSystem, SystemParamItem};
 
 /// 定义一个名为Node原型类型
 pub struct Node;
@@ -19,9 +19,9 @@ pub struct MyListenner;
 
 /// 自定义监听器需要实现Monitor trait
 impl Monitor<(ComponentListen<Node, Position, Modify>, EntityListen<Node, Delete>)> for MyListenner where {
-	type Param = Local<Local1>;
+	type Param = Local<'static, Local1>;
 
-	fn monitor(&mut self, e: Event, mut local: Self::Param) {
+	fn monitor<'s>(&'s mut self, e: Event, mut local: SystemParamItem<'s, 's, Self::Param>) {
 		local.0 += 1;
 		println!("run monitor_component_entity, count: {:?}, entity: {:?}", local.0, e.id);
 	}
@@ -31,9 +31,9 @@ impl Monitor<(ComponentListen<Node, Position, Modify>, EntityListen<Node, Delete
 impl Runner for MyListenner {
 	type In = ();
     type Out = ();
-    type Param = Local<Local1>;
+    type Param = Local<'static, Local1>;
 
-    fn run(&mut self, _input: (), _param: Self::Param ) -> () {
+    fn run<'s>(&'s mut self, _input: (), _param: SystemParamItem<'s, 's, Self::Param> ) -> () {
         todo!()
     }
 }

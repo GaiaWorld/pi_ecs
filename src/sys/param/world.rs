@@ -61,14 +61,14 @@ unsafe impl SystemParamState for WorldRead {
     }
 }
 
-impl<'a> SystemParamFetch<'a> for WorldRead {
+impl<'w, 's> SystemParamFetch<'w, 's> for WorldRead {
     type Item = WorldRead;
 
     #[inline]
     unsafe fn get_param(
-        _state: &'a mut Self,
-        _system_state: &'a SystemState,
-        world: &'a World,
+        _state: &'s mut Self,
+        _system_state: &SystemState,
+        world: &'w World,
         _last_change_tick: u32,
     ) -> Self::Item {
         WorldRead(world.clone())
@@ -147,14 +147,14 @@ unsafe impl SystemParamState for WorldMut {
     }
 }
 
-impl<'a> SystemParamFetch<'a> for WorldMut {
+impl<'w, 's> SystemParamFetch<'w, 's> for WorldMut {
     type Item = WorldMut;
 
     #[inline]
     unsafe fn get_param(
-        _state: &'a mut Self,
-        _system_state: &'a SystemState,
-        world: &'a World,
+        _state: &'s mut Self,
+        _system_state: &SystemState,
+        world: &'w World,
         _last_change_tick: u32,
     ) -> Self::Item {
         WorldMut(world.clone())

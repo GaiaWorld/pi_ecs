@@ -1,4 +1,3 @@
-use futures::{future::BoxFuture, FutureExt};
 use pi_ecs::prelude::*;
 use pi_async::rt::{
     multi_thread::MultiTaskRuntimeBuilder, single_thread::SingleTaskRunner, AsyncRuntime,
@@ -16,13 +15,9 @@ fn sync_stage1_system2() {
 }
 
 // 异步 System
-fn async_stage2_system1() -> BoxFuture<'static, Result<()>> {
-    async move {
-        println!("Running: async system: stage 2, system 1");
-
-        Ok(())
-    }
-    .boxed()
+async fn async_stage2_system1() -> Result<()> {
+    println!("Running: async system: stage 2, system 1");
+	Ok(())
 }
 
 // 同步 System
