@@ -56,12 +56,12 @@ pub trait System: Send + Sync + 'static {
 }
 
 /// 数据状态
-pub struct DateState<PramState> {
+pub struct DataState<PramState> {
 	system_state: SystemState,
 	param_state: PramState,
 }
 
-impl<'w, 's, PramState: SystemParamFetch<'w, 's>> DateState<PramState> {
+impl<'w, 's, PramState: SystemParamFetch<'w, 's>> DataState<PramState> {
 	pub fn new(world: &mut World) -> Self {
 		let mut system_state = SystemState::new::<Self>();
 		Self {
