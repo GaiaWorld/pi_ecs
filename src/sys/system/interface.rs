@@ -1,6 +1,7 @@
 pub use pi_listener::FnListener;
 use std::borrow::Cow;
 
+use crate::sys::param::SystemParamFetch;
 use crate::world::World;
 use crate::component::ComponentId;
 use crate::archetype::ArchetypeComponentId;
@@ -51,9 +52,34 @@ pub trait System: Send + Sync + 'static {
         unsafe { self.run_unsafe(input) }
     }
     fn apply_buffers(&mut self);
-    /// Initialize the system.
-    fn initialize(&mut self, _world: &mut World);
     fn check_change_tick(&mut self, change_tick: u32);
+}
+
+/// 数据状态
+pub struct DateState<PramState> {
+	system_state: SystemState,
+	param_state: PramState,
+}
+
+impl<'w, 's, PramState: SystemParamFetch<'w, 's>> DateState<PramState> {
+	pub fn new(world: &mut World) -> Self {
+		let mut system_state = SystemState::new::<Self>();
+		Self {
+			param_state: PramState::init(
+				world,
+				&mut system_state,
+				PramState::default_config(),
+			),
+			system_state,
+		}
+	}
+
+	pub fn get_param(&'s mut self, world: &'w mut World) -> PramState::Item {
+		unsafe { 
+			let change_tick = world.change_tick();
+			PramState::get_param(&mut self.param_state, &self.system_state, world, change_tick)
+		}
+	}
 }
 
 #[derive(Clone, Copy)]

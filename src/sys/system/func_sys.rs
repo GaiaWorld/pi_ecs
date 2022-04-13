@@ -24,7 +24,7 @@ where
     Param: SystemParam,
 {
     pub(crate) func: F,
-    pub(crate) param_state: Option<Param::Fetch>,
+    pub(crate) param_state: Param::Fetch,
     pub(crate) system_state: SystemState,
     pub(crate) config: Option<<Param::Fetch as SystemParamState>::Config>,
 	pub(crate) world: World,
@@ -80,17 +80,20 @@ where
 {
     fn system(self, world: &mut World) -> FunctionSystem<In, Out, Param, InMarker, F> {
         let id = SystemId::new(world.archetype_component_grow());
-		let mut r = FunctionSystem {
+		let mut system_state =  SystemState::new::<F>();
+		FunctionSystem {
             func: self,
-            param_state: None,
+            param_state: <Param::Fetch as SystemParamState>::init(
+				world,
+				&mut system_state,
+				<Param::Fetch as SystemParamState>::default_config(),
+			),
 			world: world.clone(),
             config: Some(<Param::Fetch as SystemParamState>::default_config()),
             system_state: SystemState::new::<F>(),
 			id,
             mark: PhantomData,
-        };
-		r.initialize(world);
-		r
+        }
     }
 }
 
@@ -143,7 +146,7 @@ where
 		let change_tick = self.world.read_change_tick();
         let out = self.func.run(
             input,
-            self.param_state.as_mut().unwrap(),
+            &mut self.param_state,
             &self.system_state,
             &self.world,
             change_tick,
@@ -155,17 +158,7 @@ where
 
     #[inline]
     fn apply_buffers(&mut self) {
-        let param_state = self.param_state.as_mut().unwrap();
-        param_state.apply(&mut self.world);
-    }
-
-    #[inline]
-    fn initialize(&mut self, world: &mut World) {
-        self.param_state = Some(<Param::Fetch as SystemParamState>::init(
-            world,
-            &mut self.system_state,
-            self.config.take().unwrap(),
-        ));
+        self.param_state.apply(&mut self.world);
     }
 
     #[inline]
