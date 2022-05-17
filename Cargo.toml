@@ -9,6 +9,7 @@ license = "MIT OR Apache-2.0"
 keywords = ["pi", "ecs"]
 
 [dependencies]
+quote = "1.0"
 pi_null = "0.1"
 pi_slotmap = "0.1"
 pi_map = "0.1"

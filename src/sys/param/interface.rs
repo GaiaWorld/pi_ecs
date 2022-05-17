@@ -2,13 +2,12 @@ use crate::component::ComponentId;
 use crate::query::{FilteredAccess, FilteredAccessSet};
 use crate::sys::system::interface::SystemState;
 use crate::world::World;
+use crate::storage::Offset;
 use pi_ecs_macros::all_tuples;
 
 pub trait SystemParam: Sized + Send + Sync {
     type Fetch: for<'w, 's> SystemParamFetch<'w, 's>;
 }
-
-pub type SystemParamItem<'w, 's, P> = <<P as SystemParam>::Fetch as SystemParamFetch<'w, 's>>::Item;
 
 pub trait SystemParamFetch<'w, 's>: SystemParamState {
     type Item;
@@ -40,6 +39,11 @@ pub unsafe trait SystemParamState: Send + Sync + 'static {
     fn default_config() -> Self::Config;
 }
 
+/// 实现该trait的参数，其操作的数据都是直接作用到World上，不会延迟
+pub trait NotApply {}
+
+pub type SystemParamItem<'w, 's, P> = <<P as SystemParam>::Fetch as SystemParamFetch<'w, 's>>::Item;
+
 macro_rules! impl_system_param_tuple {
     ($($param: ident),*) => {
         impl<$($param: SystemParam),*> SystemParam for ($($param,)*) {
@@ -62,6 +66,8 @@ macro_rules! impl_system_param_tuple {
                 ($($param::get_param($param, system_state, world, change_tick),)*)
             }
         }
+
+		impl<$($param: SystemParamState + NotApply),*> NotApply for ($($param,)*) {}
 
         /// SAFE: implementors of each SystemParamState in the tuple have validated their impls
         #[allow(non_snake_case)]
@@ -86,7 +92,7 @@ macro_rules! impl_system_param_tuple {
     };
 }
 
-all_tuples!(impl_system_param_tuple, 0, 16, P);
+all_tuples!(impl_system_param_tuple, 0, 60, P);
 
 pub fn assert_component_access_compatibility(
     system_name: &str,
@@ -100,9 +106,11 @@ pub fn assert_component_access_compatibility(
     if conflicts.is_empty() {
         return;
     }
+	let info = world.archetypes().archetype_component_info();
+
     let conflicting_components = conflicts
         .drain(..)
-        .map(|component_id| world.components.get_info(component_id).unwrap().name())
+        .map(|component_id| info[component_id.offset()].as_str())
         .collect::<Vec<&str>>();
     let accesses = conflicting_components.join(", ");
     panic!("Query<{}, {}> in system {} accesses component(s) {} in a way that conflicts with a previous system parameter. Allowing this would break Rust's mutability rules. Consider merging conflicting Queries into a QuerySet.",

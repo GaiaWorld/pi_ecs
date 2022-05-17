@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use pi_ecs::{prelude::{Query, IntoSystem, StageBuilder, SingleDispatcher, Dispatcher, With, WithOut, Or}, entity::Entity, world::World, storage::Offset};
+use pi_ecs::{prelude::{Query, IntoSystem, StageBuilder, SingleDispatcher, Dispatcher, With, WithOut, Or}, entity::Id, world::World, storage::Offset};
 use pi_async::rt::{AsyncRuntime, multi_thread::{MultiTaskRuntimeBuilder, StealableTaskPool}};
 
 
@@ -19,19 +19,19 @@ pub struct Velocity(pub usize);
 
 /// 测试Or
 pub fn or(
-	q: Query<Node, Entity, Or<(With<Position>, WithOut<Velocity>)>>,
+	q: Query<Node, Id<Node>, Or<(With<Position>, WithOut<Velocity>)>>,
 ) {
 	for r in q.iter(){
-		println!("Or filter run, entity {:?}", r.local().offset());
+		println!("Or filter run, entity {:?}", r.offset());
 	}
 }
 
 /// 测试and
 pub fn and(
-	q: Query<Node, Entity, (With<Position>, WithOut<Velocity>)>,
+	q: Query<Node, Id<Node>, (With<Position>, WithOut<Velocity>)>,
 ) {
 	for r in q.iter(){
-		println!("and filter run, entity {:?}", r.local().offset());
+		println!("and filter run, entity {:?}", r.offset());
 	}
 }
 
@@ -79,8 +79,9 @@ fn create_dispatcher(world: &mut World) -> SingleDispatcher<StealableTaskPool<()
 	stage.add_node(system2);
 	
 	let mut stages = Vec::new();
-	stages.push(Arc::new(stage.build()));
-	let dispatcher = SingleDispatcher::new(stages, world, rt);
+	stages.push(Arc::new(stage.build(&world)));
+	let mut dispatcher = SingleDispatcher::new(rt);
+	dispatcher.init(stages, world);
 
 	return dispatcher;
 }

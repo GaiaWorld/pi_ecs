@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use pi_ecs::{prelude::{Query, IntoSystem, StageBuilder, SingleDispatcher, Dispatcher, With, WithOut}, entity::Entity, world::World, storage::Offset};
+use pi_ecs::{prelude::{Query, IntoSystem, StageBuilder, SingleDispatcher, Dispatcher, With, WithOut}, entity::Id, world::World, storage::Offset};
 use pi_async::rt::{AsyncRuntime, multi_thread::{MultiTaskRuntimeBuilder, StealableTaskPool}};
 
 
@@ -15,19 +15,19 @@ pub struct Position(pub usize);
 
 /// 测试Width
 pub fn with(
-	q: Query<Node, Entity, With<Position>>,
+	q: Query<Node, Id<Node>, With<Position>>,
 ) {
 	for r in q.iter(){
-		println!("width<Position> filter run, entity {:?}", r.local().offset());
+		println!("width<Position> filter run, entity {:?}", r.offset());
 	}
 }
 
 /// 测试WithOut
 pub fn without(
-	q: Query<Node, Entity, WithOut<Position>>,
+	q: Query<Node, Id<Node>, WithOut<Position>>,
 ) {
 	for r in q.iter(){
-		println!("WithOut<Position> filter run, entity {:?}", r.local().offset());
+		println!("WithOut<Position> filter run, entity {:?}", r.offset());
 	}
 }
 
@@ -72,8 +72,9 @@ fn create_dispatcher(world: &mut World) -> SingleDispatcher<StealableTaskPool<()
 	stage.add_node(system2);
 	
 	let mut stages = Vec::new();
-	stages.push(Arc::new(stage.build()));
-	let dispatcher = SingleDispatcher::new(stages, world, rt);
+	stages.push(Arc::new(stage.build(world)));
+	let mut dispatcher = SingleDispatcher::new(rt);
+	dispatcher.init(stages, world);
 
 	return dispatcher;
 }

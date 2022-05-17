@@ -1,15 +1,16 @@
+use std::any::type_name;
+
 use crate::{
     archetype::ArchetypeComponentId,
-    component::ComponentId,
     query::Access,
     sys::param::{interface::{SystemParamState, SystemParam}, SystemParamFetch},
     sys::system::interface::{System, SystemState, IntoSystem},
     world::World,
 };
 use derive_deref::{Deref, DerefMut};
-use pi_share::{ShareCell, Share};
+use pi_share::cell::TrustCell;
 // use bevy_ecs_macros::all_tuples;
-use std::{borrow::Cow, marker::PhantomData};
+use std::{borrow::Cow, marker::PhantomData, sync::Arc};
 
 use super::SystemId;
 
@@ -93,7 +94,7 @@ where
     R:  RunnerInner<In, Out, Param>,
 {
     fn system(self, world: &mut World) -> RunnerSystem<In, Out, Param, InMarker, R> {
-        let id = SystemId::new(world.archetype_component_grow());
+        let id = SystemId::new(world.archetype_component_grow(type_name::<Self>().to_string()));
 		let mut system_state =  SystemState::new::<R>();
 		RunnerSystem {
             func: self,
@@ -104,7 +105,7 @@ where
 			),
 			world: world.clone(),
             // config: Some(<Param::Fetch as SystemParamState>::default_config()),
-            system_state: SystemState::new::<R>(),
+            system_state,
 			id,
             mark: PhantomData,
         }
@@ -132,20 +133,9 @@ where
         self.id
     }
 
-    // #[inline]
-    // fn new_archetype(&mut self, archetype: &Archetype) {
-    //     let param_state = self.param_state.as_mut().unwrap();
-    //     param_state.new_archetype(archetype, &mut self.system_state);
-    // }
-
-    #[inline]
-    fn component_access(&self) -> &Access<ComponentId> {
-        &self.system_state.component_access_set.combined_access()
-    }
-
     #[inline]
     fn archetype_component_access(&self) -> &Access<ArchetypeComponentId> {
-        &self.system_state.archetype_component_access
+        &self.system_state.archetype_component_access.combined_access()
     }
 
     #[inline]
@@ -218,7 +208,7 @@ where
 //     }
 
 //     #[inline]
-//     fn archetype_component_access(&self) -> &Access<ArchetypeComponentId> {
+//     fn archetype_component_access(&self) -> &FilteredAccess<ArchetypeComponentId> {
 //         &self.system_state.archetype_component_access
 //     }
 
@@ -295,11 +285,11 @@ pub trait RunnerInner<In, Out, Param>: Sync + Send + 'static
 }
 
 #[derive(Deref, DerefMut)]
-pub struct ShareSystem<R>(Share<ShareCell<R>>);
+pub struct ShareSystem<R>(Arc<TrustCell<R>>);
 
 impl<R> ShareSystem<R> {
 	pub fn new(r: R) -> Self {
-		ShareSystem(Share::new(ShareCell::new(r)))
+		ShareSystem(Arc::new(TrustCell::new(r)))
 	}
 }
 impl<R> Clone for ShareSystem<R> {

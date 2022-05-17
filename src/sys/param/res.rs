@@ -1,14 +1,14 @@
 use crate::{
-    component::{Component, ComponentId},
+	resource::{Resource, ResourceId},
     entity::Entity,
     monitor::{Notify, NotifyImpl},
-    sys::param::interface::{SystemParam, SystemParamFetch, SystemParamState},
+    sys::param::interface::{SystemParam, SystemParamFetch, SystemParamState, NotApply},
     sys::system::interface::SystemState,
-    world::{World, WorldInner},
+    world::{World, WorldInner, FromWorld}, component::ComponentId,
 };
 use std::{
     marker::PhantomData,
-    ops::{Deref, DerefMut},
+    ops::{Deref, DerefMut}, intrinsics::transmute,
 };
 
 /// Shared borrow of a resource.
@@ -18,7 +18,7 @@ use std::{
 /// Panics when used as a [`SystemParameter`](SystemParam) if the resource does not exist.
 ///
 /// Use `Option<Res<T>>` instead if the resource might not always exist.
-pub struct Res<'w, T: Component> {
+pub struct Res<'w, T: Resource> {
     value: &'w T,
     _world: World,
     // ticks: &'w ComponentTicks,
@@ -26,13 +26,13 @@ pub struct Res<'w, T: Component> {
     // change_tick: u32,
 }
 
-impl<'w, T: Component> Res<'w, T> {
+impl<'w, T: Resource> Res<'w, T> {
     pub fn into_inner(self) -> &'w T {
         self.value
     }
 }
 
-pub struct ResMut<'w, T: Component> {
+pub struct ResMut<'w, T: Resource> {
     value: &'w mut T,
     resource_notify: &'w NotifyImpl,
     _world: World,
@@ -41,7 +41,7 @@ pub struct ResMut<'w, T: Component> {
     // change_tick: u32,
 }
 
-impl<'w, T: Component> ResMut<'w, T> {
+impl<'w, T: Resource> ResMut<'w, T> {
     pub fn create_event(&self, id: Entity) {
         self.resource_notify.create_event(id);
     }
@@ -53,7 +53,7 @@ impl<'w, T: Component> ResMut<'w, T> {
     }
 }
 
-impl<'w, T: Component> Deref for Res<'w, T> {
+impl<'w, T: Resource> Deref for Res<'w, T> {
     type Target = T;
 
     fn deref(&self) -> &'w Self::Target {
@@ -67,45 +67,69 @@ impl<'w, T: Component> Deref for Res<'w, T> {
 
 /// The [`SystemParamState`] of [`Res`].
 pub struct ResState<T> {
-    pub(crate) component_id: ComponentId,
+    pub(crate) component_id: ResourceId,
     pub(crate) marker: PhantomData<T>,
 }
 
-impl<'w, T: Component> SystemParam for Res<'w, T> {
+impl<'w, T: Resource> SystemParam for Res<'w, T> {
     type Fetch = ResState<T>;
 }
 
-// SAFE: Res ComponentId and ArchetypeComponentId access is applied to SystemState. If this Res
-// conflicts with any prior access, a panic will occur.
-unsafe impl<T: Component> SystemParamState for ResState<T> {
-    type Config = ();
+impl<T: Resource> ResState<T> {
+	fn init_(world: &mut WorldInner, system_state: &mut SystemState, _config: <Self as SystemParamState>::Config, component_id: ComponentId) -> Self {
+		let archetype_component_id = world.archetypes.get_archetype_resource_id::<T>().unwrap().clone();
 
-    fn init(world: &mut World, system_state: &mut SystemState, _config: Self::Config) -> Self {
-        let world: &mut WorldInner = world;
-        let component_id = world.get_or_insert_resource_id::<T>();
-
-        let combined_access = system_state.component_access_set.combined_access_mut();
-        if combined_access.has_write(component_id) {
+		let combined_access = system_state.archetype_component_access.combined_access_mut();
+        if combined_access.has_write(archetype_component_id) {
             panic!(
                 "Res<{}> in system {} conflicts with a previous ResMut<{0}> access. Allowing this would break Rust's mutability rules. Consider removing the duplicate access.",
                 std::any::type_name::<T>(), system_state.name);
         }
-        combined_access.add_read(component_id);
 
         let archetype_component_id = world.archetypes.get_archetype_resource_id::<T>().unwrap();
-        system_state
-            .archetype_component_access
+        combined_access
             .add_read(*archetype_component_id);
         Self {
             component_id,
             marker: PhantomData,
         }
+	}
+}
+
+// SAFE: Res ResourceId and ArchetypeResourceId access is applied to SystemState. If this Res
+// conflicts with any prior access, a panic will occur.
+unsafe impl<T: Resource> SystemParamState for ResState<T> {
+    type Config = ();
+
+    default fn init(world: &mut World, system_state: &mut SystemState, config: Self::Config) -> Self {
+        let world: &mut WorldInner = world;
+        let component_id = world.get_or_insert_resource_id::<T>();
+
+        Self::init_(world, system_state, config, component_id)
     }
 
     fn default_config() {}
 }
 
-impl<'w, 's, T: Component> SystemParamFetch<'w, 's> for ResState<T> {
+impl<T: Resource> NotApply for ResState<T> {}
+
+/// 如果 T实现了Default, 则向World中插入T的默认值
+unsafe impl<T: Resource + FromWorld> SystemParamState for ResState<T> {
+    fn init(world: &mut World, system_state: &mut SystemState, config: Self::Config) -> Self {
+        let component_id = match world.get_resource_id::<T>() {
+			Some(r) => *r,
+			None => {
+				let value = T::from_world(world);
+				world.insert_resource(value);
+				*world.get_resource_id::<T>().unwrap()
+			}
+		};
+		let world: &mut WorldInner = world;
+        Self::init_(world, system_state, config, component_id)
+    }
+}
+
+impl<'w, 's, T: Resource> SystemParamFetch<'w, 's> for ResState<T> {
     type Item = Res<'static, T>;
 
     #[inline]
@@ -135,7 +159,7 @@ impl<'w, 's, T: Component> SystemParamFetch<'w, 's> for ResState<T> {
     }
 }
 
-impl<'w, T: Component> Deref for ResMut<'w, T> {
+impl<'w, T: Resource> Deref for ResMut<'w, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -144,7 +168,7 @@ impl<'w, T: Component> Deref for ResMut<'w, T> {
     }
 }
 
-impl<'w, T: Component> DerefMut for ResMut<'w, T> {
+impl<'w, T: Resource> DerefMut for ResMut<'w, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.value
     }
@@ -152,11 +176,11 @@ impl<'w, T: Component> DerefMut for ResMut<'w, T> {
 
 /// The [`SystemParamState`] of [`ResMut`].
 pub struct ResMutState<T> {
-    component_id: ComponentId,
+    component_id: ResourceId,
     marker: PhantomData<T>,
 }
 
-impl<T: Component> ResState<T> {
+impl<T: Resource> ResState<T> {
     pub fn query(&self, world: &World) -> Res<T> {
         let value = unsafe {
             world
@@ -205,49 +229,68 @@ impl<T: Component> ResState<T> {
     }
 }
 
-impl<'w, T: Component> SystemParam for ResMut<'w, T> {
+impl<'w, T: Resource> SystemParam for ResMut<'w, T> {
     type Fetch = ResMutState<T>;
 }
 
-// SAFE: ResMut ComponentId and ArchetypeComponentId access is applied to SystemState. If this ResMut
-// conflicts with any prior access, a panic will occur.
-unsafe impl<T: Component> SystemParamState for ResMutState<T> {
-    type Config = ();
+impl<T: Resource> ResMutState<T> {
+	fn init_(world: &mut WorldInner, system_state: &mut SystemState, _config: <Self as SystemParamState>::Config, component_id: ComponentId) -> Self {
+		let archetype_component_id = world.archetypes.get_archetype_resource_id::<T>().unwrap().clone();
+		let combined_access = &mut system_state.archetype_component_access.combined_access_mut();
 
-    fn init(world: &mut World, system_state: &mut SystemState, _config: Self::Config) -> Self {
-        let world: &mut WorldInner = world;
-        let component_id = world.get_or_insert_resource_id::<T>();
-        let archetype_component_id = world.archetypes.get_archetype_resource_id::<T>().unwrap();
-        let component_name = std::any::type_name::<T>();
-
-        let combined_access = system_state.component_access_set.combined_access_mut();
-        if combined_access.has_write(component_id) {
-            panic!(
-                "ResMut<{}> in system {} conflicts with a previous ResMut<{0}> access. Allowing this would break Rust's mutability rules. Consider removing the duplicate access.",
-                component_name, system_state.name);
-        }
-
-        if combined_access.has_read(component_id) {
+        if combined_access.has_read(archetype_component_id) {
             panic!(
                 "ResMut<{}> in system {} conflicts with a previous Res<{0}> access. Allowing this would break Rust's mutability rules. Consider removing the duplicate access.",
-                component_name, system_state.name);
+                std::any::type_name::<T>(), system_state.name);
         }
 
-        combined_access.add_write(component_id);
+        combined_access.add_write(archetype_component_id);
 
-        system_state
-            .archetype_component_access
-            .add_read(*archetype_component_id);
+        // system_state
+        //     .archetype_component_access
+        //     .add_read(*archetype_component_id);
         Self {
             component_id,
             marker: PhantomData,
         }
+	}
+}
+
+// SAFE: ResMut ResourceId and ArchetypeResourceId access is applied to SystemState. If this ResMut
+// conflicts with any prior access, a panic will occur.
+unsafe impl<T: Resource> SystemParamState for ResMutState<T> {
+    type Config = ();
+
+    default fn init(world: &mut World, system_state: &mut SystemState, config: Self::Config) -> Self {
+        let world: &mut WorldInner = world;
+        let component_id = world.get_or_insert_resource_id::<T>();
+        Self::init_(world, system_state, config, component_id)
     }
 
     fn default_config() {}
 }
 
-impl<'w, 's, T: Component> SystemParamFetch<'w, 's> for ResMutState<T> {
+impl<T: Resource> NotApply for ResMutState<T> {}
+
+/// 如果 T实现了Default, 则向World中插入T的默认值
+unsafe impl<T: Resource + FromWorld> SystemParamState for ResMutState<T> {
+    fn init(world: &mut World, system_state: &mut SystemState, config: Self::Config) -> Self {
+        let component_id = match world.get_resource_id::<T>() {
+			Some(r) => *r,
+			None => {
+				let value = T::from_world(world);
+				world.insert_resource(value);
+				*world.get_resource_id::<T>().unwrap()
+			}
+		};
+		let world: &mut WorldInner = world;
+        Self::init_(world, system_state, config, component_id)
+    }
+}
+
+
+
+impl<'w, 's, T: Resource> SystemParamFetch<'w, 's> for ResMutState<T> {
     type Item = ResMut<'static, T>;
 
     #[inline]
@@ -281,13 +324,116 @@ impl<'w, 's, T: Component> SystemParamFetch<'w, 's> for ResMutState<T> {
     }
 }
 
+pub struct WriteRes<'w, T: Resource> {
+	value: Option<&'w T>,
+    _resource_notify: &'w NotifyImpl,
+    _world: World,
+}
+
+impl<'w, T: Resource> WriteRes<'w, T> {
+	/// 取到不可变引用
+    pub fn get(&self) -> Option<&T> {
+		match &self.value {
+			Some(r) => Some(r),
+			None => None
+		}
+	}
+
+	/// 取到可变引用
+	pub fn get_mut(&mut self) -> Option<&mut T> {
+		match self.value {
+			Some(r) => Some(unsafe { &mut *(r as *const T as usize as *mut T)}),
+			None => None
+		}
+	}
+
+	// 插入
+	pub fn write(&mut self, v: T) {
+		self._world.insert_resource(v);
+		self.value = unsafe { transmute(self._world.get_resource::<T>()) };
+	}
+}
+
+/// The [`SystemParamState`] of [`ResMut`].
+pub struct WriteResState<T> {
+    component_id: ResourceId,
+    marker: PhantomData<T>,
+}
+
+impl<'w, T: Resource> SystemParam for WriteRes<'w, T> {
+    type Fetch = WriteResState<T>;
+}
+
+impl<T: Resource> WriteResState<T> {
+	fn init_(world: &mut WorldInner, system_state: &mut SystemState, _config: <Self as SystemParamState>::Config, component_id: ComponentId) -> Self {
+		let archetype_component_id = world.archetypes.get_archetype_resource_id::<T>().unwrap().clone();
+		let combined_access = &mut system_state.archetype_component_access.combined_access_mut();
+        if combined_access.has_read(archetype_component_id) {
+            panic!(
+                "ResMut<{}> in system {} conflicts with a previous Res<{0}> access. Allowing this would break Rust's mutability rules. Consider removing the duplicate access.",
+                std::any::type_name::<T>(), system_state.name);
+        }
+
+        combined_access.add_modify(archetype_component_id);
+
+        // system_state
+        //     .archetype_component_access
+        //     .add_read(*archetype_component_id);
+        Self {
+            component_id,
+            marker: PhantomData,
+        }
+	}
+}
+
+// SAFE: ResMut ResourceId and ArchetypeResourceId access is applied to SystemState. If this ResMut
+// conflicts with any prior access, a panic will occur.
+unsafe impl<T: Resource> SystemParamState for WriteResState<T> {
+    type Config = ();
+
+    fn init(world: &mut World, system_state: &mut SystemState, config: Self::Config) -> Self {
+        let world: &mut WorldInner = world;
+        let component_id = world.get_or_insert_resource_id::<T>();
+        Self::init_(world, system_state, config, component_id)
+    }
+
+    fn default_config() {}
+}
+
+impl<'w, 's, T: Resource> SystemParamFetch<'w, 's> for WriteResState<T> {
+    type Item = WriteRes<'static, T>;
+
+    #[inline]
+    unsafe fn get_param(
+        state: &'s mut Self,
+        _system_state: &SystemState,
+        world: &'w World,
+        _change_tick: u32,
+    ) -> Self::Item {
+        let (value, resource_notify) = (
+            world
+                .archetypes
+                .get_resource_mut::<T>(state.component_id),
+            world
+                .archetypes
+                .resources
+                .get_notify_ref(state.component_id),
+        );
+        WriteRes {
+            value: std::mem::transmute(value),
+            _world: world.clone(),
+            _resource_notify: std::mem::transmute(resource_notify),
+        }
+    }
+}
+
 pub struct OptionResState<T>(ResState<T>);
 
-impl<'w, T: Component> SystemParam for Option<Res<'w, T>> {
+impl<'w, T: Resource> SystemParam for Option<Res<'w, T>> {
     type Fetch = OptionResState<T>;
 }
 
-unsafe impl<T: Component> SystemParamState for OptionResState<T> {
+unsafe impl<T: Resource> SystemParamState for OptionResState<T> {
     type Config = ();
 
     fn init(world: &mut World, system_state: &mut SystemState, _config: Self::Config) -> Self {
@@ -297,7 +443,7 @@ unsafe impl<T: Component> SystemParamState for OptionResState<T> {
     fn default_config() {}
 }
 
-impl<'w, 's, T: Component> SystemParamFetch<'w, 's> for OptionResState<T> {
+impl<'w, 's, T: Resource> SystemParamFetch<'w, 's> for OptionResState<T> {
     type Item = Option<Res<'static, T>>;
 
     #[inline]
@@ -319,11 +465,11 @@ impl<'w, 's, T: Component> SystemParamFetch<'w, 's> for OptionResState<T> {
 
 pub struct OptionResMutState<T>(ResMutState<T>);
 
-impl<'w, T: Component> SystemParam for Option<ResMut<'w, T>> {
+impl<'w, T: Resource> SystemParam for Option<ResMut<'w, T>> {
     type Fetch = OptionResMutState<T>;
 }
 
-unsafe impl<T: Component> SystemParamState for OptionResMutState<T> {
+unsafe impl<T: Resource> SystemParamState for OptionResMutState<T> {
     type Config = ();
 
     fn init(world: &mut World, system_state: &mut SystemState, _config: Self::Config) -> Self {
@@ -333,7 +479,7 @@ unsafe impl<T: Component> SystemParamState for OptionResMutState<T> {
     fn default_config() {}
 }
 
-impl<'w, 's, T: Component> SystemParamFetch<'w, 's> for OptionResMutState<T> {
+impl<'w, 's, T: Resource> SystemParamFetch<'w, 's> for OptionResMutState<T> {
     type Item = Option<ResMut<'static, T>>;
 
     #[inline]

@@ -43,7 +43,7 @@ fn multi_dispatch() {
         s1.add_node(sync_stage1_system2.system(&mut world));
 
         // 第二个参数：是否单线程执行
-        stages.push((Arc::new(s1.build()), None));
+        stages.push((Arc::new(s1.build(&world)), None));
     }
     {
         let mut s2 = StageBuilder::new();
@@ -52,7 +52,7 @@ fn multi_dispatch() {
         s2.add_node(sync_stage2_system2.system(&mut world));
 
         // 第二个参数：是否单线程执行
-        stages.push((Arc::new(s2.build()), Some(single.clone())));
+        stages.push((Arc::new(s2.build(&world)), Some(single.clone())));
     }
     let multi = AsyncRuntime::Multi(MultiTaskRuntimeBuilder::default().build());
 

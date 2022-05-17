@@ -123,8 +123,14 @@ impl< C: Component> MultiCaseImpl<C> {
 		&self.ticks[id.offset()]
 	}
 
-    pub fn insert_no_notify(&mut self, id: LocalVersion, c: C) -> Option<C> {
+    pub fn insert_no_notify(&mut self, id: LocalVersion, c: C, tick: u32) -> Option<C> {
         let r = self.map.insert(id, c);
+		match r {
+            Some(_) => {
+				self.ticks[id.offset()].changed = tick;
+			},
+            _ => {self.ticks.insert(id.offset(), ComponentTicks::new(tick));},
+        };
         r
     }
 
@@ -366,6 +372,12 @@ impl ComponentTicks {
         let component_delta = change_tick.wrapping_sub(self.changed);
         let system_delta = change_tick.wrapping_sub(last_change_tick);
         component_delta < system_delta
+    }
+
+	/// todo
+	#[inline]
+    pub fn is_deleted(&self, _last_change_tick: u32, _change_tick: u32) -> bool {
+        true
     }
 
     pub(crate) fn new(change_tick: u32) -> Self {

@@ -1,6 +1,6 @@
 /// 测试System
 
-use pi_ecs::{prelude::{Query, With,Res, World, Local, ResMut, Entity, StageBuilder, SingleDispatcher, Dispatcher}, sys::system::IntoSystem};
+use pi_ecs::{prelude::{Query, With,Res, World, Local, ResMut, StageBuilder, SingleDispatcher, Dispatcher, Id}, sys::system::IntoSystem};
 use pi_async::rt::{multi_thread::MultiTaskRuntimeBuilder, AsyncRuntime};
 use std::{sync::Arc, io::Result};
 
@@ -45,7 +45,7 @@ fn _sync_sys(
 // 异步系统()
 async fn _async_sys1<'a>(
 	_query1: Query<Node, &'a Velocity>,
-	mut query2: Query<Node, (Entity, &'a mut Position), With<Velocity>>, // Query<Node, &mut Position, WithOut<Velocity>>
+	mut query2: Query<Node, (Id<Node>, &'a mut Position), With<Velocity>>, // Query<Node, &mut Position, WithOut<Velocity>>
 	local: Local<'a, DirtyMark>,
 	res: Res<'a, Resource1>,
 	res_mut: ResMut<'a, Resource2>,
@@ -111,12 +111,12 @@ fn test() {
 	}
 
 	// 创建查询,并迭代查询
-	let mut query = world.query::<Node, (Entity, &Velocity, &mut Position)>();
+	let mut query = world.query::<Node, (Id<Node>, &Velocity, &mut Position)>();
 	for (entity, velocity, position) in query.iter_mut(&mut world) {
 		println!("iter_mut:{:?}, {:?}, {:?}", entity, velocity, position);
 	}
 
-	let mut query = world.query::<Node, (Entity, &Position)>();
+	let mut query = world.query::<Node, (Id<Node>, &Position)>();
 	for (entity, position) in query.iter(&mut world) {
 		println!("iter_mut1:{:?}, {:?}", entity, position);
 	}
@@ -138,8 +138,9 @@ fn test_system(world: &mut World) {
 	stage.add_node(async_system);
 	
 	let mut stages = Vec::new();
-	stages.push(Arc::new(stage.build()));
-	let dispatcher = SingleDispatcher::new(stages, world, rt);
+	stages.push(Arc::new(stage.build(world)));
+	let mut dispatcher = SingleDispatcher::new(rt);
+	dispatcher.init(stages, world);
 
 	dispatcher.run();
 }

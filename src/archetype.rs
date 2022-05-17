@@ -1,11 +1,12 @@
 /// 原型
+use std::any::type_name;
 
 use crate::{
     component::{ComponentId, CellMultiCase, MultiCase, Component, MultiCaseImpl},
     entity::{Entity, Entities},
     storage::{Offset, LocalVersion, Local},
-	monitor::{Listener, EventType}, 
-	resource::Singles,
+	monitor::{Listener, ListenType}, 
+	resource::{Singles, Resource, ResourceId},
 	prelude::FilteredAccessSet,
 };
 use std::{
@@ -23,7 +24,8 @@ use pi_slotmap::SecondaryMap;
 pub struct Archetype {
 	// 原型id
     id: ArchetypeId,
-	archetype_component_id: ArchetypeComponentId, // 实体id
+	archetype_component_id: ArchetypeComponentId, // 实体访问id
+	archetype_component_delete_id: ArchetypeComponentId, // 实体删除访问id
 	// 该原型下的实体
     pub(crate) entities: Entities,
 
@@ -38,25 +40,38 @@ pub struct Archetype {
 	// 可以用该id区分相同原型下的不同组件、不同原型下的不同组件、不同原型下的相同组件，以及区分它们和资源
 	// 常用于判断数据访问冲突
 	archetype_component_ids: SecondaryMap<ComponentId, ArchetypeComponentId>,
+
+	pub delete_list: Vec<LocalVersion>,
 }
 
 impl Archetype {
 	/// 创建原型，创建的原型中还未注册组件类型，需要再调用
-	pub fn new(id: ArchetypeId, archetype_component_id: ArchetypeComponentId) -> Self {
+	pub fn new(id: ArchetypeId, archetype_component_id: ArchetypeComponentId, archetype_component_delete_id: ArchetypeComponentId) -> Self {
 		Self {
 			id,
 			archetype_component_id,
+			archetype_component_delete_id,
 			entities: Entities::new(id),
 
 			components: SecondaryMap::with_capacity(0),
 
 			archetype_component_ids: SecondaryMap::with_capacity(0),
 			component_ids: Vec::default(),
+			delete_list: Vec::new(),
 		}
+	}
+
+	pub fn reserve_entity(&mut self) -> LocalVersion {
+		self.entities.reserve_entity()
 	}
 
 	pub fn entity_archetype_component_id(&self) -> ArchetypeComponentId {
 		self.archetype_component_id
+	}
+
+	/// 取到指定组件的原型组件删除id
+	pub fn entity_archetype_component_delete_id(&self) -> ArchetypeComponentId {
+		self.archetype_component_delete_id
 	}
 
 	/// 为原型注册组件类型
@@ -90,6 +105,23 @@ impl Archetype {
 				self.components[*i].delete(local);
 			}
 		};
+	}
+
+	/// 即将移除的实体
+	pub fn will_remove_entity(&mut self, local: LocalVersion) {
+		self.delete_list.push(local);
+	}
+
+	pub fn flush(&mut self) {
+		self.entities.flush(); // 插入新的实体
+		// 删除实体
+		if self.delete_list.len() > 0 {
+			let v = std::mem::replace(&mut self.delete_list, Vec::new());
+			for i in v.iter() {
+				self.remove_entity(i.clone())
+			}
+			self.delete_list = v;
+		}
 	}
 
 	/// 为指定实体添加组件
@@ -135,7 +167,7 @@ impl Archetype {
 	}
 
 	/// 添加组件监听器
-	pub fn add_component_listener<T: EventType, C: Component>(&mut self, listener: Listener, id: ComponentId) {
+	pub fn add_component_listener<T: ListenType, C: Component>(&mut self, listener: Listener, id: ComponentId) {
 		let container = unsafe{ self.components.get_unchecked(id) };
 		match container.clone().downcast_ref::<CellMultiCase<C>>() {
 			Some(r) => {
@@ -147,7 +179,7 @@ impl Archetype {
 
 	/// 添加实体监听器
 	#[inline]
-	pub fn add_entity_listener<T: EventType>(&mut self, listener: Listener) {
+	pub fn add_entity_listener<T: ListenType>(&mut self, listener: Listener) {
 		T::add(&self.entities.entity_listners, listener);
 	}
 
@@ -234,7 +266,8 @@ pub struct Archetypes {
 	/// 原型标识映射原型id（可以通过原型类型查到原型id）
     archetype_ids: XHashMap<ArchetypeIdentity, ArchetypeId>,
 	/// 原型组件的当前数量（用于生成原型组件id）
-	pub(crate) archetype_component_count: usize,
+	// pub(crate) archetype_component_count: usize,
+	pub(crate) archetype_component_info: Vec<String>,
 
 	/// 资源map， 通过资源id查询到资源
 	pub(crate) resources: Singles,
@@ -252,24 +285,30 @@ impl Archetypes {
 		Self {
 			archetypes: Vec::new(),
 			archetype_ids: XHashMap::default(),
-			archetype_component_count: 0,
 
 			archetype_resource_indices: XHashMap::default(),
 			resources: Singles::new(),
 			listener_component_access: XHashMap::default(),
+			archetype_component_info: Vec::default(),
 		}
 	}
 
 	/// 创建原型
 	/// * `type_id`为原型类型的TypeId，返回原型实例
 	/// 该方法仅仅创建的一个原型实例，必须调用Archetypes.init_archetype原型方法，才能将原型由world管理起来。
-	pub(crate) fn create_archetype_by_ident(&mut self, type_id: TypeId) -> Archetype {
+	pub(crate) fn create_archetype_by_ident<A: Send + Sync + 'static>(&mut self) -> Archetype {
+		let type_id = TypeId::of::<A>();
 		if let Some(_) = self.archetype_ids.get(&ArchetypeIdentity::Identity(type_id)) {
 			panic!("archetype is exist");
 		}
 
 		let id = ArchetypeId::new(self.archetypes.len());
-		let archetype = Archetype::new(id, Local::new(self.archetype_component_grow()));
+
+		let archetype = Archetype::new(
+			id, 
+			Local::new(self.archetype_component_grow(type_name::<A>().to_string())),
+			Local::new(self.archetype_component_grow(type_name::<A>().to_string() + "-Delete")),
+		);
 		archetype
     }
 
@@ -280,7 +319,7 @@ impl Archetypes {
 			return archetype.clone();
 		}
 
-		let archetype = self.create_archetype_by_ident(type_id);
+		let archetype = self.create_archetype_by_ident::<T>();
 		let archetype_id = archetype.id();
 		self.add_archetype(archetype, type_id);
 		archetype_id
@@ -289,7 +328,7 @@ impl Archetypes {
 	/// 创建原型
 	pub fn create_archetype<T: Send + Sync + 'static>(&mut self) -> ArchetypeId {
 		let type_id = TypeId::of::<T>();
-		let archetype = self.create_archetype_by_ident(type_id);
+		let archetype = self.create_archetype_by_ident::<T>();
 		let archetype_id = archetype.id();
 		self.add_archetype(archetype, type_id);
 		archetype_id
@@ -307,30 +346,41 @@ impl Archetypes {
     }
 
 	/// 插入资源
-	pub(crate) fn insert_resource<T: Component>(&mut self, value: T, id: ComponentId) {
+	pub(crate) fn insert_resource<T: Resource>(&mut self, value: T, id: ResourceId) {
 		// self.archetype_resource_indices.insert(TypeId::of::<T>(), ArchetypeComponentId::new(archetype_component_id));
 		unsafe { self.resources.insert(id, value); };
 	}
 
-	pub(crate) fn register_resource<T: Component>(&mut self, component_id: ComponentId, archetype_component_id: usize) {
+	pub(crate) fn register_resource<T: Resource>(&mut self, resource_id: ResourceId, archetype_component_id: usize) {
 		self.archetype_resource_indices.insert(TypeId::of::<T>(), ArchetypeComponentId::new(archetype_component_id));
-		self.resources.register::<T>(component_id);
+		self.resources.register::<T>(resource_id);
 	}
 	
 
 	/// 取到原型组件id（不同原型相同类型的组件，id不同）
-	pub fn get_archetype_resource_id<T: Component>(&self) -> Option<&ArchetypeComponentId> {
+	pub fn get_archetype_resource_id<T: Resource>(&self) -> Option<&ArchetypeComponentId> {
 		self.archetype_resource_indices.get(&TypeId::of::<T>())
 	}
 
 	/// 根据资源的id, 取到资源的只读引用
-	pub unsafe fn get_resource<T: Component>(&self, id: ComponentId) -> Option<&T> {
+	pub unsafe fn get_resource<T: Resource>(&self, id: ResourceId) -> Option<&T> {
 		self.resources.get(id)
 	}
 
 	/// 根据资源的id, 取到资源的只读引用
-	pub unsafe fn get_resource_mut<T: Component>(&self, id: ComponentId) -> Option<&mut T> {
+	pub unsafe fn get_resource_mut<T: Resource>(&self, id: ResourceId) -> Option<&mut T> {
 		self.resources.get_mut(id)
+	}
+
+	#[inline]
+	pub unsafe fn get_resource_unchecked<T: Resource>(&self, id: ResourceId) -> &T {
+		self.resources.get_unchecked(id)
+	}
+
+	/// 根据资源的id, 取到资源的只读引用
+	#[inline]
+	pub unsafe fn get_resource_unchecked_mut<T: Resource>(&self, id: ResourceId) -> &mut T {
+		self.resources.get_unchecked_mut(id)
 	}
 
 	// pub unsafe fn get_resource_notify<T: Component>(&self, id: ComponentId) -> Option<NotifyImpl> {
@@ -339,33 +389,30 @@ impl Archetypes {
 
 	/// 原型组件id增长
 	#[inline]
-	pub(crate) fn archetype_component_grow(&mut self) -> usize {
-		self.archetype_component_count += 1;
-		self.archetype_component_count
+	pub(crate) fn archetype_component_grow(&mut self, info: String) -> usize {
+		self.archetype_component_info.push(info);
+		self.archetype_component_info.len()
 	}
 
 	/// 添加组件监听器
-	pub fn add_component_listener<T: EventType, A: 'static + Send + Sync, C: Component>(&mut self, listener: Listener, id: ComponentId) {
-		let archetype_id = match self.get_id_by_ident(TypeId::of::<A>()) {
-			Some(r) => r.clone(),
-			None => panic!("add_component_listener fail, archetype is not exist: {:?}", std::any::type_name::<A>()),
-		};
-
+	pub fn add_component_listener<T: ListenType, A: 'static + Send + Sync, C: Component>(&mut self, listener: Listener, id: ComponentId) {
+		let archetype_id = self.get_or_create_archetype::<A>();
+		if self.archetypes[archetype_id.offset()].components.get(id).is_none() {
+			let archetype_component_id = self.archetype_component_grow(std::any::type_name::<C>().to_string());
+			self.archetypes[archetype_id.offset()].register_component_type::<C>(id, ArchetypeComponentId::new(archetype_component_id))
+		}
+		
 		self.archetypes[archetype_id.offset()].add_component_listener::<T, C>(listener, id)
 	}
 
 	/// 添加原型监听器
-	pub fn add_entity_listener<T: EventType, A: 'static + Send + Sync>(&mut self, listener: Listener) {
-		let archetype_id = match self.get_id_by_ident(TypeId::of::<A>()) {
-			Some(r) => r.clone(),
-			None => panic!("add_component_listener fail, archetype is not exist: {:?}", std::any::type_name::<A>()),
-		};
-
+	pub fn add_entity_listener<T: ListenType, A: 'static + Send + Sync>(&mut self, listener: Listener) {
+		let archetype_id = self.get_or_create_archetype::<A>();
 		self.archetypes[archetype_id.offset()].add_entity_listener::<T>(listener);
 	}
 
 	/// 添加资源监听器
-	pub fn add_resource_listener<T: EventType, R: Component>(&mut self, listener: Listener, id: ComponentId) {
+	pub fn add_resource_listener<T: ListenType, R: Component>(&mut self, listener: Listener, id: ComponentId) {
 		self.resources.add_listener::<T, R>(id, listener);
 	}
 
@@ -410,6 +457,10 @@ impl Archetypes {
     pub fn get_id_by_ident(&self, type_id: TypeId) -> Option<&ArchetypeId> {
         self.archetype_ids.get(&ArchetypeIdentity::Identity(type_id))
     }
+
+	pub fn archetype_component_info(&self)  -> &Vec<String>{
+		&self.archetype_component_info
+	}
 }
 
 impl Index<ArchetypeId> for Archetypes {

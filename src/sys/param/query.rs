@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use crate::{
-    entity::Entity,
+    entity::{Id, Entity},
     query::{
         Fetch, FilterFetch, QueryIter, QueryState, ReadOnlyFetch, WorldQuery,
     },
-	sys::param::interface::{SystemParam, SystemParamFetch, SystemParamState, assert_component_access_compatibility},
+	sys::param::interface::{SystemParam, SystemParamFetch, SystemParamState, assert_component_access_compatibility, NotApply},
 	sys::system::interface::SystemState,
 	world::World, archetype::ArchetypeIdent, WorldInner,
 };
@@ -94,7 +94,7 @@ where
     ///
     /// This can only be called for read-only queries, see [`Self::get_mut`] for write-queries.
     #[inline]
-    pub fn get<'s>(&'s self, entity: Entity) -> Option<<Q::Fetch as Fetch<'s>>::Item>
+    pub fn get<'s>(&'s self, entity: Id<A>) -> Option<<Q::Fetch as Fetch<'s>>::Item>
     // where
     //     Q::Fetch: ReadOnlyFetch,
     {
@@ -110,11 +110,30 @@ where
         }
     }
 
+	pub fn get_by_entity<'s>(&'s self, entity: Entity) -> Option<<Q::Fetch as Fetch<'s>>::Item>
+    // where
+    //     Q::Fetch: ReadOnlyFetch,
+    {
+        // SAFE: system runs without conflicts with other systems.
+        // same-system queries have runtime borrow checks when they conflict
+        unsafe {
+            if self.state.archetype_id() != entity.archetype_id() {
+				return None;
+			}
+			self.state.get_unchecked_manual(
+				self.world_ref,
+                Id::new(entity.local()),
+                self.last_change_tick,
+                self.change_tick,
+			)
+        }
+    }
+
 	/// Gets the query result for the given [`Entity`].
     ///
     /// This can only be called for read-only queries, see [`Self::get_mut`] for write-queries.
     #[inline]
-    pub fn get_unchecked<'s>(&'s self, entity: Entity) -> <Q::Fetch as Fetch<'s>>::Item
+    pub fn get_unchecked<'s>(&'s self, entity: Id<A>) -> <Q::Fetch as Fetch<'s>>::Item
     // where
     //     Q::Fetch: ReadOnlyFetch,
     {
@@ -129,7 +148,26 @@ where
 	}
 
 	#[inline]
-    pub fn get_unchecked_mut<'s>(&'s mut self, entity: Entity) -> <Q::Fetch as Fetch>::Item
+    pub fn get_unchecked_by_entity<'s>(&'s self, entity: Entity) -> <Q::Fetch as Fetch<'s>>::Item
+    // where
+    //     Q::Fetch: ReadOnlyFetch,
+    {
+        // SAFE: system runs without conflicts with other systems.
+        // same-system queries have runtime borrow checks when they conflict
+        unsafe {
+			if self.state.archetype_id() != entity.archetype_id() {
+				panic!();
+			}
+            self.state.get_unchecked(
+				self.world_ref,
+                Id::new(entity.local()),
+            )
+        }
+	}
+	
+
+	#[inline]
+    pub fn get_unchecked_mut<'s>(&'s mut self, entity: Id<A>) -> <Q::Fetch as Fetch>::Item
     // where
     //     Q::Fetch: ReadOnlyFetch,
     {
@@ -143,11 +181,29 @@ where
         }
 	}
 
+	#[inline]
+    pub fn get_unchecked_mut_by_entity<'s>(&'s mut self, entity: Entity) -> <Q::Fetch as Fetch<'s>>::Item
+    // where
+    //     Q::Fetch: ReadOnlyFetch,
+    {
+        // SAFE: system runs without conflicts with other systems.
+        // same-system queries have runtime borrow checks when they conflict
+        unsafe {
+			if self.state.archetype_id() != entity.archetype_id() {
+				panic!();
+			}
+            self.state.get_unchecked(
+				self.world_ref,
+                Id::new(entity.local()),
+            )
+        }
+	}
+
     /// Gets the query result for the given [`Entity`].
     #[inline]
     pub fn get_mut<'s>(
         &'s mut self,
-        entity: Entity,
+        entity: Id<A>,
     ) -> Option<<Q::Fetch as Fetch<'s>>::Item> {
         // SAFE: system runs without conflicts with other systems.
         // same-system queries have runtime borrow checks when they conflict
@@ -158,6 +214,25 @@ where
                 self.last_change_tick,
                 self.change_tick,
             )
+        }
+    }
+
+	pub fn get_mut_by_entity<'s>(&'s self, entity: Entity) -> Option<<Q::Fetch as Fetch<'s>>::Item>
+    // where
+    //     Q::Fetch: ReadOnlyFetch,
+    {
+        // SAFE: system runs without conflicts with other systems.
+        // same-system queries have runtime borrow checks when they conflict
+        unsafe {
+            if self.state.archetype_id() != entity.archetype_id() {
+				return None;
+			}
+			self.state.get_unchecked_manual(
+				self.world_ref,
+                Id::new(entity.local()),
+                self.last_change_tick,
+                self.change_tick,
+			)
         }
     }
 
@@ -206,18 +281,16 @@ where
             &system_state.name,
             std::any::type_name::<Q>(),
             std::any::type_name::<F>(),
-            &system_state.component_access_set,
-            &state.component_access,
+            &system_state.archetype_component_access,
+            &state.archetype_component_access,
             world,
         );
-		// 将查询访问的组件集添加到系统访问的组件集中
-        system_state
-            .component_access_set
-            .add(state.component_access.clone());
+
 		// 将查询访问的原型组件放入系统的原型组件集中（用于检查系统与系统的访问组件是否冲突，访问不同原型的同类型组件是允许的）
         system_state
-            .archetype_component_access
-            .extend(&state.archetype_component_access);
+            .archetype_component_access.combined_access_mut()
+            .extend(state.archetype_component_access.access());
+			
         Arc::new(state)
     }
 
@@ -242,6 +315,12 @@ where
         world: &'w World,
         change_tick: u32,
     ) -> Self::Item {
+		let s ={ &mut *(Arc::as_ptr(state) as usize as *mut QueryState<A, Q, F>)};
+		s.fetch_fetch.setting(world, system_state.last_change_tick, change_tick);
+		s.filter_fetch.setting(world, system_state.last_change_tick, change_tick);
+		
         Query::new(world, state, system_state.last_change_tick, change_tick)
     }
 }
+
+impl<A: ArchetypeIdent, Q: WorldQuery, F: WorldQuery> NotApply for Arc<QueryState<A, Q, F>> where F::Fetch: FilterFetch {}

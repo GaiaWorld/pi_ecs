@@ -41,15 +41,17 @@ fn create_dispatcher(world: &mut World) -> SingleDispatcher<StealableTaskPool<()
     // 更新 Event：交换缓冲区，必须在 所有事件系统 运行 之前 执行
     // 所以：单独设置一个阶段
     stage1.add_node(Events::<MyEvent>::update_system.system(world));
-    stages.push(Arc::new(stage1.build()));
+    stages.push(Arc::new(stage1.build(&world)));
 
     // 所以：Event的实现，EventWritter 先于 EvenReader 执行
     let mut stage2 = StageBuilder::new();
     stage2.add_node(sending_system.system(world));
     stage2.add_node(receiving_system.system(world));
-    stages.push(Arc::new(stage2.build()));
+    stages.push(Arc::new(stage2.build(&world)));
 
-    SingleDispatcher::new(stages, world, rt)
+    let mut dispatcher = SingleDispatcher::new(rt);
+	dispatcher.init(stages, world);
+	dispatcher
 }
 
 // This is our event that we will send and receive in systems

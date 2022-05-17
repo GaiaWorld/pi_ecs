@@ -3,7 +3,6 @@ use std::borrow::Cow;
 
 use crate::sys::param::SystemParamFetch;
 use crate::world::World;
-use crate::component::ComponentId;
 use crate::archetype::ArchetypeComponentId;
 use crate::query::{Access, FilteredAccessSet};
 
@@ -26,10 +25,6 @@ pub trait System: Send + Sync + 'static {
     fn name(&self) -> Cow<'static, str>;
     /// Returns the system's [`SystemId`].
     fn id(&self) -> SystemId;
-    // /// Register a new archetype for this system.
-    // fn new_archetype(&mut self, archetype: &Archetype);
-    /// Returns the system's component [`Access`].
-    fn component_access(&self) -> &Access<ComponentId>;
     /// Returns the system's archetype component [`Access`].
     fn archetype_component_access(&self) -> &Access<ArchetypeComponentId>;
     /// Returns true if the system is [`Send`].
@@ -101,8 +96,7 @@ pub type BoxedSystem<In = (), Out = ()> = Box<dyn System<In = In, Out = Out>>;
 /// 系统状态
 pub struct SystemState {
     pub(crate) name: Cow<'static, str>, // 系统名称
-    pub(crate) component_access_set: FilteredAccessSet<ComponentId>,
-    pub(crate) archetype_component_access: Access<ArchetypeComponentId>,
+    pub(crate) archetype_component_access: FilteredAccessSet<ArchetypeComponentId>,
     // NOTE: this must be kept private. making a SystemState non-send is irreversible to prevent
     // SystemParams from overriding each other
     pub(crate) is_send: bool,
@@ -113,8 +107,7 @@ impl SystemState {
     pub fn new<T>() -> Self {
         Self {
             name: std::any::type_name::<T>().into(),
-            archetype_component_access: Access::default(),
-            component_access_set: FilteredAccessSet::default(),
+            archetype_component_access: FilteredAccessSet::default(),
             is_send: true,
             last_change_tick: 0,
         }
@@ -128,19 +121,11 @@ impl SystemState {
 		self.last_change_tick
 	}
 
-	pub fn component_access_set(&self) -> &FilteredAccessSet<ComponentId> {
-		&self.component_access_set
-	}
-
-	pub fn component_access_set_mut(&mut self) -> &mut FilteredAccessSet<ComponentId> {
-		&mut self.component_access_set
-	}
-
-	pub fn archetype_component_access(&self) -> &Access<ArchetypeComponentId>{
+	pub fn archetype_component_access(&self) -> &FilteredAccessSet<ArchetypeComponentId>{
 		&self.archetype_component_access
 	}
 
-	pub fn archetype_component_access_mut(&mut self) -> &mut Access<ArchetypeComponentId>{
+	pub fn archetype_component_access_mut(&mut self) -> &mut FilteredAccessSet<ArchetypeComponentId>{
 		&mut self.archetype_component_access
 	}
 

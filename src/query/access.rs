@@ -9,6 +9,8 @@ pub struct Access<T: FromOffset> {
     reads_and_writes: FixedBitSet,
 	reads: FixedBitSet,
     writes: FixedBitSet,
+	modifys: FixedBitSet, // 访问可写，并且可发出事件
+
     marker: PhantomData<T>,
 }
 
@@ -18,7 +20,9 @@ impl<T: FromOffset> Default for Access<T> {
             reads_all: false,
 			reads: Default::default(),
             reads_and_writes: Default::default(),
+
             writes: Default::default(),
+			modifys: Default::default(),
             marker: PhantomData,
         }
     }
@@ -28,6 +32,7 @@ impl<T: FromOffset> Access<T> {
     pub fn grow(&mut self, bits: usize) {
         self.reads_and_writes.grow(bits);
         self.writes.grow(bits);
+		self.modifys.grow(bits);
     }
 
 	pub fn get_reads_and_writes(&self) -> &FixedBitSet {
@@ -36,6 +41,10 @@ impl<T: FromOffset> Access<T> {
 
 	pub fn get_writes(&self) -> &FixedBitSet {
 		&self.writes
+	}
+
+	pub fn get_modify(&self) -> &FixedBitSet {
+		&self.modifys
 	}
 
     pub fn add_read(&mut self, index: T) {
@@ -50,15 +59,21 @@ impl<T: FromOffset> Access<T> {
         self.writes.insert(index.offset());
     }
 
+	pub fn add_modify(&mut self, index: T) {
+		self.modifys.grow(index.offset() + 1);
+		self.reads_and_writes.grow(index.offset() + 1);
+		self.writes.grow(index.offset() + 1);
+
+		self.modifys.insert(index.offset());
+		self.reads_and_writes.insert(index.offset());
+		self.writes.insert(index.offset());
+	}
+
     pub fn has_read(&self, index: T) -> bool {
-        if self.reads_all {
-            true
-        } else {
-            self.reads_and_writes.contains(index.offset())
-        }
+        self.reads_and_writes.contains(index.offset())
     }
 
-    pub fn has_write(&self, index: T) -> bool {
+	pub fn has_write(&self, index: T) -> bool {
         self.writes.contains(index.offset())
     }
 
@@ -80,6 +95,7 @@ impl<T: FromOffset> Access<T> {
         self.reads_all = self.reads_all || other.reads_all;
         self.reads_and_writes.union_with(&other.reads_and_writes);
         self.writes.union_with(&other.writes);
+		self.modifys.union_with(&other.modifys);
     }
 
     pub fn is_compatible(&self, other: &Access<T>) -> bool {
@@ -144,6 +160,11 @@ impl<T: FromOffset> FilteredAccess<T> {
         self.add_with(index);
     }
 
+	pub fn add_modify(&mut self, index: T) {
+        self.access.add_modify(index.clone());
+        self.add_with(index);
+    }
+
     pub fn add_with(&mut self, index: T) {
         self.with.grow(index.offset() + 1);
         self.with.insert(index.offset());
@@ -152,6 +173,14 @@ impl<T: FromOffset> FilteredAccess<T> {
     pub fn add_without(&mut self, index: T) {
         self.without.grow(index.offset() + 1);
         self.without.insert(index.offset());
+    }
+
+	pub fn has_read(&self, index: T) -> bool {
+        self.access.has_read(index.clone())
+    }
+
+    pub fn has_write(&self, index: T) -> bool {
+        self.access.has_write(index.clone())
     }
 
     pub fn is_compatible(&self, other: &FilteredAccess<T>) -> bool {
@@ -164,6 +193,7 @@ impl<T: FromOffset> FilteredAccess<T> {
     }
 }
 
+#[derive(Clone)]
 pub struct FilteredAccessSet<T: FromOffset> {
     combined_access: Access<T>,
     filtered_accesses: Vec<FilteredAccess<T>>,
@@ -181,6 +211,21 @@ impl<T: FromOffset> FilteredAccessSet<T> {
     }
 
     pub fn get_conflicts(&self, filtered_access: &FilteredAccess<T>) -> Vec<T> {
+        // if combined unfiltered access is incompatible, check each filtered access for
+        // compatibility
+        if !filtered_access.access.is_compatible(&self.combined_access) {
+            for current_filtered_access in self.filtered_accesses.iter() {
+                if !current_filtered_access.is_compatible(&filtered_access) {
+                    return current_filtered_access
+                        .access
+                        .get_conflicts(&filtered_access.access);
+                }
+            }
+        }
+        Vec::new()
+    }
+
+	pub fn get_entity_conflicts(&self, filtered_access: &FilteredAccess<T>) -> Vec<T> {
         // if combined unfiltered access is incompatible, check each filtered access for
         // compatibility
         if !filtered_access.access.is_compatible(&self.combined_access) {

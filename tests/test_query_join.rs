@@ -2,7 +2,7 @@
 
 use std::ops::{Deref, DerefMut};
 
-use pi_ecs::{prelude::{Query, World, Entity, StageBuilder, SingleDispatcher, Dispatcher, Join}, sys::system::IntoSystem, storage::Offset};
+use pi_ecs::{prelude::{Query, World, Id, StageBuilder, SingleDispatcher, Dispatcher, Join}, sys::system::IntoSystem, storage::Offset};
 use pi_async::rt::{multi_thread::MultiTaskRuntimeBuilder, AsyncRuntime};
 use std::sync::Arc;
 
@@ -12,18 +12,18 @@ pub struct Node2;
 
 #[derive(Debug)]
 /// 定义一个组件类型,注册在Node1中,用于关联Node2的实体
-pub struct Node2Index(Entity);
+pub struct Node2Index(Id<Node2>);
 
 /// 
 impl Deref for Node2Index {
-	type Target = Entity;
-    fn deref(&self) -> &Entity {
+	type Target = Id<Node2>;
+    fn deref(&self) -> &Id<Node2> {
 		&self.0
 	}
 }
 
 impl DerefMut for Node2Index {
-    fn deref_mut(&mut self) -> &mut Entity {
+    fn deref_mut(&mut self) -> &mut Id<Node2> {
 		&mut self.0
 	}
 }
@@ -47,10 +47,10 @@ pub struct Position(pub usize);
 /// * 该查询可以查询到A1中的数据Q1和A2中的数据Q1
 /// * Q1、Q2可以是其原型上的任意查询，如： Entity、&Component、&mut Component、(Entity, &Component...)
 fn join(
-	query: Query<Node1, (Entity, Join<Node2Index, Node2, &Position>)>,
+	query: Query<Node1, (Id<Node1>, Join<Node2Index, Node2, &Position>)>,
 ) {
 	for i in query.iter() {
-		println!("join run, entity: {:?}, position: {:?}", i.0.local().offset(), i.1);
+		println!("join run, entity: {:?}, position: {:?}", i.0.offset(), i.1);
 	}
 }
 
@@ -102,8 +102,9 @@ fn test_system(world: &mut World) {
 	stage.add_node(system);
 	
 	let mut stages = Vec::new();
-	stages.push(Arc::new(stage.build()));
-	let dispatcher = SingleDispatcher::new(stages, world, rt);
+	stages.push(Arc::new(stage.build(world)));
+	let mut dispatcher = SingleDispatcher::new(rt);
+	dispatcher.init(stages, world);
 
 	dispatcher.run();
 }

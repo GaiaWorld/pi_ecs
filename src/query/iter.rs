@@ -68,8 +68,8 @@ where
 
 		// let mut entity = EntityFetch::init(world,
         //     &query_state.entity_state);
-		fetch.setting(world, last_change_tick, change_tick);
-		query_state.filter_fetch.setting(world, last_change_tick, change_tick);
+		// fetch.setting(world, last_change_tick, change_tick);
+		// query_state.filter_fetch.setting(world, last_change_tick, change_tick);
 
 		let filter = & query_state.filter_fetch;
 		let iter = match filter.main_fetch(&query_state.filter_state, last_change_tick, change_tick) {

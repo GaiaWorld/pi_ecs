@@ -1,6 +1,7 @@
+use std::any::type_name;
+
 use crate::{
     archetype::ArchetypeComponentId,
-    component::ComponentId,
     query::Access,
     sys::param::interface::{SystemParamState, SystemParam, SystemParamFetch},
     sys::system::interface::{System, SystemState, IntoSystem, InputMarker},
@@ -79,7 +80,7 @@ where
     F: SystemParamFunction<In, Out, Param, InMarker> + Send + Sync + 'static,
 {
     fn system(self, world: &mut World) -> FunctionSystem<In, Out, Param, InMarker, F> {
-        let id = SystemId::new(world.archetype_component_grow());
+        let id = SystemId::new(world.archetype_component_grow(type_name::<Self>().to_string()));
 		let mut system_state =  SystemState::new::<F>();
 		FunctionSystem {
             func: self,
@@ -90,7 +91,7 @@ where
 			),
 			world: world.clone(),
             config: Some(<Param::Fetch as SystemParamState>::default_config()),
-            system_state: SystemState::new::<F>(),
+            system_state,
 			id,
             mark: PhantomData,
         }
@@ -119,20 +120,9 @@ where
         self.id
     }
 
-    // #[inline]
-    // fn new_archetype(&mut self, archetype: &Archetype) {
-    //     let param_state = self.param_state.as_mut().unwrap();
-    //     param_state.new_archetype(archetype, &mut self.system_state);
-    // }
-
-    #[inline]
-    fn component_access(&self) -> &Access<ComponentId> {
-        &self.system_state.component_access_set.combined_access()
-    }
-
     #[inline]
     fn archetype_component_access(&self) -> &Access<ArchetypeComponentId> {
-        &self.system_state.archetype_component_access
+        &self.system_state.archetype_component_access.combined_access()
     }
 
     #[inline]
@@ -274,4 +264,43 @@ macro_rules! impl_system_function {
     };
 }
 
-all_tuples!(impl_system_function, 0, 16, F);
+all_tuples!(impl_system_function, 0, 60, F);
+
+
+#[cfg(test)]
+pub mod test {
+	use crate::{
+		sys::{
+			param::Query,
+			system::{IntoSystem, System},
+		},
+		world::World,
+		storage::Offset,
+		query::{Write},
+	};
+	#[test]
+	pub fn test_access() {
+		let mut world = World::new();
+		let system1 = s1.system(&mut world);
+		let arch_id = world.archetypes().get_id_by_ident(std::any::TypeId::of::<MyArch1>()).unwrap().clone();
+		let my_arch_access_id = world.archetypes()[arch_id].entity_archetype_component_id();
+
+		let c_id = world.get_or_register_component::<MyComponent1>(arch_id);
+		let my_component_access_id = unsafe { world.archetypes()[arch_id].archetype_component_id(c_id) };
+
+		assert!(system1.archetype_component_access().get_reads_and_writes().contains(my_arch_access_id.offset()));
+		assert!(system1.archetype_component_access().get_reads_and_writes().contains(my_component_access_id.offset()));
+		assert!(system1.archetype_component_access().get_writes().contains(my_component_access_id.offset()));
+		assert!(system1.archetype_component_access().get_modify().contains(my_component_access_id.offset()));
+	}
+
+	fn s1(
+		_q1:  Query<MyArch1, Write<MyComponent1>>,
+	) {}
+
+	#[derive(Default)]
+	struct MyArch1;
+
+	#[derive(Default)]
+	struct MyComponent1;
+}

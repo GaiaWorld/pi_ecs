@@ -4,9 +4,11 @@
 
 use std::sync::Arc;
 
-use pi_ecs::{prelude::{Query, IntoSystem, StageBuilder, SingleDispatcher, Dispatcher}, entity::Entity, world::World, storage::Offset};
-use pi_ecs::query::filter_change::Changed;
+use pi_ecs::{prelude::{Query, IntoSystem, StageBuilder, SingleDispatcher, Dispatcher}, entity::Id, world::World, storage::Offset};
+use pi_ecs::query::filter::Changed;
 use pi_async::rt::{AsyncRuntime, multi_thread::{MultiTaskRuntimeBuilder, StealableTaskPool}};
+
+
 
 
 pub struct Node;
@@ -19,10 +21,10 @@ pub struct Position(pub usize);
 /// 测试组件脏
 ///迭代出脏的Position和对应的entity
 pub fn iter_dirty(
-	q: Query<Node, (Entity, &Position), Changed<Position>>,
+	q: Query<Node, (Id<Node>, &Position), Changed<Position>>,
 ) {
 	for r in q.iter(){
-		println!("modify {:?}, {:?}", r.0.local().offset(), r.1);
+		println!("modify {:?}, {:?}", r.0.offset(), r.1);
 	}
 }
 
@@ -44,7 +46,7 @@ fn test() {
 	for i in 0..3 {
 		let id = world.spawn::<Node>()
 		.insert(Position(i))
-		.id();
+		.entity();
 		entitys.push(id);
 	}
 
@@ -68,8 +70,9 @@ fn create_dispatcher(world: &mut World) -> SingleDispatcher<StealableTaskPool<()
 	stage.add_node(iter_dirty_system);
 	
 	let mut stages = Vec::new();
-	stages.push(Arc::new(stage.build()));
-	let dispatcher = SingleDispatcher::new(stages, world, rt);
+	stages.push(Arc::new(stage.build(world)));
+	let mut dispatcher = SingleDispatcher::new(rt);
+	dispatcher.init(stages, world);
 
 	return dispatcher;
 }

@@ -3,11 +3,10 @@ use std::marker::PhantomData;
 use crate::world::World;
 use crate::{
     archetype::{ArchetypeId, ArchetypeIdent, ArchetypeComponentId},
-    component::ComponentId,
-    entity::Entity,
+    entity::Id,
     query::{
-        Fetch, FetchState, FilterFetch, Access, FilteredAccess, QueryIter, ReadOnlyFetch,
-        WorldQuery,EntityState
+        Fetch, FetchState, FilterFetch, FilteredAccess, QueryIter, ReadOnlyFetch,
+        WorldQuery
     },
     world::{WorldInner, WorldId},
 };
@@ -19,14 +18,12 @@ where
 {
     world_id: WorldId,
 	pub(crate) archetype_id: ArchetypeId, // A对应的实体id
-	pub(crate) component_access: FilteredAccess<ComponentId>, // 暂时没用
-    pub(crate) archetype_component_access: Access<ArchetypeComponentId>,
+	// pub(crate) component_access: FilteredAccess<ComponentId>, // 暂时没用
+    pub(crate) archetype_component_access: FilteredAccess<ArchetypeComponentId>,
     pub(crate) fetch_state: Q::State,
     pub(crate) filter_state: F::State,
 	pub(crate) fetch_fetch: Q::Fetch,
 	pub(crate) filter_fetch: F::Fetch,
-
-	pub(crate) entity_state: EntityState,
 
 	pub(crate) matchs: bool,
 
@@ -61,15 +58,14 @@ where
 
         let fetch_state = <Q::State as FetchState>::init(world, q_id, archetype_id);
         let filter_state = <F::State as FetchState>::init(world, q_id, archetype_id);
-		let entity_state = <EntityState as FetchState>::init(world, q_id, archetype_id) ;
 		let fetch_fetch =
             unsafe{ <Q::Fetch as Fetch>::init(world, &fetch_state) };
         let filter_fetch =
 			unsafe{ <F::Fetch as Fetch>::init(world, &filter_state)};
 
-        let mut component_access = Default::default();
-		fetch_state.update_component_access(&mut component_access);
-        filter_state.update_component_access(&mut component_access);
+        // let component_access = Default::default();
+		// fetch_state.update_component_access(&mut component_access);
+        // filter_state.update_component_access(&mut component_access);
 
 
         let mut state = Self {
@@ -80,8 +76,7 @@ where
             filter_state,
 			fetch_fetch,
 			filter_fetch,
-			entity_state,
-			component_access: component_access,
+			// component_access: component_access,
             archetype_component_access: Default::default(),
 			// id: q_id,
 			mark: PhantomData
@@ -89,6 +84,10 @@ where
 		state.validate_world_and_update_archetypes(world);
         state
     }
+
+	pub fn archetype_id(&self) -> ArchetypeId {
+		self.archetype_id
+	}
 
 	pub fn validate_world_and_update_archetypes(&mut self, world: &mut World) {
         if world.id() != self.world_id {
@@ -98,10 +97,12 @@ where
         let archetypes = world.archetypes();
 		let archetype = &archetypes[self.archetype_id];
 
+		// 加入实体读
+		self.archetype_component_access.add_read(archetype.entity_archetype_component_id());
+
 		self.matchs = 
 			self.fetch_state.matches_archetype(archetype) &&
-			self.filter_state.matches_archetype(archetype) &&
-			self.entity_state.matches_archetype(archetype);
+			self.filter_state.matches_archetype(archetype);
 		
 		if self.matchs {
 			self.fetch_state.update_archetype_component_access(archetype, &mut self.archetype_component_access);
@@ -120,7 +121,7 @@ where
     pub fn get<'w>(
         &self,
         world: &'w WorldInner,
-        entity: Entity,
+        entity: Id<A>,
     ) -> Option<<Q::Fetch as Fetch<'w>>::Item>
     where
         Q::Fetch: ReadOnlyFetch,
@@ -133,7 +134,7 @@ where
     pub fn get_mut<'w>(
         &mut self,
         world: &'w mut WorldInner,
-        entity: Entity,
+        entity: Id<A>,
     ) -> Option<<Q::Fetch as Fetch<'w>>::Item> {
         // SAFE: query has unique world access
         unsafe { self.get_unchecked_inner(world, entity) }
@@ -143,12 +144,12 @@ where
     pub unsafe fn get_unchecked<'w>(
         &self,
         _world: &'w WorldInner,
-        entity: Entity,
+        entity: Id<A>,
     ) -> <Q::Fetch as Fetch<'w>>::Item {
 		// let last_change_tick = world.last_change_tick();
         // let change_tick = world.read_change_tick();
 		
-        std::mem::transmute::<&Q::Fetch, &mut Q::Fetch>(&self.fetch_fetch).archetype_fetch_unchecked(entity.local())
+        std::mem::transmute::<&Q::Fetch, &mut Q::Fetch>(&self.fetch_fetch).archetype_fetch_unchecked(entity.0)
     }
     /// # Safety
     /// This does not check for mutable query correctness. To be safe, make sure mutable queries
@@ -157,7 +158,7 @@ where
     pub unsafe fn get_unchecked_inner<'w>(
         &self,
         world: &'w WorldInner,
-        entity: Entity,
+        entity: Id<A>,
     ) -> Option<<Q::Fetch as Fetch<'w>>::Item> {
         // self.validate_world_and_update_archetypes(world);
         self.get_unchecked_manual(
@@ -175,11 +176,11 @@ where
     pub unsafe fn get_unchecked_manual<'w>(
         &self,
         _world: &'w WorldInner,
-        entity: Entity,
+        entity: Id<A>,
         _last_change_tick: u32,
         _change_tick: u32,
     ) -> Option<<Q::Fetch as Fetch<'w>>::Item> {
-		if !self.matchs || entity.archetype_id() != self.archetype_id {
+		if !self.matchs {
 			return None;
 		}
         // let location = world
@@ -189,8 +190,8 @@ where
 
         // let archetype = &world.archetypes[entity.archetype_id()];
 		
-        if std::mem::transmute::<&F::Fetch, &mut F::Fetch>(&self.filter_fetch).archetype_filter_fetch(entity.local()) {
-            std::mem::transmute::<&Q::Fetch, &mut Q::Fetch>(&self.fetch_fetch).archetype_fetch(entity.local())
+        if std::mem::transmute::<&F::Fetch, &mut F::Fetch>(&self.filter_fetch).archetype_filter_fetch(entity.0) {
+            std::mem::transmute::<&Q::Fetch, &mut Q::Fetch>(&self.fetch_fetch).archetype_fetch(entity.0)
         } else {
             None
         }

@@ -1,5 +1,5 @@
 use crate::{
-	sys::param::interface::{SystemParam, SystemParamFetch, SystemParamState},
+	sys::param::interface::{SystemParam, SystemParamFetch, SystemParamState, NotApply},
 	sys::system::interface::SystemState,
 	world::World,
 };
@@ -46,3 +46,5 @@ impl<'w, 's> SystemParamFetch<'w, 's> for TickState {
 		}
     }
 }
+
+impl NotApply for TickState {}

@@ -1,6 +1,6 @@
 use crate::{
 	component::{Component},
-	sys::param::interface::{SystemParam, SystemParamFetch, SystemParamState},
+	sys::param::interface::{SystemParam, SystemParamFetch, SystemParamState, NotApply},
 	sys::system::interface::SystemState,
 	world::{World, FromWorld}
 };
@@ -60,3 +60,5 @@ impl<'w, 's, T: Component + FromWorld> SystemParamFetch<'w, 's> for LocalState<T
         Local(std::mem::transmute(&mut state.0))
     }
 }
+
+impl<T: Send + Sync + 'static> NotApply for LocalState<T> {}

@@ -20,6 +20,7 @@ pub mod pointer;
 pub mod resource;
 pub mod dispatch;
 pub mod monitor;
+mod setup;
 
 pub use world::WorldInner;
 
@@ -27,17 +28,19 @@ pub mod prelude {
     // #[cfg(feature = "bevy_reflect")]
     // pub use crate::reflect::ReflectComponent;
     pub use crate::{
-        entity::Entity,
         query::*,
         sys::{
 			system::*,
 			param::*,
 		},
-		monitor::{Listeners, Monitor, Event, ListenSetup, ComponentListen, ResourceListen, EntityListen, Create, Modify, Delete},
-        world::World,
+		setup::Setup,
+		monitor::{Listeners, Monitor, Event, ListenSetup, ComponentListen, ResourceListen, EntityListen, Create, Modify, Delete, EventType},
+        world::{World, FromWorld},
 		dispatch::interface::*,
+		component::Component,
 		archetype::{ArchetypeId, Archetype},
-		entity::Entities,
+		entity::{Entities, Id, Entity},
+		storage::{LocalVersion, Offset},
     };
 }
 

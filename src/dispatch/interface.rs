@@ -1,11 +1,20 @@
+use std::borrow::Cow;
 use std::sync::Arc;
 use std::{collections::HashSet, io::Result};
 
 use futures::future::BoxFuture;
 use pi_async::rt::{AsyncRuntime, AsyncTaskPool, AsyncTaskPoolExt};
+use fixedbitset::FixedBitSet;
+use thiserror::Error;
 
 use pi_async_graph::{async_graph, Runnble, Runner};
 use pi_graph::{DirectedGraph, DirectedGraphNode, NGraph, NGraphBuilder};
+use crate::{
+	query::Access,
+	archetype::ArchetypeComponentId,
+	world::World,
+	storage::Local,
+};
 
 pub trait Arrange {
     fn arrange(&self) -> Option<GraphNode>;
@@ -35,7 +44,7 @@ impl<P> SingleDispatcher<P>
 where
     P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P>,
 {
-    pub fn new<T: Arrange>(vec: Vec<Stage>, arrange: &T, rt: AsyncRuntime<(), P>) -> Self {
+    pub fn init(&mut self, vec: Vec<Stage>, arrange: &World) {
         let mut v1 = Vec::new();
         for i in vec.into_iter() {
             v1.push(i);
@@ -45,11 +54,15 @@ where
                 let mut stage = StageBuilder::new();
                 stage.add_node(node);
 
-                v1.push(Arc::new(stage.build()))
+                v1.push(Arc::new(stage.build(arrange)))
             }
         }
+		self.vec =  Arc::new(v1);
+    }
+
+	pub fn new(rt: AsyncRuntime<(), P>) -> Self {
         SingleDispatcher {
-            vec: Arc::new(v1),
+            vec: Arc::new(Vec::new()),
             rt,
         }
     }
@@ -84,8 +97,7 @@ where
                     let vec1 = vec.clone();
                     let rt1 = rt.clone();
                     rt.spawn(rt.alloc(), async move {
-                        let _ = f.await;
-                        // println!("ok");
+                        f.await.unwrap();
                         SingleDispatcher::exec(vec1, rt1, stage_index, node_index);
                     })
                     .unwrap();
@@ -262,12 +274,15 @@ where
 pub struct GraphNode {
     // 节点id，每个节点有 独一无二的 id
     pub(crate) id: usize,
-    // 节点的输入，意义是 它 依赖 的 节点，决定 执行关系
-    pub(crate) reads: Vec<usize>,
-    // 节点的输出，意义是 依赖 它 的 节点，决定 执行关系
-    pub(crate) writes: Vec<usize>,
+    // // 节点的输入，意义是 它 依赖 的 节点，决定 执行关系
+    // pub(crate) reads: Vec<usize>,
+    // // 节点的输出，意义是 依赖 它 的 节点，决定 执行关系
+    // pub(crate) writes: Vec<usize>,
+	pub(crate) access: Access<ArchetypeComponentId>,
     // 执行节点
     pub(crate) node: ExecNode,
+
+	pub(crate) label: String,
 }
 
 /// 操作
@@ -283,6 +298,8 @@ pub trait Operate {
     /// 在该stage所有的system run 结束之后 执行
     /// 扫描所有的system，将当前缓冲的数据 刷新到 world 上
     fn apply(&self);
+
+	fn name(&self) -> Cow<'static, str>;
 }
 
 /// 对操作的 封装
@@ -365,19 +382,19 @@ impl StageBuilder {
     pub fn add_node<T: Into<GraphNode>>(&mut self, node: T) -> &mut Self {
         let node = node.into();
 
-        for k in &node.reads {
-            self.components.insert(*k);
+        // for k in &node.reads {
+        //     self.components.insert(*k);
 
-            // 边: 输入 --> 该节点
-            self.edges.push((*k, node.id));
-        }
+        //     // 边: 输入 --> 该节点
+        //     self.edges.push((*k, node.id));
+        // }
 
-        for k in &node.writes {
-            self.components.insert(*k);
+        // for k in &node.writes {
+        //     self.components.insert(*k);
 
-            // 边: 该节点 --> 输出
-            self.edges.push((node.id, *k));
-        }
+        //     // 边: 该节点 --> 输出
+        //     self.edges.push((node.id, *k));
+        // }
 
         // 加入 System
         self.systems.push(node);
@@ -394,9 +411,32 @@ impl StageBuilder {
     }
 
     /// 构建 拓扑 序
-    pub fn build(self) -> NGraph<usize, ExecNode> {
+    pub fn build(mut self, w: &World) -> NGraph<usize, ExecNode> {
         // Stages --> NGraph
         let mut builder = NGraphBuilder::new();
+
+		for s in self.systems.iter() {
+			match write_depend(w, s.access.get_reads_and_writes(), s.access.get_writes(), s.access.get_modify()) {
+				Ok((mut r, w)) => {
+					r.difference_with(&w);
+
+					// 边: 该节点 --> 输出
+					for k in r.ones() {
+					    self.components.insert(k);
+					    self.edges.push((k, s.id));
+					}
+
+					for k in w.ones() {
+					    self.components.insert(k);
+					    self.edges.push((s.id, k));
+					}
+				},
+				Err(c) => {
+					let c: Vec<String> = c.ones().map(|i| {(*&w.archetypes().archetype_component_info[i]).clone()}).collect();
+					panic!("{:?}", BuildErr::WriteConflict(s.label.clone(), c));
+				}
+			}
+		}
 
         for id in self.components {
             // 每个 Component 都是一个节点
@@ -415,4 +455,50 @@ impl StageBuilder {
 
         builder.build().unwrap()
     }
+}
+
+#[derive(Debug, Error)]
+pub enum BuildErr {
+	#[error("build fail, node is circly: {0:?}")]
+	Circly(Vec<usize>),
+	#[error("build fail, write conflict, system: {0:?}, write access {1:?}")]
+	WriteConflict(String, Vec<String>)
+}
+
+
+fn write_depend(w: &World, read_writes: &FixedBitSet, writes: &FixedBitSet, modifys: &FixedBitSet) -> std::result::Result<(FixedBitSet, FixedBitSet), FixedBitSet> {
+	let (mut read_writes_new, mut write_new) = (read_writes.clone(), writes.clone());
+	let conflict = FixedBitSet::default();
+
+	for write in modifys.ones().into_iter() {
+		// 取到对应监听器的写入，判断冲突
+		let v = w.listener_access.get(Local::new(write));
+		if let Some(r) = v {
+			for access in r.iter() {
+				// 收集监听器的写入是否与访问冲突
+				let mut conflict = read_writes.clone();
+				conflict.intersect_with(access.combined_access().get_writes());
+
+				if conflict.count_ones(..) == 0 {
+					let (mut r1, mut w1) = (read_writes.clone(), writes.clone());
+					r1.union_with(access.combined_access().get_reads_and_writes());
+					w1.union_with(access.combined_access().get_writes());
+					match write_depend(w, &r1, &w1,  access.combined_access().get_modify()) {
+						Ok((r, w)) => {
+							read_writes_new.union_with(&r);
+							write_new.union_with(&w);
+						},
+						Err(c) => conflict.union_with(&c),
+					};
+				}
+			}
+		}
+	}
+
+	if conflict.count_ones(..) > 0 {
+		println!("len: {:?}, {:?}", conflict.count_ones(..), conflict);
+		Err(conflict)
+	} else {
+		Ok((read_writes_new, write_new))
+	}
 }

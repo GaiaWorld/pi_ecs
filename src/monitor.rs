@@ -1,17 +1,14 @@
-use std::any::TypeId;
-
 use pi_listener::{Listener as LibListener, Listeners as LibListeners};
 use pi_map::Map;
 use pi_ecs_macros::all_tuples;
-use pi_share::{Share, cell::TrustCell};
+use pi_share::cell::TrustCell;
 use std::{ops::Deref, sync::Arc, marker::PhantomData};
 use crate::{
 	world::World, 
 	entity::Entity, 
-	component::Component, 
-	query::Access,
+	component::Component,
 	sys::{system::{System, IntoSystem, SystemState, InputMarker, func_sys::{FunctionSystem, SystemParamFunction, SysInput}, runner::{ShareSystem, RunnerSystem, RunnerInner}}, 
-	param::{SystemParam, SystemParamFetch, SystemParamState}}, archetype::ArchetypeComponentId};
+	param::{SystemParam, SystemParamFetch, SystemParamState, NotApply}}, archetype::ArchetypeComponentId, prelude::{FilteredAccessSet}};
 
 
 impl SysInput for Event {}
@@ -33,21 +30,39 @@ pub trait ListenSetup {
 	fn setup(self, world: &mut World);
 }
 
+pub trait Apply {
+	fn apply(&self);
+}
+
+impl<F> Apply for TrustCell<F>
+where
+	F: System<In=Event, Out = ()>,
+{
+	fn apply(&self) {
+		self.borrow_mut().apply_buffers();
+	}
+}
+
 impl<L: ListenInit, P: SystemParam + 'static, F> ListenSetup for FunctionListeners<L, F, P>
 where
     // F: System<In=Event, Out=()>,
 	F: 
 		IntoSystem<P, FunctionSystem<Event, (), P, InputMarker, F>> +
-		SystemParamFunction<Event, (), P, InputMarker> + Send + Sync + 'static
+		SystemParamFunction<Event, (), P, InputMarker> + Send + Sync + 'static,
+	P::Fetch: NotApply
 {
 	fn setup(self, world: &mut World) {
 		let sys = self.f.system(world);
+
+		let access = sys.system_state.archetype_component_access.clone();
 
 		let sys = TrustCell::new(sys);
 		let listener = Listener(Arc::new(move |e: Event| {
 			sys.borrow_mut().run(e);
 		}));
-		L::init(world, listener.clone());
+		L::init(world, listener);
+
+		L::add_access(world, access);
 	}
 }
 
@@ -64,16 +79,20 @@ impl<L: ListenInit, P: SystemParam + 'static + Send + Sync, S: Monitor<L, Param 
 
 impl<L: ListenInit, P: SystemParam + 'static + Send + Sync, S> ListenSetup for ShareListener<L, P, ShareSystem<S>>
 where S: 
-	Monitor<L, Param = P>
+	Monitor<L, Param = P>,
+	P::Fetch: NotApply
 	{
 	fn setup(self, world: &mut World) {
 		let sys =  IntoSystem::<P, RunnerSystem<Event, (), P, InputMarker, ShareListener<L, P, ShareSystem<S>>>>::system(self, world);
 
+		let access = sys.system_state.archetype_component_access.clone();
 		let sys = TrustCell::new(sys);
 		let listener = Listener(Arc::new(move |e: Event| {
 			sys.borrow_mut().run(e);
 		}));
-		L::init(world, listener.clone());
+		L::init(world, listener);
+
+		L::add_access(world, access);
 	}
 }
 
@@ -90,10 +109,10 @@ where S:
 
 pub trait ListenInit: Send + Sync + 'static {
 	fn init(world: &mut World, listener: Listener);
-	fn add_access(world: &mut World, access: Access<ArchetypeComponentId>);
+	fn add_access(world: &mut World, access: FilteredAccessSet<ArchetypeComponentId>);
 }
 
-pub fn add_access(world: &mut World, access: Access<ArchetypeComponentId>, a_c_id: ArchetypeComponentId) {
+pub fn add_access(world: &mut World, access: FilteredAccessSet<ArchetypeComponentId>, a_c_id: ArchetypeComponentId) {
 	let arr = world.listener_access.get_mut(&a_c_id);
 	let arr = match arr {
 		Some(r) => r,
@@ -109,14 +128,13 @@ pub struct ComponentListen<A, C, T>(PhantomData<(A, C, T)>);
 impl<A, C, T> ListenInit for ComponentListen<A, C, T> where 
 	A: 'static + Send + Sync,
 	C: Component,
-	T: EventType{
+	T: ListenType{
 	fn init(world: &mut World, listener: Listener) {
 		world.add_component_listener::<T, A, C>(listener);
 	}
-	fn add_access(world: &mut World, access: Access<ArchetypeComponentId>) {
-		let arch_id = world.archetypes().get_id_by_ident(TypeId::of::<A>())
-.unwrap();		
-		let c_id = world.components.get_id(TypeId::of::<C>()).unwrap();
+	fn add_access(world: &mut World, access: FilteredAccessSet<ArchetypeComponentId>) {
+		let arch_id = world.archetypes_mut().get_or_create_archetype::<A>();
+		let c_id = world.components.get_or_insert_id::<C>();
 		let a_c_id = unsafe{world.archetypes()[arch_id.clone()].archetype_component_id(c_id)};
 
 		add_access(world, access, a_c_id);
@@ -126,11 +144,11 @@ impl<A, C, T> ListenInit for ComponentListen<A, C, T> where
 pub struct ResourceListen<R, T>(PhantomData<(R, T)>);
 impl<R, T> ListenInit for ResourceListen<R, T> where 
 	R: Component,
-	T: EventType{
+	T: ListenType{
 	fn init(world: &mut World, listener: Listener) {
 		world.add_resource_listener::<T, R>(listener);
 	}
-	fn add_access(world: &mut World, access: Access<ArchetypeComponentId>) {
+	fn add_access(world: &mut World, access: FilteredAccessSet<ArchetypeComponentId>) {
 		let a_c_id = world.archetypes().get_archetype_resource_id::<R>().unwrap().clone();
 
 		add_access(world, access, a_c_id);
@@ -140,14 +158,13 @@ impl<R, T> ListenInit for ResourceListen<R, T> where
 pub struct EntityListen<A, T>(PhantomData<(A, T)>);
 impl<A, T> ListenInit for EntityListen<A, T> where 
 	A: 'static + Send + Sync,
-	T: EventType{
+	T: ListenType{
 	fn init(world: &mut World, listener: Listener) {
 		world.add_entity_listener::<T, A>(listener);
 	}
 	
-	fn add_access(world: &mut World, access: Access<ArchetypeComponentId>) {
-		let arch_id = world.archetypes().get_id_by_ident(TypeId::of::<A>())
-.unwrap();		
+	fn add_access(world: &mut World, access: FilteredAccessSet<ArchetypeComponentId>) {
+		let arch_id = world.archetypes_mut().get_or_create_archetype::<A>();	
 		let a_c_id = world.archetypes()[arch_id.clone()].entity_archetype_component_id();
 
 		add_access(world, access, a_c_id);
@@ -174,6 +191,8 @@ unsafe impl<T: ListenInit> SystemParamState for ListenState<T> {
     }
 }
 
+impl<T: ListenInit> NotApply for ListenState<T> {}
+
 impl<'w, 's, T: ListenInit> SystemParamFetch<'w, 's> for ListenState<T> {
     type Item = Listen<T>;
 
@@ -188,13 +207,13 @@ impl<'w, 's, T: ListenInit> SystemParamFetch<'w, 's> for ListenState<T> {
     }
 }
 
-pub trait EventType: Send + Sync + 'static {
+pub trait ListenType: Send + Sync + 'static {
 	fn add(notify: &dyn Notify, listener: Listener);
 }
 
 pub struct Create;
 
-impl EventType for Create {
+impl ListenType for Create {
 	fn add(notify: &dyn Notify, listener: Listener) {
 		notify.add_create(listener);
 	}
@@ -202,7 +221,7 @@ impl EventType for Create {
 
 pub struct Delete;
 
-impl EventType for Delete {
+impl ListenType for Delete {
 	fn add(notify: &dyn Notify, listener: Listener) {
 		notify.add_delete(listener);
 	}
@@ -210,7 +229,7 @@ impl EventType for Delete {
 
 pub struct Modify;
 
-impl EventType for Modify {
+impl ListenType for Modify {
 	fn add(notify: &dyn Notify, listener: Listener) {
 		notify.add_modify(listener);
 	}
@@ -218,11 +237,19 @@ impl EventType for Modify {
 
 
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Event {
     pub id: Entity,
+	pub ty: EventType,
     pub field: &'static str,
     pub index: usize, // 一般无意义。 只有在数组或向量的元素被修改时，才有意义
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum EventType {
+	Create,
+	Modify,
+	Delete,
 }
 
 #[derive(Clone)]
@@ -240,7 +267,7 @@ impl LibListener<Event> for Listener {
 }
 
 #[derive(Default, Clone)]
-pub struct NotifyImpl(pub Share<NotifyImpl1>);
+pub struct NotifyImpl(pub Arc<NotifyImpl1>);
 
 impl Notify for NotifyImpl {
 	#[inline]
@@ -279,11 +306,11 @@ impl Notify for NotifyImpl {
     }
 
 	fn create_event(&self, id: Entity) {
-        let e = Event { id, field: "", index:0 };
+        let e = Event { id, field: "", index:0, ty: EventType::Create };
         self.create.listen(&e);
     }
     fn delete_event(&self, id: Entity) {
-        let e = Event { id, field: "", index:0  };
+        let e = Event { id, field: "", index:0, ty: EventType::Delete };
         self.delete.listen(&e);
     }
     fn modify_event(&self, id: Entity, field: &'static str, index: usize) {
@@ -291,13 +318,14 @@ impl Notify for NotifyImpl {
             id,
             field,
             index,
+			ty: EventType::Modify
         };
         self.modify.listen(&e);
     }
 }
 
 impl Deref for NotifyImpl {
-    type Target = Share<NotifyImpl1>;
+    type Target = Arc<NotifyImpl1>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -330,11 +358,11 @@ pub trait Notify {
     fn modify_event(&self, id: Entity, field: &'static str, index: usize);
 }
 
-/// 为元素满足EventType的元组，实现EventType（最多三个）
+/// 为元素满足ListenType的元组，实现ListenType（最多三个）
 macro_rules! impl_event_function {
     ($($param: ident),*) => {
         #[allow(non_snake_case)]
-		impl<$($param: EventType),*> EventType for ($($param,)*) {
+		impl<$($param: ListenType),*> ListenType for ($($param,)*) {
 			fn add(notify: &dyn Notify, listener: Listener) {
 				$($param::add(notify, listener.clone());)*
 			}
@@ -351,7 +379,7 @@ macro_rules! impl_event_init {
 				$($param::init(world, listener.clone());)*
 			}
 
-			fn add_access(world: &mut World, access: Access<ArchetypeComponentId>) {
+			fn add_access(world: &mut World, access: FilteredAccessSet<ArchetypeComponentId>) {
 				$($param::add_access(world, access.clone());)*
 			}
 		}
@@ -406,6 +434,7 @@ macro_rules! impl_event_setup {
 				SystemParamFunction<Event, (), (Listen<L>, $($param,)*), InputMarker> + Send + Sync + 'static + 
 				FnMut(Event, Listen<L>, $($param,)*) -> () +
 				Clone,
+				$($param::Fetch: NotApply),*
 				{
 			fn listeners(&self) -> FunctionListeners<L, S, (Listen<L>, $($param,)*)> {
 				FunctionListeners{f: self.clone(), mark: PhantomData}
@@ -422,5 +451,5 @@ macro_rules! impl_event_setup {
 
 all_tuples!(impl_event_function, 1, 3, T);
 all_tuples!(impl_event_init, 1, 3, L);
-all_tuples!(impl_event_setup, 0, 15, P);
+all_tuples!(impl_event_setup, 0, 16, P);
 

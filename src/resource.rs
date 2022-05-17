@@ -4,9 +4,18 @@ use pi_map::Map;
 use pi_null::Null;
 
 use crate::{
-	monitor::{Notify, NotifyImpl, Listener, EventType},
-	entity::Entity, storage::SecondaryMap, component::ComponentId
+	monitor::{Notify, NotifyImpl, Listener, ListenType},
+	entity::Entity, storage::{SecondaryMap, Local}
 };
+
+pub trait Resource: Send + Sync + 'static {}
+
+impl<T: Send + Sync + 'static> Resource for T {
+	
+}
+
+pub type ResourceId = Local;
+
 
 // TODO 以后用宏生成
 impl Notify for SingleMeta {
@@ -41,17 +50,17 @@ impl Notify for SingleMeta {
 
 pub(crate) struct SingleMeta {
     // value: usize, // *mut T
-	size: usize,
-	index: usize,
+	buffer: Vec<u8>,
+	is_exsit: bool, // 标记组件是否存在（之一，曾经使用buffer的长度为0来表示组件不存在，但组件的大小可能就是0，因此这种方式是不可行的，因此单独使用一个bool字段来表示资源是否存在）
     notify: NotifyImpl,
 	drop_fn: fn(*const u8),
 }
 
 impl SingleMeta {
-    pub fn new<T>(size: usize, index: usize) -> Self {
+    pub fn new<T>(size: usize) -> Self {
         Self {
-            size,
-			index,
+			buffer: Vec::with_capacity(size),
+			is_exsit: false,
             notify: NotifyImpl::default(),
 			drop_fn: drop::<T>,
         }
@@ -63,80 +72,99 @@ impl SingleMeta {
 }
 
 pub(crate) struct Singles {
-	buffer: Vec<u8>,
-	metas: SecondaryMap<ComponentId, SingleMeta>,
+	metas: SecondaryMap<ResourceId, SingleMeta>,
 }
 
 impl Singles {
 	pub fn new() -> Self {
 		Self {
-			buffer: Vec::new(),
 			metas: SecondaryMap::with_capacity(0),
 		}
 	}
 
-	pub fn register<T>(&mut self, component_id: ComponentId) {
+	pub fn register<T>(&mut self, resource_id: ResourceId) {
 		// 不存在元信息，插入元信息
-		if self.metas.get(&component_id).is_none() {
+		if self.metas.get(&resource_id).is_none() {
 			let size = std::mem::size_of::<T>();
-
-			self.metas.insert(component_id, SingleMeta::new::<T>(usize::null(), self.buffer.len()));
-			// 设置长度
-			self.buffer.reserve(size);
-			unsafe{self.buffer.set_len(self.buffer.len() + size)};
+			self.metas.insert(resource_id, SingleMeta::new::<T>(size));
 		};
 	}
 
-	pub fn add_listener<E: EventType, T>(&mut self, component_id: ComponentId, listener: Listener) {
-		if let Some(meta) = self.metas.get(&component_id) {
+	pub fn add_listener<E: ListenType, T>(&mut self, resource_id: ResourceId, listener: Listener) {
+		if let Some(meta) = self.metas.get(&resource_id) {
 			E::add(&meta.notify, listener);
 		} else {
 			log::warn!("add_resource_listener fail, resource is not exist: {:?}", std::any::type_name::<T>());
 		}
 	}
 
-	/// 安全： 确保T和component_id的一致性, 同时存在meta
-	pub unsafe fn insert<T: 'static + Send + Sync>(&mut self, component_id: ComponentId, value: T) {
+	/// 安全： 确保T和resource_id的一致性, 同时存在meta
+	pub unsafe fn insert<T: Resource>(&mut self, resource_id: ResourceId, value: T) {
 		let size = std::mem::size_of::<T>();
-		let meta = &mut self.metas[component_id];
+		let meta = &mut self.metas[resource_id];
 
+		if meta.is_exsit {
+			// 资源已经存在，销毁原有的
+			(meta.drop_fn)(meta.buffer.as_ptr());
+		}
+
+		// 写入资源
 		std::ptr::copy_nonoverlapping(
 			&value as *const T as *const u8,
-			self.buffer.as_mut_ptr().add(meta.index),
+			meta.buffer.as_mut_ptr(),
 			size,
 		);
 		forget(value);
 
-		if meta.size.is_null() {
-			meta.size = size;
+		// 通知
+		if !meta.is_exsit {
 			meta.get_notify_ref().create_event(Entity::null());
 		} else {
 			meta.get_notify_ref().modify_event(Entity::null(), "", 0);
 		}
+		meta.is_exsit = true;
 
 	}
 
-	/// 安全： 确保T和component_id的一致性
-	pub unsafe fn get<T>(&self, component_id: ComponentId) -> Option<&T> {
-		if let Some(meta) = self.metas.get(&component_id) {
-			Some(&*(self.buffer.as_ptr().add(meta.index) as usize as *mut T))
+	/// 安全： 确保T和resource_id的一致性
+	pub unsafe fn get<T>(&self, resource_id: ResourceId) -> Option<&T> {
+		if let Some(meta) = self.metas.get(&resource_id) {
+			if meta.is_exsit {
+				Some(&*(meta.buffer.as_ptr() as usize as *mut T))
+			} else {
+				None
+			}
 		} else {
 			None
 		}
 	}
 
-	/// 安全： 确保T和component_id的一致性
-	pub unsafe fn get_mut<T>(&self, component_id: ComponentId) -> Option<&mut T> {
-		if let Some(meta) = self.metas.get(&component_id) {
-			Some(&mut *(self.buffer.as_ptr().add(meta.index) as usize as *mut T))
+	pub unsafe fn get_unchecked<T>(&self, resource_id: ResourceId) -> &T {
+		let meta = self.metas.get_unchecked(&resource_id);
+		&*(meta.buffer.as_ptr() as usize as *mut T)
+	}
+
+	pub unsafe fn get_unchecked_mut<T>(&self, resource_id: ResourceId) -> &mut T {
+		let meta = self.metas.get_unchecked(&resource_id);
+		&mut *(meta.buffer.as_ptr() as usize as *mut T)
+	}
+
+	/// 安全： 确保T和resource_id的一致性
+	pub unsafe fn get_mut<T>(&self, resource_id: ResourceId) -> Option<&mut T> {
+		if let Some(meta) = self.metas.get(&resource_id) {
+			if meta.is_exsit {
+				Some(&mut *(meta.buffer.as_ptr() as usize as *mut T))
+			} else {
+				None
+			}
 		} else {
 			None
 		}
 	}
 
-	// ///  确保T和component_id的一致性
-	// pub unsafe fn remove<T>(&mut self, component_id: ComponentId) -> Option<T> {
-	// 	if let Some(meta) = self.metas.get_mut(&component_id) {
+	// ///  确保T和resource_id的一致性
+	// pub unsafe fn remove<T>(&mut self, resource_id: ResourceId) -> Option<T> {
+	// 	if let Some(meta) = self.metas.get_mut(&resource_id) {
 	// 		if meta.size.is_null() {
 	// 			return None;
 	// 		}
@@ -147,8 +175,8 @@ impl Singles {
 	// 	}
 	// }
 
-	pub fn get_notify_ref(&self, component_id: ComponentId) -> &NotifyImpl {
-		if let Some(meta) = self.metas.get(&component_id) {
+	pub fn get_notify_ref(&self, resource_id: ResourceId) -> &NotifyImpl {
+		if let Some(meta) = self.metas.get(&resource_id) {
 			&meta.notify
 		} else {
 			log::error!("get_notify err");
@@ -165,7 +193,9 @@ fn drop<T>(ptr: *const u8) {
 impl Drop for Singles {
 	fn drop(&mut self) {
 		for (_local, meta) in self.metas.iter() {
-			(meta.drop_fn)(unsafe { self.buffer.as_ptr().add(meta.index) });
+			if meta.is_exsit {
+				(meta.drop_fn)(meta.buffer.as_ptr());
+			}
 		}
 	}
 }

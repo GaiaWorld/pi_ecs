@@ -65,8 +65,9 @@ fn get_dispatcher(world: &mut World) -> SingleDispatcher<StealableTaskPool<()>> 
     stage.add_node(s2);
 
     let mut stages = Vec::new();
-    stages.push(Arc::new(stage.build()));
-    let dispatcher = SingleDispatcher::new(stages, world, rt);
+    stages.push(Arc::new(stage.build(world)));
+    let mut dispatcher = SingleDispatcher::new(rt);
+	dispatcher.init(stages, world);
 
     dispatcher
 }

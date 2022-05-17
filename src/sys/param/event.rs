@@ -3,9 +3,9 @@
 use super::{SystemParam, SystemParamFetch, SystemParamState};
 use crate::{
     component::Component,
-    prelude::World,
+    world::World,
     sys::{
-        param::{Local, Res, ResMut},
+        param::{Local, Res, ResMut, NotApply},
         system::SystemState,
     },
 };
@@ -810,3 +810,8 @@ mod tests {
         );
     }
 }
+
+
+impl<TSystemParamState, T: Send + Sync + 'static> NotApply for EventReaderState<TSystemParamState,T> {}
+
+impl<TSystemParamState, T: Send + Sync + 'static> NotApply for EventWriterState<TSystemParamState, T> {}

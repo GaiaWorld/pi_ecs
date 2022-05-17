@@ -1,39 +1,41 @@
-use std::{marker::PhantomData, any::TypeId};
+use std::marker::PhantomData;
 
-use crate::{component::Component, entity::{Entities, Entity}, world::World, storage::Local, sys::system::SystemState};
+use pi_slotmap::Key;
+
+use crate::{component::Component, archetype::ArchetypeIdent, entity::{Entities, Id}, world::World, storage::Local, sys::system::SystemState};
 
 use super::{SystemParam, SystemParamState, SystemParamFetch};
 
-pub struct EntityCommands<T: 'static + Send + Sync> {
-	delete: &'static mut CommandQueue<EntityDelete<T>>,
+pub struct EntityCommands<A: 'static + Send + Sync> {
+	delete: &'static mut CommandQueue<EntityDelete<A>>,
 	entities: &'static Entities,
-	arch_id: Local,
 	_world: World,
-	mark: PhantomData<T>,
+	mark: PhantomData<A>,
 }
 
-pub struct Commands<T: Component> {
+pub struct Commands<A: ArchetypeIdent, T: Component> {
 	_world: World,
-	queues: &'static mut CommandQueues<T>,
+	queues: &'static mut CommandQueues<A, T>,
 }
 
-pub struct CommandQueues<T: Component> {
-	create: CommandQueue<ComponentInsert<T>>,
-	delete: CommandQueue<ComponentDelete<T>>,
+pub struct CommandQueues<A: ArchetypeIdent, T: Component> {
+	create: CommandQueue<ComponentInsert<A, T>>,
+	delete: CommandQueue<ComponentDelete<A, T>>,
 }
 
-impl<T: Component> CommandQueues<T> {
+impl<A: ArchetypeIdent, T: Component> CommandQueues<A, T> {
 	fn new(world: &mut World, component_id: Local) -> Self {	
+		let arch_id = world.archetypes_mut().get_or_create_archetype::<A>();
 		Self{
-			create: CommandQueue::new(world, component_id),
-			delete:  CommandQueue::new(world, component_id)
+			create: CommandQueue::new(world, arch_id, component_id),
+			delete:  CommandQueue::new(world, arch_id, component_id)
 		}
 	}
-	fn push_create(&mut self, entity: Entity, value: T) {
+	fn push_create(&mut self, entity: Id<A>, value: T) {
 		self.create.push(ComponentInsert(entity, value));
 	}
 
-	fn push_delete(&mut self, entity: Entity) {
+	fn push_delete(&mut self, entity: Id<A>) {
 		self.delete.push(ComponentDelete(entity, PhantomData));
 	}
 
@@ -43,48 +45,43 @@ impl<T: Component> CommandQueues<T> {
 	}
 }
 
-impl<T: 'static + Send + Sync> EntityCommands<T> {
-	pub fn new(queue: &'static mut CommandQueue<EntityDelete<T>>, world: &World) -> Self {
-		let arch_id = match world.archetypes.get_id_by_ident(TypeId::of::<T>()) {
-			Some(r) => *r,
-			None => panic!("fetch entity fail，entity is not exist, in EntityCommands<{}>", std::any::type_name::<T>())
-		};
+impl<A: ArchetypeIdent> EntityCommands<A> {
+	pub fn new(queue: &'static mut CommandQueue<EntityDelete<A>>, world: &World) -> Self {
+		let arch_id = queue.arch_id;
         Self {
 			_world: world.clone(),
             delete: queue,
-			arch_id,
             entities: unsafe{ std::mem::transmute(world.entities(arch_id))},
 			mark: PhantomData,
         }
     }
 
-	pub fn spawn(&mut self) -> Entity {
+	pub fn spawn(&mut self) -> Id<A> {
 		let local = self.entities.reserve_entity();
-		Entity::new(self.arch_id, local)
+		unsafe { Id::<A>::new(local) }
     }
 
-	pub fn despawn(&mut self, entity: Entity) {
-		self.delete.push(EntityDelete(entity, PhantomData));
+	pub fn despawn(&mut self, entity: Id<A>) {
+		self.delete.push(EntityDelete(entity));
 	}
 }
 
-impl<T: Component> Commands<T> {
+impl<A: ArchetypeIdent, T: Component> Commands<A, T> {
 	/// Create a new `Commands` from a queue and a world.
     pub fn new(
-		queues: &'static mut CommandQueues<T>, 
+		queues: &'static mut CommandQueues<A, T>, 
 		world: &World
 	) -> Self {
         Self {
 			_world: world.clone(),
             queues,
-			// component_type_id: world.components.get_id(TypeId::of::<T>()).unwrap(),
         }
     }
-    pub fn insert(&mut self, entity: Entity, component: T) {
+    pub fn insert(&mut self, entity: Id<A>, component: T) {
 		self.queues.push_create(entity, component);
     }
 
-	pub fn delete(&mut self, entity: Entity) {
+	pub fn delete(&mut self, entity: Id<A>) {
 		self.queues.push_delete(entity);
     }
 
@@ -93,13 +90,15 @@ impl<T: Component> Commands<T> {
 pub struct CommandQueue<T: 'static + Send + Sync + Command> {
 	list: Vec<T>,
 	ty_id: Local,
+	arch_id: Local,
 }
 
 impl<T: 'static + Send + Sync + Command> CommandQueue<T> {
-	pub fn new(_world: &World, component_id: Local) -> Self {
+	pub fn new(_world: &World, arch_id: Local, component_id: Local) -> Self {
 		Self {
 			list: Vec::new(),
 			ty_id: component_id,
+			arch_id,
 		}
 	}
 	#[inline]
@@ -109,56 +108,53 @@ impl<T: 'static + Send + Sync + Command> CommandQueue<T> {
 
 	pub fn apply(&mut self, world: &mut World) {
 		for item in self.list.drain(..) {
-			item.write(world, self.ty_id)
+			item.write(world, self.arch_id, self.ty_id)
 		}
 	}
 }
 
 /***********************Command***************************/
 pub trait Command: Send + Sync + 'static {
-    fn write(self, world: &mut World, type_id: Local);
+    fn write(self, world: &mut World, arch_id: Local, type_id: Local);
 }
-pub struct EntityDelete<T>(pub(crate) Entity, PhantomData<T>);
+pub struct EntityDelete<A: ArchetypeIdent>(pub(crate) Id<A>);
 
-impl<T: 'static + Send + Sync> Command for EntityDelete<T> {
-	fn write(self, world: &mut World, _type_id: Local) {
-		world.despawn(self.0);
+impl<A: ArchetypeIdent> Command for EntityDelete<A> {
+	fn write(self, world: &mut World, arch_id: Local, _type_id: Local) {
+		world.archetypes_mut()[arch_id].remove_entity(self.0.0);
 	}
 }
 
-pub struct ComponentInsert<T>(pub(crate)Entity, pub(crate)T);
+pub struct ComponentInsert<A: ArchetypeIdent, T>(pub(crate)Id<A>, pub(crate)T);
 
-impl<T: Component> Command for ComponentInsert<T> {
-	fn write(self, world: &mut World, type_id: Local) {
+impl<A: ArchetypeIdent, T: Component> Command for ComponentInsert<A, T> {
+	fn write(self, world: &mut World, arch_id: Local, type_id: Local) {
 		let tick = world.change_tick();
-		world.archetypes[self.0.archetype_id()].insert_component(self.0.local(), self.1, type_id, tick);
+		world.archetypes[arch_id].insert_component(self.0.0, self.1, type_id, tick);
 	}
 }
 
-pub struct ComponentDelete<T>(pub(crate)Entity, PhantomData<T>);
+pub struct ComponentDelete<A: ArchetypeIdent, T>(pub(crate)Id<A>, PhantomData<T>);
 
-impl<T: Component> Command for ComponentDelete<T> {
-	fn write(self, world: &mut World, type_id: Local) {
-		world.archetypes[self.0.archetype_id()].remove_component(self.0.local(), type_id);
+impl<A: ArchetypeIdent, T: Component> Command for ComponentDelete<A, T> {
+	fn write(self, world: &mut World, arch_id: Local, type_id: Local) {
+		world.archetypes[arch_id].remove_component(self.0.0, type_id);
 	}
 }
 
 /**********************SystemParam Commands***************************/
 
 
-impl<T: Component> SystemParam for Commands<T> {
-    type Fetch = CommandQueues<T>;
+impl<A: ArchetypeIdent, T: Component> SystemParam for Commands<A, T> {
+    type Fetch = CommandQueues<A, T>;
 }
 
 // SAFE: only local state is accessed
-unsafe impl<T: Component> SystemParamState for CommandQueues<T> {
+unsafe impl<A: ArchetypeIdent, T: Component> SystemParamState for CommandQueues<A, T> {
     type Config = Option<T>;
 
     fn init(world:  &mut World, _system_state: &mut SystemState, _config: Self::Config) -> Self {
-		let component_id = match world.components.get_id(TypeId::of::<T>()) {
-			Some(r) => r, 
-			None => panic!("fetch component fail, component is not exist, in Commands<{}>", std::any::type_name::<T>()),
-		};
+		let component_id = world.components.get_or_insert_id::<T>();
 		CommandQueues::new(world, component_id)
     }
 
@@ -171,8 +167,8 @@ unsafe impl<T: Component> SystemParamState for CommandQueues<T> {
 	}
 }
 
-impl<'w, 's, T: Component> SystemParamFetch<'w, 's> for CommandQueues<T> {
-    type Item = Commands<T>;
+impl<'w, 's, A: ArchetypeIdent, T: Component> SystemParamFetch<'w, 's> for CommandQueues<A, T> {
+    type Item = Commands<A, T>;
 
     #[inline]
     unsafe fn get_param(
@@ -187,34 +183,31 @@ impl<'w, 's, T: Component> SystemParamFetch<'w, 's> for CommandQueues<T> {
 
 /**********************SystemParam EntityCommands***************************/
 
-impl<T: 'static + Send + Sync> SystemParam for EntityCommands<T> {
-    type Fetch = CommandQueue<EntityDelete<T>>;
+impl<A: ArchetypeIdent> SystemParam for EntityCommands<A> {
+    type Fetch = CommandQueue<EntityDelete<A>>;
 }
 
 // SAFE: only local state is accessed
-unsafe impl<T: 'static + Send + Sync> SystemParamState for CommandQueue<EntityDelete<T>> {
-    type Config = Option<CommandQueue<EntityDelete<T>>>;
+unsafe impl<A: ArchetypeIdent> SystemParamState for CommandQueue<EntityDelete<A>> {
+    type Config = Option<CommandQueue<EntityDelete<A>>>;
 
     fn init(world:  &mut World, _system_state: &mut SystemState, _config: Self::Config) -> Self {
-		let arch_id = match world.archetypes().get_id_by_ident(TypeId::of::<T>()) {
-			Some(r) => r,
-			None => panic!("fetch archetype fail, {} id not exist, in EntityCommands<{}>", std::any::type_name::<T>(), std::any::type_name::<T>()),
-		};
-		CommandQueue::new(world, *arch_id)
+		let arch_id = world.archetypes_mut().get_or_create_archetype::<A>();
+		CommandQueue::new(world, arch_id, Local::null())
     }
 
-    fn default_config() -> Option<CommandQueue<EntityDelete<T>>> {
+    fn default_config() -> Option<CommandQueue<EntityDelete<A>>> {
         None
     }
 
 	fn apply(&mut self, world: &mut World) {
-		world.archetypes[self.ty_id].entities.flush();
+		world.archetypes[self.arch_id].entities.flush();
 		self.apply(world);
 	}
 }
 
-impl<'w, 's, T: 'static + Send + Sync> SystemParamFetch<'w, 's> for CommandQueue<EntityDelete<T>> {
-    type Item = EntityCommands<T>;
+impl<'w, 's, A: ArchetypeIdent> SystemParamFetch<'w, 's> for CommandQueue<EntityDelete<A>> {
+    type Item = EntityCommands<A>;
 
     #[inline]
     unsafe fn get_param(

@@ -1,6 +1,6 @@
 /// 测试Entity查询
 
-use pi_ecs::{prelude::{World, StageBuilder, SingleDispatcher, Dispatcher, Query}, sys::system::IntoSystem, entity::Entity, storage::Offset};
+use pi_ecs::{prelude::{World, StageBuilder, SingleDispatcher, Dispatcher, Query}, sys::system::IntoSystem, entity::Id, storage::Offset};
 use pi_async::rt::{multi_thread::{MultiTaskRuntimeBuilder, StealableTaskPool}, AsyncRuntime};
 use std::sync::Arc;
 
@@ -16,10 +16,10 @@ pub struct Component2(pub usize);
 
 /// 在system中查询实体
 fn entity(
-	query: Query<Archetype1, Entity>,
+	query: Query<Archetype1, Id<Archetype1>>,
 ) {
 	for i in query.iter() {
-		println!("entity run, entity: {:?}", i.local().offset());
+		println!("entity run, entity: {:?}", i.offset());
 	}
 }
 
@@ -53,8 +53,9 @@ fn get_dispatcher(world: &mut World) -> SingleDispatcher<StealableTaskPool<()>> 
 	stage.add_node(system);
 	
 	let mut stages = Vec::new();
-	stages.push(Arc::new(stage.build()));
-	let dispatcher = SingleDispatcher::new(stages, world, rt);
+	stages.push(Arc::new(stage.build(world)));
+	let mut dispatcher = SingleDispatcher::new(rt);
+	dispatcher.init(stages, world);
 
 	dispatcher
 }

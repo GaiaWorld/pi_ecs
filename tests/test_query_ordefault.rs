@@ -1,6 +1,6 @@
 /// 测试组件OrDefault查询
 
-use pi_ecs::{prelude::{World, StageBuilder, SingleDispatcher, Dispatcher, Query, OrDefault}, sys::system::IntoSystem, entity::Entity, storage::Offset};
+use pi_ecs::{prelude::{World, StageBuilder, SingleDispatcher, Dispatcher, Query, OrDefault, Id}, sys::system::IntoSystem, storage::Offset};
 use pi_async::rt::{multi_thread::{MultiTaskRuntimeBuilder, StealableTaskPool}, AsyncRuntime};
 use std::sync::Arc;
 
@@ -22,10 +22,10 @@ impl Default for Component1 {
 /// 要求组件必须实现Default
 /// 同时，默认值可以通过Resource来改变，Resource类型为`DefaultComponent`
 fn ordefault(
-	query: Query<Archetype1, (Entity, OrDefault<Component1>)>,
+	query: Query<Archetype1, (Id<Archetype1>, OrDefault<Component1>)>,
 ) {
 	for (entity, component) in query.iter() {
-		println!("ordefault run, entity: {}, component: {:?}", entity.local().offset(), component);
+		println!("ordefault run, entity: {}, component: {:?}", entity.offset(), component);
 	}
 }
 
@@ -67,8 +67,9 @@ fn get_dispatcher(world: &mut World) -> SingleDispatcher<StealableTaskPool<()>> 
 	stage.add_node(system);
 	
 	let mut stages = Vec::new();
-	stages.push(Arc::new(stage.build()));
-	let dispatcher = SingleDispatcher::new(stages, world, rt);
+	stages.push(Arc::new(stage.build(world)));
+	let mut dispatcher = SingleDispatcher::new(rt);
+	dispatcher.init(stages, world);
 
 	dispatcher
 }

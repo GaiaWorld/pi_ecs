@@ -3,29 +3,34 @@ use pi_share::cell::TrustCell;
 use crate::{
     archetype::{Archetype, ArchetypeId, ArchetypeComponentId},
     component::{Component, ComponentId, MultiCaseImpl},
-    entity::Entity,
-    query::{ FilteredAccess, Access, FilterFetch, WorldQuery, Fetch, FetchState, ReadOnlyFetch},
+    entity::Id,
+	query::{
+		access::FilteredAccess,
+		filter::FilterFetch,
+	},
     storage::LocalVersion,
     world::World,
 };
+
+use super::interface::{WorldQuery, Fetch, FetchState, ReadOnlyFetch};
 
 use std::{
     marker::PhantomData,
     // ptr::{NonNull},
 	// mem::MaybeUninit,
-	ops::Deref, any::TypeId, sync::Arc,
+	ops::Deref, sync::Arc,
 };
 
 
-pub struct Join<C: Component + Deref<Target = Entity>, A, Q: WorldQuery, F: WorldQuery = ()>(PhantomData<(C, A, Q, F)>) where F::Fetch: FilterFetch;
+pub struct Join<C: Component + Deref<Target = Id<A>>, A, Q: WorldQuery, F: WorldQuery = ()>(PhantomData<(C, A, Q, F)>) where F::Fetch: FilterFetch;
 
 
-impl<C: Component + Deref<Target = Entity>, A: Send + Sync + 'static, Q: WorldQuery, F: WorldQuery> WorldQuery for Join<C, A, Q, F> where F::Fetch: FilterFetch {
+impl<C: Component + Deref<Target = Id<A>>, A: Send + Sync + 'static, Q: WorldQuery, F: WorldQuery> WorldQuery for Join<C, A, Q, F> where F::Fetch: FilterFetch {
     type Fetch = JoinFetch<C, A, Q::Fetch, F::Fetch>;
     type State = JoinState<C, A, Q::State, F::State>;
 }
 
-pub struct JoinFetch<C: Component + Deref<Target = Entity>, A: Send + Sync + 'static, Q, F> {
+pub struct JoinFetch<C: Component + Deref<Target = Id<A>>, A: Send + Sync + 'static, Q, F> {
 	fetch: Q,
 	filter: F,
 	// container: MaybeUninit<NonNull<u8>>,
@@ -36,10 +41,10 @@ pub struct JoinFetch<C: Component + Deref<Target = Entity>, A: Send + Sync + 'st
 unsafe impl<C, A, Q, F> ReadOnlyFetch for JoinFetch<C, A, Q, F> 
 	where Q: ReadOnlyFetch,
 		  A: Send + Sync + 'static,
-		  C: Component + Deref<Target = Entity> {}
+		  C: Component + Deref<Target = Id<A>> {}
 
 
-impl<'s, C: Component + Deref<Target = Entity>, A: Send + Sync + 'static, Q: Fetch<'s>, F: FilterFetch> Fetch<'s> for JoinFetch<C, A, Q, F> {
+impl<'s, C: Component + Deref<Target = Id<A>>, A: Send + Sync + 'static, Q: Fetch<'s>, F: FilterFetch> Fetch<'s> for JoinFetch<C, A, Q, F> {
     type Item = Q::Item;
     type State = JoinState<C, A, Q::State, <F as Fetch<'s>>::State>;
 
@@ -80,8 +85,8 @@ impl<'s, C: Component + Deref<Target = Entity>, A: Send + Sync + 'static, Q: Fet
     unsafe fn archetype_fetch(&mut self, local: LocalVersion) -> Option<Self::Item> {
 		let c: Option<&C> = std::mem::transmute((&mut *(self.container as *mut MultiCaseImpl<C>)).get_mut(local));
 		match c {
-			Some(r) => if self.filter.archetype_filter_fetch((**r).local()){
-				self.fetch.archetype_fetch((**r).local())
+			Some(r) => if self.filter.archetype_filter_fetch((**r).0){
+				self.fetch.archetype_fetch((**r).0)
 			} else {
 				None
 			},
@@ -93,7 +98,7 @@ impl<'s, C: Component + Deref<Target = Entity>, A: Send + Sync + 'static, Q: Fet
     unsafe fn archetype_fetch_unchecked(&mut self, local: LocalVersion) -> Self::Item {
 		let c: &C = std::mem::transmute((&mut *(self.container as *mut MultiCaseImpl<C>)).get_unchecked_mut(local));
 		// if self.filter.archetype_filter_fetch((**r).local()){
-			self.fetch.archetype_fetch_unchecked((**c).local())
+			self.fetch.archetype_fetch_unchecked((**c).0)
 		// }
 		// match c {
 		// 	Some(r) => if self.filter.archetype_filter_fetch((**r).local()){
@@ -108,7 +113,7 @@ impl<'s, C: Component + Deref<Target = Entity>, A: Send + Sync + 'static, Q: Fet
 
 
 
-pub struct JoinState<C: Component + Deref<Target = Entity>, A, Q, F> {
+pub struct JoinState<C: Component + Deref<Target = Id<A>>, A, Q, F> {
 	fetch_state: Q,
 	filter_state: F,
 	world: World,
@@ -117,12 +122,9 @@ pub struct JoinState<C: Component + Deref<Target = Entity>, A, Q, F> {
 	mark: PhantomData<(A, C)>
 }
 
-unsafe impl<C: Component + Deref<Target = Entity>, A: Send + Sync + 'static, Q: FetchState, F: FetchState> FetchState for JoinState<C, A, Q, F> {
+unsafe impl<C: Component + Deref<Target = Id<A>>, A: Send + Sync + 'static, Q: FetchState, F: FetchState> FetchState for JoinState<C, A, Q, F> {
     fn init(world: &mut World, query_id: usize, archetype_id: ArchetypeId) -> Self {
-		let archetype_id_next = match world.archetypes().get_id_by_ident(TypeId::of::<A>()) {
-			Some(r) => r.clone(),
-			None => panic!("JoinState fetch archetype ${} fail", std::any::type_name::<A>()),
-		};
+		let archetype_id_next = world.archetypes_mut().get_or_create_archetype::<A>();
 		let component_id = world.get_or_register_component::<C>(archetype_id);
         let component_info = world.components.get_info(component_id).unwrap();
         Self {
@@ -135,22 +137,13 @@ unsafe impl<C: Component + Deref<Target = Entity>, A: Send + Sync + 'static, Q: 
         }
     }
 
-	fn update_component_access(&self, access: &mut FilteredAccess<ComponentId>) {
-		if access.access().has_write(self.component_id) {
-            panic!("&{} conflicts with a previous access in this query. Shared access cannot coincide with exclusive access.",
-                std::any::type_name::<C>());
-        }
-        access.add_read(self.component_id);
-		self.fetch_state.update_component_access(access);
-		self.filter_state.update_component_access(access);
-	}
-
-    fn update_archetype_component_access(&self, archetype: &Archetype, access: &mut Access<ArchetypeComponentId>) {
+    fn update_archetype_component_access(&self, archetype: &Archetype, access: &mut FilteredAccess<ArchetypeComponentId>) {
 		let archetype_component_id = unsafe { archetype.archetype_component_id(self.component_id)};
         access.add_read(archetype_component_id);
 		let a = &self.world.archetypes()[self.archetype_id];
         self.fetch_state.update_archetype_component_access(a, access);
 		self.filter_state.update_archetype_component_access(a, access);
+		access.add_read(a.entity_archetype_component_id());
     }
 
     fn matches_archetype(&self, archetype: &Archetype) -> bool {

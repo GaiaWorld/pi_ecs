@@ -77,7 +77,7 @@ fn test() {
 	for i in 0..5 {
 		let _id = world.spawn::<Node>()
 		.insert(Position(i))
-		.id();
+		.entity();
 	}
 
 	let mut vec = Vec::new();
@@ -85,7 +85,7 @@ fn test() {
 		let id = world.spawn::<Node>()
 		.insert(Position(i + 5))
 		.insert(Velocity(i + 5))
-		.id();
+		.entity();
 
 		vec.push(id);
 	}
