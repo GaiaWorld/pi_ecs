@@ -22,7 +22,12 @@ use super::{SystemId, In};
 /// [`In`] tagged parameter or `()` if no such paramater exists.
 pub struct FunctionSystem<In, Out, Param, InMarker, F>
 where
-    Param: SystemParam,
+    Param: SystemParam + Send + 'static,
+	// In: Send + 'static,
+	// Out: Send + 'static,
+	// InMarker: Send + 'static,
+	// F: Send + 'static
+
 {
     pub(crate) func: F,
     pub(crate) param_state: Param::Fetch,
@@ -33,6 +38,9 @@ where
     // NOTE: PhantomData<fn()-> T> gives this safe Send/Sync impls
     pub(crate) mark: PhantomData<fn() -> (In, Out, InMarker)>,
 }
+unsafe impl<In, Out, Param: SystemParam, InMarker, F> Send for FunctionSystem<In, Out, Param, InMarker, F> {
+}
+
 
 impl<In, Out, Param: SystemParam, InMarker, F> FunctionSystem<In, Out, Param, InMarker, F> {
     /// Gives mutable access to the systems config via a callback. This is useful to set up system
@@ -77,7 +85,7 @@ where
     Out: 'static,
     Param: SystemParam + 'static,
     InMarker: 'static,
-    F: SystemParamFunction<In, Out, Param, InMarker> + Send + Sync + 'static,
+    F: SystemParamFunction<In, Out, Param, InMarker> + Send + 'static,
 {
     fn system(self, world: &mut World) -> FunctionSystem<In, Out, Param, InMarker, F> {
         let id = SystemId::new(world.archetype_component_grow(type_name::<Self>().to_string()));
@@ -105,7 +113,7 @@ where
     Out: 'static ,
     Param: SystemParam + 'static,
     InMarker: 'static,
-    F: SystemParamFunction<In, Out, Param, InMarker> + Send + Sync + 'static,
+    F: SystemParamFunction<In, Out, Param, InMarker> + Send + 'static,
 {
     type In = In;
     type Out = Out;
@@ -162,7 +170,7 @@ where
 }
 
 /// A trait implemented for all functions that can be used as [`System`]s.
-pub trait SystemParamFunction<In, Out, Param: SystemParam, InMarker>: Send + Sync + 'static {
+pub trait SystemParamFunction<In, Out, Param: SystemParam, InMarker>: Send + 'static {
     fn run(
         &mut self,
         input: In,
@@ -246,7 +254,7 @@ macro_rules! impl_system_function {
         }
 
 		#[allow(non_snake_case)]
-        impl<Input: SysInput, Out, Func, $($param: SystemParam),*> SystemParamFunction<Input, Out, ($($param,)*), InputMarker> for Func
+        impl<Input: SysInput, Out, Func, $($param: SystemParam + 'static),*> SystemParamFunction<Input, Out, ($($param,)*), InputMarker> for Func
         where
             Func:
                 FnMut(Input, $($param),*) -> Out +
@@ -277,7 +285,9 @@ pub mod test {
 		world::World,
 		storage::Offset,
 		query::{Write},
+		
 	};
+	
 	#[test]
 	pub fn test_access() {
 		let mut world = World::new();

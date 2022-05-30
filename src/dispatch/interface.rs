@@ -107,6 +107,7 @@ where
         }
     }
 }
+
 impl<P> Dispatcher for SingleDispatcher<P>
 where
     P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P>,
@@ -286,7 +287,7 @@ pub struct GraphNode {
 }
 
 /// 操作
-pub trait Operate {
+pub trait Operate: Send + 'static {
     /// 返回类型
     type R;
 
@@ -305,7 +306,6 @@ pub trait Operate {
 /// 对操作的 封装
 pub struct Run(pub(crate) Arc<dyn Operate<R = ()>>);
 unsafe impl Send for Run {}
-unsafe impl Sync for Run {}
 
 impl Runner for Run {
     fn run(self) {
@@ -320,8 +320,10 @@ pub enum ExecNode {
     /// 同步函数
     Sync(Run),
     /// 异步函数
-    Async(Box<dyn Operate<R = BoxFuture<'static, Result<()>>> + 'static + Send + Sync>),
+    Async(Box<dyn Operate<R = BoxFuture<'static, Result<()>>>>),
 }
+
+unsafe impl Sync for ExecNode {}
 
 impl Runnble for ExecNode {
     type R = Run;

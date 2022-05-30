@@ -427,6 +427,8 @@ impl<'w, 's, T: Resource> SystemParamFetch<'w, 's> for WriteResState<T> {
     }
 }
 
+impl<T: Resource> NotApply for WriteResState<T> {}
+
 pub struct OptionResState<T>(ResState<T>);
 
 impl<'w, T: Resource> SystemParam for Option<Res<'w, T>> {
@@ -442,6 +444,7 @@ unsafe impl<T: Resource> SystemParamState for OptionResState<T> {
 
     fn default_config() {}
 }
+impl<T: Resource> NotApply for OptionResState<T> {}
 
 impl<'w, 's, T: Resource> SystemParamFetch<'w, 's> for OptionResState<T> {
     type Item = Option<Res<'static, T>>;
@@ -462,6 +465,8 @@ impl<'w, 's, T: Resource> SystemParamFetch<'w, 's> for OptionResState<T> {
         }
     }
 }
+
+impl<T: Resource> NotApply for OptionResMutState<T> {}
 
 pub struct OptionResMutState<T>(ResMutState<T>);
 

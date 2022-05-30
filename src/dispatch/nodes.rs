@@ -22,13 +22,18 @@ pub struct SyncRun<Param: SystemParam + 'static, Out, F>(
     pub(crate) TrustCell<FunctionSystem<(), Out, Param, (), F>>,
 );
 
-pub struct AsyncRun<Param: SystemParam + 'static, Out: Future<Output=Result<()>>, F>(
+pub struct AsyncRun<Param: SystemParam + Send + 'static, Out: Future<Output=Result<()>> + Send + 'static, F: Send + 'static>(
     pub(crate) Arc<TrustCell<FunctionSystem<(), Out, Param, (), F>>>,
 );
 
-impl<Param: SystemParam + 'static, Out: 'static + Send + Sync, F> Operate for SyncRun<Param, Out, F>
+unsafe impl<Param, Out, F> Send for AsyncRun<Param, Out, F> where 
+	Param: SystemParam + Send + 'static, 
+	Out: Future<Output=Result<()>> + Send + 'static, 
+	F: Send + 'static {}
+
+impl<Param: SystemParam + 'static, Out: 'static + Send, F> Operate for SyncRun<Param, Out, F>
 where
-    F: Send + Sync + SystemParamFunction<(), Out, Param, ()>,
+    F: Send + SystemParamFunction<(), Out, Param, ()>,
 {
     type R = ();
 
@@ -47,8 +52,8 @@ where
 
 impl<Param, Out, F> Operate for AsyncRun<Param, Out, F>
 where
-    F: Send + Sync + SystemParamFunction<(), Out, Param, ()>,
-	Out: Future<Output = Result<()>  > + Send + Sync + 'static,
+    F: Send + SystemParamFunction<(), Out, Param, ()>,
+	Out: Future<Output = Result<()>  > + Send + 'static,
 	Param: SystemParam + 'static
 {
     type R = BoxFuture<'static, Result<()>>;
@@ -65,9 +70,9 @@ where
     }
 }
 
-impl<Param: SystemParam + 'static, Out: 'static + Send + Sync, F> Into<GraphNode> for FunctionSystem<(), Out, Param, (), F>
+impl<Param: SystemParam + 'static, Out: 'static + Send, F> Into<GraphNode> for FunctionSystem<(), Out, Param, (), F>
 where
-    F: Send + Sync + SystemParamFunction<(), Out, Param, ()>,
+    F: Send + SystemParamFunction<(), Out, Param, ()>,
 {
     default fn into(self) -> GraphNode {
         let id = self.id();
@@ -89,9 +94,9 @@ where
 impl<Param, Out, F> Into<GraphNode>
     for FunctionSystem<(), Out, Param, (), F>
 where
-    F: Send + Sync + SystemParamFunction<(), Out, Param, ()>,
-	Param: SystemParam + 'static,
-	Out: 'static + Send + Sync + Future<Output = Result<()>>
+    F: SystemParamFunction<(), Out, Param, ()> + Send + 'static,
+	Param: SystemParam + Send + 'static,
+	Out: Future<Output = Result<()>> + Send + 'static
 {
     fn into(self) -> GraphNode {
         let id = self.id();
@@ -127,7 +132,7 @@ impl Arrange for World {
     }
 }
 
-pub struct FnSys(pub(crate) Box<dyn Fn()>);
+pub struct FnSys(pub(crate) Box<dyn Fn() + Send + 'static>);
 
 impl Operate for FnSys {
     type R = ();

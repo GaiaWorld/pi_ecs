@@ -16,7 +16,7 @@ use syn::{
     punctuated::{Punctuated, Pair},
     token::Comma,
     Data, DataStruct, DeriveInput, Field, Fields, GenericParam, Ident, Index, LitInt,
-    Path, Result, Token, Type, TypePath, PathArguments, GenericArgument,
+    Path, Result, Token, Type, TypePath, PathArguments, GenericArgument, LifetimeDef,
 };
 use quote::ToTokens;
 
@@ -100,6 +100,7 @@ pub fn component_derive(input: TokenStream) -> TokenStream {
 
 /// 监听，为函数增加监听器属性
 /// example: `#[listen(component = (Node, Position, Modify), entity = (Node, Delete))]`
+/// example: `#[listen(resource = (Viewport, Modify))]`
 #[proc_macro_attribute]
 pub fn listen(attr: TokenStream, item: TokenStream) -> TokenStream {
     let gen = impl_listen_component(attr, item);
@@ -193,6 +194,19 @@ pub fn derive_system_param(input: TokenStream) -> TokenStream {
         .iter()
         .filter(|g| matches!(g, GenericParam::Type(_)))
         .collect();
+	let mut lifetime_generics: Vec<_> = generics
+		.params
+		.iter()
+		.filter(|g| matches!(g, GenericParam::Lifetime(_)))
+		.collect();
+	let lifetime_generic = if lifetime_generics.len() > 1 || lifetime_generics.len() == 0 {
+		// 生命周期参数大于一个，不能自动实现SystemParam
+		panic!("lifetime generic count greater than one or is zero");
+	} else {
+		lifetime_generics.pop().unwrap()
+	};
+	let generics1 = &generics.params;
+
 
     let mut punctuated_generics = Punctuated::<_, Token![,]>::new();
     punctuated_generics.extend(lifetimeless_generics.iter());
@@ -208,8 +222,8 @@ pub fn derive_system_param(input: TokenStream) -> TokenStream {
     let fetch_struct_visibility = &ast.vis;
 
     TokenStream::from(quote! {
-        impl #impl_generics #path::system::SystemParam for #struct_name#ty_generics #where_clause {
-            type Fetch = #fetch_struct_name <(#(<#field_types as SystemParam>::Fetch,)*), #punctuated_generic_idents>;
+        impl #impl_generics #path::sys::param::SystemParam for #struct_name#ty_generics #where_clause {
+            type Fetch = #fetch_struct_name <(#(<#field_types as #path::sys::param::SystemParam>::Fetch,)*), #punctuated_generic_idents>;
         }
 
         #fetch_struct_visibility struct #fetch_struct_name<TSystemParamState, #punctuated_generic_idents> {
@@ -217,7 +231,7 @@ pub fn derive_system_param(input: TokenStream) -> TokenStream {
             marker: std::marker::PhantomData<(#punctuated_generic_idents)>
         }
 
-        unsafe impl<TSystemParamState: #path::system::SystemParamState, #punctuated_generics> #path::system::SystemParamState for #fetch_struct_name<TSystemParamState, #punctuated_generic_idents> {
+        unsafe impl<TSystemParamState: #path::sys::param::SystemParamState, #punctuated_generics> #path::sys::param::SystemParamState for #fetch_struct_name<TSystemParamState, #punctuated_generic_idents> {
             type Config = TSystemParamState::Config;
             fn init(world: &mut #path::prelude::World, system_state: &mut #path::prelude::SystemState, config: Self::Config) -> Self {
                 Self {
@@ -235,30 +249,16 @@ pub fn derive_system_param(input: TokenStream) -> TokenStream {
             }
         }
 
-		impl<'w, 's, T: Component + FromWorld> SystemParamFetch<'w, 's> for LocalState<T> {
-			type Item = Local<'static, T>;
-
-			#[inline]
-			unsafe fn get_param(
-				state: &'s mut Self,
-				_system_state: &SystemState,
-				_world: &'w World,
-				_last_change_tick: u32,
-			) -> Self::Item {
-				Local(std::mem::transmute(&mut state.0))
-			}
-		}
-
-        impl #impl_generics #path::system::SystemParamFetch<'w,'s> for #fetch_struct_name <(#(<#field_types as SystemParam>::Fetch,)*), #punctuated_generic_idents> {
+        impl <'w, #generics1> #path::sys::param::SystemParamFetch<'w, #lifetime_generic> for #fetch_struct_name <(#(<#field_types as #path::sys::param::SystemParam>::Fetch,)*), #punctuated_generic_idents> {
             type Item = #struct_name#ty_generics;
             unsafe fn get_param(
-                state: &'a mut Self,
-                system_state: &'a #path::system::SystemState,
-                world: &'a #path::world::World,
+                state: &#lifetime_generic mut Self,
+                system_state: &#lifetime_generic #path::sys::system::SystemState,
+                world: &#lifetime_generic #path::world::World,
                 change_tick: u32,
             ) -> Self::Item {
                 #struct_name {
-                    #(#fields: <<#field_types as SystemParam>::Fetch as #path::system::SystemParamFetch>::get_param(&mut state.state.#field_indices, system_state, world, change_tick),)*
+                    #(#fields: <<#field_types as #path::sys::param::SystemParam>::Fetch as #path::sys::param::SystemParamFetch>::get_param(&mut state.state.#field_indices, system_state, world, change_tick),)*
                     #(#ignored_fields: <#ignored_field_types>::default(),)*
                 }
             }

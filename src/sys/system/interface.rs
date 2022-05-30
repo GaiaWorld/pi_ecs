@@ -16,7 +16,7 @@ use crate::query::{Access, FilteredAccessSet};
 /// Systems are executed in parallel, in opportunistic order; data access is managed automatically.
 /// It's possible to specify explicit execution order between specific systems,
 /// see [SystemDescriptor](crate::schedule::SystemDescriptor).
-pub trait System: Send + Sync + 'static {
+pub trait System: Send + 'static {
     /// The system's input. See [`In`](crate::system::In) for [`FunctionSystem`](crate::system::FunctionSystem)s.
     type In;
     /// The system's output.
