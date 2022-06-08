@@ -4,7 +4,7 @@ use crate::{
     monitor::{Notify, NotifyImpl},
     sys::param::interface::{SystemParam, SystemParamFetch, SystemParamState, NotApply},
     sys::system::interface::SystemState,
-    world::{World, WorldInner, FromWorld}, component::ComponentId,
+    world::{World, WorldInner, FromWorld}, component::{ComponentId, ComponentTicks},
 };
 use std::{
     marker::PhantomData,
@@ -21,35 +21,27 @@ use std::{
 pub struct Res<'w, T: Resource> {
     value: &'w T,
     _world: World,
-    // ticks: &'w ComponentTicks,
-    // last_change_tick: u32,
-    // change_tick: u32,
+    ticks: &'w ComponentTicks,
+    last_change_tick: u32,
+    change_tick: u32,
 }
 
 impl<'w, T: Resource> Res<'w, T> {
     pub fn into_inner(self) -> &'w T {
         self.value
     }
-}
 
-pub struct ResMut<'w, T: Resource> {
-    value: &'w mut T,
-    resource_notify: &'w NotifyImpl,
-    _world: World,
-    // ticks: &'w mut ComponentTicks,
-    // last_change_tick: u32,
-    // change_tick: u32,
-}
+	/// Returns true if (and only if) this resource been added since the last execution of this
+    /// system.
+	pub fn is_added(&self) -> bool {
+        self.ticks.is_added(self.last_change_tick, self.change_tick)
+    }
 
-impl<'w, T: Resource> ResMut<'w, T> {
-    pub fn create_event(&self, id: Entity) {
-        self.resource_notify.create_event(id);
-    }
-    pub fn delete_event(&self, id: Entity) {
-        self.resource_notify.delete_event(id);
-    }
-    pub fn modify_event(&self, id: Entity, field: &'static str, index: usize) {
-        self.resource_notify.modify_event(id, field, index);
+    /// Returns true if (and only if) this resource been changed since the last execution of this
+    /// system.
+    pub fn is_changed(&self) -> bool {
+        self.ticks
+            .is_changed(self.last_change_tick, self.change_tick)
     }
 }
 
@@ -137,7 +129,7 @@ impl<'w, 's, T: Resource> SystemParamFetch<'w, 's> for ResState<T> {
         state: &'s mut Self,
         system_state: &SystemState,
         world: &'w World,
-        _change_tick: u32,
+        change_tick: u32,
     ) -> Self::Item {
         let value = world
             .archetypes
@@ -149,13 +141,46 @@ impl<'w, 's, T: Resource> SystemParamFetch<'w, 's> for ResState<T> {
                     std::any::type_name::<T>()
                 )
             });
+		let tick = world.archetypes.resources.get_tick_unchecked(state.component_id);
         Res {
             value: std::mem::transmute(value),
             _world: world.clone(),
-            // ticks: &*column.get_ticks_mut_ptr(),
-            // last_change_tick: system_state.last_change_tick,
-            // change_tick,
+            ticks: std::mem::transmute(tick),
+            last_change_tick: system_state.last_change_tick,
+            change_tick,
         }
+    }
+}
+
+pub struct ResMut<'w, T: Resource> {
+    value: &'w mut T,
+    resource_notify: &'w NotifyImpl,
+    _world: World,
+    ticks: &'w ComponentTicks,
+    last_change_tick: u32,
+    change_tick: u32,
+}
+
+impl<'w, T: Resource> ResMut<'w, T> {
+    pub fn create_event(&self, id: Entity) {
+        self.resource_notify.create_event(id);
+    }
+    pub fn delete_event(&self, id: Entity) {
+        self.resource_notify.delete_event(id);
+    }
+    pub fn modify_event(&self, id: Entity, field: &'static str, index: usize) {
+        self.resource_notify.modify_event(id, field, index);
+    }
+
+	pub fn is_added(&self) -> bool {
+        self.ticks.is_added(self.last_change_tick, self.change_tick)
+    }
+
+    /// Returns true if (and only if) this resource been changed since the last execution of this
+    /// system.
+    pub fn is_changed(&self) -> bool {
+        self.ticks
+            .is_changed(self.last_change_tick, self.change_tick)
     }
 }
 
@@ -180,54 +205,54 @@ pub struct ResMutState<T> {
     marker: PhantomData<T>,
 }
 
-impl<T: Resource> ResState<T> {
-    pub fn query(&self, world: &World) -> Res<T> {
-        let value = unsafe {
-            world
-                .archetypes
-                .get_resource::<T>(self.component_id)
-                .unwrap_or_else(|| {
-                    panic!(
-                        "Component requested by {} does not exist: ResMutState.query",
-                        std::any::type_name::<T>()
-                    )
-                })
-        };
+// impl<T: Resource> ResState<T> {
+//     pub fn query(&self, world: &World) -> Res<T> {
+//         let value = unsafe {
+//             world
+//                 .archetypes
+//                 .get_resource::<T>(self.component_id)
+//                 .unwrap_or_else(|| {
+//                     panic!(
+//                         "Component requested by {} does not exist: ResMutState.query",
+//                         std::any::type_name::<T>()
+//                     )
+//                 })
+//         };
+// 		let tick = world.archetypes.resources.get_tick_unchecked(self.component_id);
+//         Res {
+//             value: unsafe { std::mem::transmute(value) },
+//             _world: world.clone(),
+//             ticks: &*column.get_ticks_mut_ptr(),
+//             last_change_tick: system_state.last_change_tick,
+//             change_tick,
+//         }
+//     }
+//     pub fn query_mut(&self, world: &mut World) -> ResMut<T> {
+//         let (value, resource_notify) = unsafe {
+//             (
+//                 world
+//                     .archetypes
+//                     .get_resource_mut::<T>(self.component_id)
+//                     .unwrap_or_else(|| {
+//                         panic!(
+//                             "Component requested by {} does not exist: ResMutState.query",
+//                             std::any::type_name::<T>()
+//                         )
+//                     }),
+//                 world.archetypes.resources.get_notify_ref(self.component_id),
+//             )
+//         };
 
-        Res {
-            value: unsafe { std::mem::transmute(value) },
-            _world: world.clone(),
-            // ticks: &*column.get_ticks_mut_ptr(),
-            // last_change_tick: system_state.last_change_tick,
-            // change_tick,
-        }
-    }
-    pub fn query_mut(&self, world: &mut World) -> ResMut<T> {
-        let (value, resource_notify) = unsafe {
-            (
-                world
-                    .archetypes
-                    .get_resource_mut::<T>(self.component_id)
-                    .unwrap_or_else(|| {
-                        panic!(
-                            "Component requested by {} does not exist: ResMutState.query",
-                            std::any::type_name::<T>()
-                        )
-                    }),
-                world.archetypes.resources.get_notify_ref(self.component_id),
-            )
-        };
-
-        ResMut {
-            value: unsafe { std::mem::transmute(value) },
-            _world: world.clone(),
-            resource_notify: unsafe { std::mem::transmute(resource_notify) },
-            // ticks: &*column.get_ticks_mut_ptr(),
-            // last_change_tick: system_state.last_change_tick,
-            // change_tick,
-        }
-    }
-}
+//         ResMut {
+//             value: unsafe { std::mem::transmute(value) },
+//             _world: world.clone(),
+//             resource_notify: unsafe { std::mem::transmute(resource_notify) },
+//             // ticks: &*column.get_ticks_mut_ptr(),
+//             // last_change_tick: system_state.last_change_tick,
+//             // change_tick,
+//         }
+//     }
+// }
 
 impl<'w, T: Resource> SystemParam for ResMut<'w, T> {
     type Fetch = ResMutState<T>;
@@ -298,7 +323,7 @@ impl<'w, 's, T: Resource> SystemParamFetch<'w, 's> for ResMutState<T> {
         state: &'s mut Self,
         system_state: &SystemState,
         world: &'w World,
-        _change_tick: u32,
+        change_tick: u32,
     ) -> Self::Item {
         let (value, resource_notify) = (
             world
@@ -316,10 +341,14 @@ impl<'w, 's, T: Resource> SystemParamFetch<'w, 's> for ResMutState<T> {
                 .resources
                 .get_notify_ref(state.component_id),
         );
+		let tick = world.archetypes.resources.get_tick_unchecked(state.component_id);
         ResMut {
             value: std::mem::transmute(value),
             _world: world.clone(),
             resource_notify: std::mem::transmute(resource_notify),
+			ticks: std::mem::transmute(tick),
+			last_change_tick: system_state.last_change_tick,
+			change_tick: change_tick,
         }
     }
 }
@@ -452,15 +481,21 @@ impl<'w, 's, T: Resource> SystemParamFetch<'w, 's> for OptionResState<T> {
     #[inline]
     unsafe fn get_param(
         state: &'s mut Self,
-        _system_state: &SystemState,
+        system_state: &SystemState,
         world: &'w World,
-        _change_tick: u32,
+        change_tick: u32,
     ) -> Self::Item {
         match world.archetypes.get_resource_mut::<T>(state.0.component_id) {
-            Some(value) => Some(Res {
-                value: std::mem::transmute(value),
-                _world: world.clone(),
-            }),
+            Some(value) => {
+				let tick = world.archetypes.resources.get_tick_unchecked(state.0.component_id);
+				Some(Res {
+					value: std::mem::transmute(value),
+					_world: world.clone(),
+					ticks: std::mem::transmute(tick),
+					last_change_tick: system_state.last_change_tick,
+					change_tick,
+				})
+			},
             None => None,
         }
     }
@@ -490,9 +525,9 @@ impl<'w, 's, T: Resource> SystemParamFetch<'w, 's> for OptionResMutState<T> {
     #[inline]
     unsafe fn get_param(
         state: &'s mut Self,
-        _system_state: &SystemState,
+        system_state: &SystemState,
         world: &'w World,
-        _change_tick: u32,
+        change_tick: u32,
     ) -> Self::Item {
         match world.archetypes.get_resource_mut::<T>(state.0.component_id) {
             Some(value) => {
@@ -500,10 +535,14 @@ impl<'w, 's, T: Resource> SystemParamFetch<'w, 's> for OptionResMutState<T> {
                     .archetypes
                     .resources
                     .get_notify_ref(state.0.component_id);
+				let tick = world.archetypes.resources.get_tick_unchecked(state.0.component_id);
                 Some(ResMut {
                     value: std::mem::transmute(value),
                     _world: world.clone(),
                     resource_notify: std::mem::transmute(resource_notify),
+					ticks: std::mem::transmute(tick),
+					last_change_tick: system_state.last_change_tick,
+					change_tick,
                 })
             }
             None => None,

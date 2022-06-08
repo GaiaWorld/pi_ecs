@@ -73,15 +73,10 @@ impl Archetype {
 	pub fn entity_archetype_component_delete_id(&self) -> ArchetypeComponentId {
 		self.archetype_component_delete_id
 	}
+	
 
 	/// 为原型注册组件类型
-	pub fn register_component_type<C: Component>(&mut self, id: ComponentId, archetype_component_id: ArchetypeComponentId){
-		// Arc::new(TrustCell::new(MultiCaseImpl::<C>::with_capacity(0, self.id)))
-		if self.components.get(id).is_some() {
-			log::warn!("组件重复注册");
-			return;
-		}
-
+	pub(crate) fn register_component_type<C: Component>(&mut self, id: ComponentId, archetype_component_id: ArchetypeComponentId){
 		let container = Arc::new(TrustCell::new(MultiCaseImpl::<C>::with_capacity(0, self.id())));
 
 		self.components.insert(
@@ -125,7 +120,6 @@ impl Archetype {
 	}
 
 	/// 为指定实体添加组件
-	/// 若组件类型未通过register_component_type方法组件到原型上, 组件不能插入
 	pub fn insert_component<C: Component>(&mut self, local: LocalVersion, value: C, id: ComponentId, tick: u32) -> Option<C> {
 		if self.components.get(id).is_none() {
 			return None;
@@ -346,9 +340,9 @@ impl Archetypes {
     }
 
 	/// 插入资源
-	pub(crate) fn insert_resource<T: Resource>(&mut self, value: T, id: ResourceId) {
+	pub(crate) fn insert_resource<T: Resource>(&mut self, value: T, id: ResourceId, tick: u32) {
 		// self.archetype_resource_indices.insert(TypeId::of::<T>(), ArchetypeComponentId::new(archetype_component_id));
-		unsafe { self.resources.insert(id, value); };
+		unsafe { self.resources.insert(id, value, tick); };
 	}
 
 	pub(crate) fn register_resource<T: Resource>(&mut self, resource_id: ResourceId, archetype_component_id: usize) {

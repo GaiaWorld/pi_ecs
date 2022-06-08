@@ -1,3 +1,5 @@
+//! 实体创建和删除
+
 use std::marker::PhantomData;
 
 use crate::{
@@ -8,7 +10,7 @@ use crate::{
 	entity::{Entities, Id},
 };
 
-/// 实体写
+/// 实体插入
 /// 可同步创建实体
 pub struct EntityInsert<T> {
     entities: usize, //*const Entities
@@ -23,10 +25,6 @@ impl<T: Send + Sync + 'static> EntityInsert<T> {
 			PhantomData
 		)
 	}
-
-	// pub fn despawn(&mut self, id: Id<T>) -> Option<()> {
-	// 	unsafe { &mut *(self.entities as *mut Entities) }.remove(id.0)
-	// }
 }
 
 impl<T: Send + Sync + 'static> SystemParam for EntityInsert<T> {

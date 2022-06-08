@@ -1,3 +1,4 @@
+//! 指令，用于创建、删除实体和组件，创建和删除行为以指令的形式，缓存在指令状态中，必须通过apply方法才能应用到World中
 use std::marker::PhantomData;
 
 use pi_slotmap::Key;
@@ -6,6 +7,7 @@ use crate::{component::Component, archetype::ArchetypeIdent, entity::{Entities, 
 
 use super::{SystemParam, SystemParamState, SystemParamFetch};
 
+/// 实体指令，用于创建和删除实体
 pub struct EntityCommands<A: 'static + Send + Sync> {
 	delete: &'static mut CommandQueue<EntityDelete<A>>,
 	entities: &'static Entities,
@@ -13,6 +15,7 @@ pub struct EntityCommands<A: 'static + Send + Sync> {
 	mark: PhantomData<A>,
 }
 
+/// 组件指令，用于创建和删除指令
 pub struct Commands<A: ArchetypeIdent, T: Component> {
 	_world: World,
 	queues: &'static mut CommandQueues<A, T>,

@@ -103,7 +103,7 @@ fn test() {
 	world.despawn(vec[3].clone());
 
 	println!("resoruce will modify");
-	world.res::<Resource1>().query_mut(&mut world).modify_event(Entity::default(), "", 0);
+	// world.res::<Resource1>().query_mut(&mut world).modify_event(Entity::default(), "", 0);
 
 	std::thread::sleep(std::time::Duration::from_secs(5));
 }

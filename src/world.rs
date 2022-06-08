@@ -8,7 +8,7 @@ use pi_share::cell::TrustCell;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
-use crate::archetype::{Archetype, ArchetypeComponentId, ArchetypeId, ArchetypeIdent, Archetypes};
+use crate::archetype::{ArchetypeComponentId, ArchetypeId, ArchetypeIdent, Archetypes};
 use crate::component::{Component, ComponentId, Components};
 use crate::entity::{Entities, Entity, Id};
 use crate::monitor::{ListenType, Listener, Apply};
@@ -116,7 +116,8 @@ impl WorldInner {
 		} else {
 			self.components.get_or_insert_resource_id::<T>()
 		};
-        self.archetypes.insert_resource::<T>(value, component_id);
+		let change_tick = self.read_change_tick();
+        self.archetypes.insert_resource::<T>(value, component_id, change_tick);
         ResourceRef(component_id, PhantomData)
     }
 
@@ -181,9 +182,7 @@ impl WorldInner {
     pub fn spawn<T: Send + Sync + 'static>(&mut self) -> EntityRef<T> {
         let archetype_id = match self.archetypes.get_id_by_ident(TypeId::of::<T>()) {
             Some(r) => r.clone(),
-            None => {
-                panic!("spawn fial")
-            }
+            None => self.archetypes.create_archetype::<T>(),
         };
 
         let change_tick = self.read_change_tick();
@@ -192,8 +191,8 @@ impl WorldInner {
         EntityRef {
             local: e.local(),
             archetype_id: archetype_id,
-            archetype: archetypes.get_mut(archetype_id).unwrap(),
             components,
+			archetypes,
             tick: change_tick,
 			maker: PhantomData,
         }
@@ -236,15 +235,14 @@ impl WorldInner {
 
     /// 添加资源监听器
     pub fn add_resource_listener<T: ListenType, R: Component>(&mut self, listener: Listener) {
-        let component_id = match self.components.get_resource_id::<R>() {
-            Some(r) => r.clone(),
-            None => {
-                panic!(
-                    "add_listener fail, component is not exist: {:?}",
-                    std::any::type_name::<R>()
-                )
-            }
-        };
+		let component_id = if let None = self.components.get_resource_id::<R>() {
+			let component_id = self.components.get_or_insert_resource_id::<R>();
+			let archetype_component_id = self.archetypes.archetype_component_grow(type_name::<R>().to_string());
+			self.archetypes.register_resource::<R>(component_id, archetype_component_id);
+			component_id
+		} else {
+			self.components.get_or_insert_resource_id::<R>()
+		};
         self.archetypes
             .add_resource_listener::<T, R>(listener, component_id);
     }
@@ -381,7 +379,7 @@ impl<'a> ArchetypeInfo<'a> {
 pub struct EntityRef<'a, A: ArchetypeIdent> {
     pub(crate) local: LocalVersion,
     pub(crate) archetype_id: ArchetypeId,
-    pub(crate) archetype: &'a mut Archetype,
+    pub(crate) archetypes: &'a mut Archetypes,
     pub(crate) components: &'a mut Components,
     tick: u32,
 	maker: PhantomData<A>,
@@ -391,7 +389,14 @@ impl<'a, A: ArchetypeIdent> EntityRef<'a, A> {
     /// 为实体插入组件
     pub fn insert<C: Component>(&mut self, value: C) -> &mut Self {
         let id = self.components.get_or_insert_id::<C>();
-        self.archetype
+		if !self.archetypes[self.archetype_id].contains(id) {
+			let archetype_component_id = self.archetypes.archetype_component_grow(type_name::<C>().to_string());
+            self.archetypes[self.archetype_id].register_component_type::<C>(
+                id,
+                Local::new(archetype_component_id),
+            );
+        }
+        self.archetypes[self.archetype_id]
             .insert_component(self.local, value, id, self.tick);
         self
     }
@@ -425,7 +430,8 @@ impl<T: Resource> ResourceRef<T> {
 	}
 
 	pub fn insert<'a>(&'a self, world: &'a mut World, value: T) {
-		world.archetypes.insert_resource(value, self.0)
+		let change_tick = world.read_change_tick();
+		world.archetypes.insert_resource(value, self.0, change_tick)
 	}
 
 	pub fn id(&self) -> ResourceId {

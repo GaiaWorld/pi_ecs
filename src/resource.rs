@@ -5,7 +5,7 @@ use pi_null::Null;
 
 use crate::{
 	monitor::{Notify, NotifyImpl, Listener, ListenType},
-	entity::Entity, storage::{SecondaryMap, Local}
+	entity::Entity, storage::{SecondaryMap, Local}, component::ComponentTicks
 };
 
 pub trait Resource: Send + Sync + 'static {}
@@ -53,6 +53,7 @@ pub(crate) struct SingleMeta {
 	buffer: Vec<u8>,
 	is_exsit: bool, // 标记组件是否存在（之一，曾经使用buffer的长度为0来表示组件不存在，但组件的大小可能就是0，因此这种方式是不可行的，因此单独使用一个bool字段来表示资源是否存在）
     notify: NotifyImpl,
+	tick: ComponentTicks,
 	drop_fn: fn(*const u8),
 }
 
@@ -62,6 +63,7 @@ impl SingleMeta {
 			buffer: Vec::with_capacity(size),
 			is_exsit: false,
             notify: NotifyImpl::default(),
+			tick: ComponentTicks::new(0),
 			drop_fn: drop::<T>,
         }
     }
@@ -99,7 +101,7 @@ impl Singles {
 	}
 
 	/// 安全： 确保T和resource_id的一致性, 同时存在meta
-	pub unsafe fn insert<T: Resource>(&mut self, resource_id: ResourceId, value: T) {
+	pub unsafe fn insert<T: Resource>(&mut self, resource_id: ResourceId, value: T, tick: u32) {
 		let size = std::mem::size_of::<T>();
 		let meta = &mut self.metas[resource_id];
 
@@ -116,14 +118,36 @@ impl Singles {
 		);
 		forget(value);
 
+		let is_exsit = meta.is_exsit;
+		meta.is_exsit = true;
+		meta.tick.changed = tick;
 		// 通知
-		if !meta.is_exsit {
+		if !is_exsit {
 			meta.get_notify_ref().create_event(Entity::null());
+			meta.tick.added = tick;
 		} else {
 			meta.get_notify_ref().modify_event(Entity::null(), "", 0);
 		}
-		meta.is_exsit = true;
 
+	}
+
+	// /// 取到资源当前节拍
+	// pub fn get_tick(&self, resource_id: ResourceId) -> Option<&ComponentTicks> {
+	// 	if let Some(meta) = self.metas.get(&resource_id) {
+	// 		if meta.is_exsit {
+	// 			Some(&meta.tick)
+	// 		} else {
+	// 			None
+	// 		}
+	// 	} else {
+	// 		None
+	// 	}
+	// }
+
+	/// 取到资源当前节拍
+	/// 如果资源不存在，将panic
+	pub unsafe fn get_tick_unchecked(&self, resource_id: ResourceId) -> &ComponentTicks {
+		&self.metas.get_unchecked(&resource_id).tick
 	}
 
 	/// 安全： 确保T和resource_id的一致性
