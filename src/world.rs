@@ -1,5 +1,6 @@
 use std::any::{TypeId, type_name};
 use std::collections::HashSet;
+use std::intrinsics::transmute;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
@@ -64,6 +65,32 @@ impl World {
             component_id,
             marker: PhantomData,
         }
+    }
+
+	#[inline]
+    pub fn get_or_insert_resource<T: Resource + FromWorld>(&mut self) -> &T {
+		let id = self.get_or_insert_resource_id::<T>();
+		if let Some(r) = unsafe {self.archetypes.get_resource::<T>(id) } {
+			// 转换生命周期，否则后续代码语法 不通过
+			return unsafe{transmute(r)};
+		}
+		let tick = self.change_tick();
+		let value = T::from_world(self);
+		self.archetypes.insert_resource(value, id, tick);
+		unsafe {self.archetypes.get_resource(id).unwrap() }
+    }
+
+	#[inline]
+    pub fn get_or_insert_resource_mut<T: Resource + FromWorld>(&mut self) -> &mut T {
+		let id = self.get_or_insert_resource_id::<T>();
+		if let Some(r) = unsafe {self.archetypes.get_resource_mut::<T>(id) } {
+			// 转换生命周期，否则后续代码语法 不通过
+			return unsafe{transmute(r)};
+		}
+		let tick = self.change_tick();
+		let value = T::from_world(self);
+		self.archetypes.insert_resource(value, id, tick);
+		unsafe {self.archetypes.get_resource_mut(id).unwrap() }
     }
 }
 

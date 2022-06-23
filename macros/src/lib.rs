@@ -7,14 +7,14 @@ extern crate syn;
 use std::str::FromStr;
 
 use find_crate::{Dependencies, Manifest};
-use proc_macro::TokenStream;
+use proc_macro::{TokenStream};
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::{format_ident, quote};
 use syn::{
     parse::{Parse, ParseStream},
     parse_macro_input,
     punctuated::{Punctuated, Pair},
-    token::Comma,
+    token::{Comma, Colon2},
     Data, DataStruct, DeriveInput, Field, Fields, GenericParam, Ident, Index, LitInt,
     Path, Result, Token, Type, TypePath, PathArguments, GenericArgument, LifetimeDef,
 };
@@ -123,6 +123,15 @@ pub fn listen(attr: TokenStream, item: TokenStream) -> TokenStream {
 pub fn setup(attr: TokenStream, item: TokenStream) -> TokenStream {
     let gen = impl_setup(attr, item);
     gen.into()
+}
+
+#[proc_macro_attribute]
+pub fn setup1(attr: TokenStream, item: TokenStream) -> TokenStream {
+	// let ast = syn::parse(item).unwrap();
+    // let gen = impl_setup(attr, item);
+	let r = quote! {
+	};
+    r.into()
 }
 
 #[derive(Default)]
@@ -419,7 +428,9 @@ fn impl_setup(_attr: TokenStream, item: TokenStream) -> proc_macro2::TokenStream
 		Err(e) => panic!("setup must declare on impl, {:?}", e),
 	};
 
-	let self_type = &f.self_ty;
+	let self_type1 = &f.self_ty;
+	let mut self_type = GenericsCall(&f.self_ty);
+	// panic!("self_type==={:?}", quote! {self_type1});
 
 	let mut runfn = Vec::new();
 	let mut initfn = Vec::new();
@@ -449,7 +460,7 @@ fn impl_setup(_attr: TokenStream, item: TokenStream) -> proc_macro2::TokenStream
 				} else if path.ends_with("init"){
 					let fn_name = &m.sig.ident;
 					initfn.push(quote!{
-						pi_ecs::prelude::System::run(&mut pi_ecs::prelude::IntoSystem::system(#self_type::#fn_name, world), ());
+						pi_ecs::prelude::System::run(&mut pi_ecs::prelude::IntoSystem::system(#self_type ::#fn_name, world), ());
 					});
 					m.attrs.remove(i);
 					continue;
@@ -459,17 +470,45 @@ fn impl_setup(_attr: TokenStream, item: TokenStream) -> proc_macro2::TokenStream
 	}
 
 	let generics = &f.generics;
-    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-	quote! {
+    let (impl_generics, _ty_generics, where_clause) = generics.split_for_impl();
+	let r = quote! {
 		#f
 		// unsafe impl #impl_generics #ecs_path::bundle::Bundle for #struct_name #ty_generics #where_clause {
-		impl #impl_generics pi_ecs::prelude::Setup for #self_type #ty_generics #where_clause {
+		impl #impl_generics pi_ecs::prelude::Setup for #self_type1 #where_clause {
 			fn setup(world: &mut pi_ecs::prelude::World, stage_builder: &mut pi_ecs::prelude::StageBuilder) {
 				#(#initfn)*
 				#(#listenfn)*
 				#(#runfn)*
 			}
 		}
+	};
+	// panic!("====={:?}", r.to_string());
+	r
+}
+
+struct GenericsCall<'a>(&'a Box<Type>);
+
+impl<'a> ToTokens for GenericsCall<'a> {
+    fn to_tokens(&self, tokens: &mut TokenStream2) {
+		let ty = self.0;
+
+		match &**ty {
+			Type::Path(path) => {
+				let path = &path.path;
+				let arguments = &path.segments.last().unwrap().arguments;
+
+				if let PathArguments::None = arguments {
+					tokens.extend(quote! {#path})
+				} else {
+					let mut self_type = path.clone();
+					self_type.segments.last_mut().unwrap().arguments = PathArguments::None;
+					tokens.extend(quote! {#self_type::#arguments})
+				}
+			},
+			_ => panic!("self_type is not path"),
+		}
+
+		
 	}
 }
 
