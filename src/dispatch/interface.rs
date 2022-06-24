@@ -384,20 +384,6 @@ impl StageBuilder {
     pub fn add_node<T: Into<GraphNode>>(&mut self, node: T) -> &mut Self {
         let node = node.into();
 
-        // for k in &node.reads {
-        //     self.components.insert(*k);
-
-        //     // 边: 输入 --> 该节点
-        //     self.edges.push((*k, node.id));
-        // }
-
-        // for k in &node.writes {
-        //     self.components.insert(*k);
-
-        //     // 边: 该节点 --> 输出
-        //     self.edges.push((node.id, *k));
-        // }
-
         // 加入 System
         self.systems.push(node);
 

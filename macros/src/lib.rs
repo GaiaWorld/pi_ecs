@@ -435,6 +435,7 @@ fn impl_setup(_attr: TokenStream, item: TokenStream) -> proc_macro2::TokenStream
 	let mut runfn = Vec::new();
 	let mut initfn = Vec::new();
 	let mut listenfn = Vec::new();
+	let mut system_count = 0;
 	for i in f.items.iter_mut() {
 		if let syn::ImplItem::Method(m) = i {
 			for i in 0..m.attrs.len() {
@@ -442,9 +443,15 @@ fn impl_setup(_attr: TokenStream, item: TokenStream) -> proc_macro2::TokenStream
 				let path = &a.path;
 				let path = quote! {#path}.to_string();
 				if path.ends_with("system") {
+					system_count += 1;
+					if system_count > 1 {
+						panic!("#[system] count > 1")
+					}
 					let fn_name = &m.sig.ident;
 					runfn.push(quote!{
-						stage_builder.add_node(pi_ecs::prelude::IntoSystem::system(#self_type::#fn_name, world));
+						let system = pi_ecs::prelude::IntoSystem::system(#self_type::#fn_name, world);
+						system_id = Some(pi_ecs::prelude::System::id(&system).id());
+						stage_builder.add_node(system);
 					});
 					m.attrs.remove(i);
 					continue;
@@ -475,10 +482,12 @@ fn impl_setup(_attr: TokenStream, item: TokenStream) -> proc_macro2::TokenStream
 		#f
 		// unsafe impl #impl_generics #ecs_path::bundle::Bundle for #struct_name #ty_generics #where_clause {
 		impl #impl_generics pi_ecs::prelude::Setup for #self_type1 #where_clause {
-			fn setup(world: &mut pi_ecs::prelude::World, stage_builder: &mut pi_ecs::prelude::StageBuilder) {
+			fn setup(world: &mut pi_ecs::prelude::World, stage_builder: &mut pi_ecs::prelude::StageBuilder) -> Option<usize> {
+				let mut system_id = None;
 				#(#initfn)*
 				#(#listenfn)*
 				#(#runfn)*
+				return system_id;
 			}
 		}
 	};
