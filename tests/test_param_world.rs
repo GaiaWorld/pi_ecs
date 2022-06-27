@@ -7,8 +7,8 @@ use pi_ecs::{
     sys::system::IntoSystem,
 };
 use pi_async::rt::{
-    multi_thread::{MultiTaskRuntimeBuilder, StealableTaskPool},
-    AsyncRuntime,
+    multi_thread:: MultiTaskRuntime,
+    AsyncRuntimeBuilder,
 };
 use std::sync::Arc;
 
@@ -55,8 +55,13 @@ fn test() {
     std::thread::sleep(std::time::Duration::from_secs(1));
 }
 
-fn get_dispatcher(world: &mut World) -> SingleDispatcher<StealableTaskPool<()>> {
-    let rt = AsyncRuntime::Multi(MultiTaskRuntimeBuilder::default().build());
+fn get_dispatcher(world: &mut World) -> SingleDispatcher<MultiTaskRuntime> {
+    let rt = AsyncRuntimeBuilder::default_multi_thread(
+		None,
+		None,
+		None,
+		None,
+	);
     let s1 = sys_read_world.system(world);
     let s2 = sys_write_world.system(world);
 

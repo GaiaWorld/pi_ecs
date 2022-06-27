@@ -7,7 +7,7 @@ use pi_ecs::{
 	prelude::{Query, IntoSystem, StageBuilder, SingleDispatcher, Dispatcher}, entity::Id, world::World,
 	query::filter::change_with_mark::Changed,
 };
-use pi_async::rt::{AsyncRuntime, multi_thread::{MultiTaskRuntimeBuilder, StealableTaskPool}};
+use pi_async::rt::{multi_thread:: MultiTaskRuntime, AsyncRuntimeBuilder};
 
 
 pub struct Node;
@@ -61,8 +61,13 @@ fn test() {
 }
 
 
-fn create_dispatcher(world: &mut World) -> SingleDispatcher<StealableTaskPool<()>> {
-	let rt = AsyncRuntime::Multi(MultiTaskRuntimeBuilder::default().build());
+fn create_dispatcher(world: &mut World) -> SingleDispatcher<MultiTaskRuntime> {
+	let rt = AsyncRuntimeBuilder::default_multi_thread(
+		None,
+		None,
+		None,
+		None,
+	);
 	let iter_dirty_system = iter_dirty.system(world);
 
 	let mut stage = StageBuilder::new();

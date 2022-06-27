@@ -1,12 +1,8 @@
 use std::sync::Arc;
 
-use pi_async::rt::{
-    multi_thread::{MultiTaskRuntimeBuilder, StealableTaskPool},
-    AsyncRuntime,
-};
+use pi_async::rt::{AsyncRuntimeBuilder, multi_thread::MultiTaskRuntime};
 use pi_ecs::prelude::{
-    event::{EventReader, EventWriter, Events},
-    Dispatcher, IntoSystem, SingleDispatcher, StageBuilder, World,
+    event::{EventReader, EventWriter, Events}, IntoSystem, SingleDispatcher, StageBuilder, World, Dispatcher,
 };
 
 #[test]
@@ -32,8 +28,13 @@ fn test_event() {
     }
 }
 
-fn create_dispatcher(world: &mut World) -> SingleDispatcher<StealableTaskPool<()>> {
-    let rt = AsyncRuntime::Multi(MultiTaskRuntimeBuilder::default().build());
+fn create_dispatcher(world: &mut World) -> SingleDispatcher<MultiTaskRuntime> {
+	let rt = AsyncRuntimeBuilder::default_multi_thread(
+		None,
+		None,
+		None,
+		None,
+	);
 
     let mut stages = Vec::new();
 

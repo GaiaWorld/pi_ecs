@@ -1,7 +1,5 @@
 use pi_ecs::prelude::*;
-use pi_async::rt::{
-    multi_thread::MultiTaskRuntimeBuilder, single_thread::SingleTaskRunner, AsyncRuntime,
-};
+use pi_async::rt:: AsyncRuntimeBuilder;
 use std::{io::Result, sync::Arc};
 
 // 同步 System
@@ -32,10 +30,17 @@ fn multi_dispatch() {
     let mut world = World::new();
 
     let mut stages = Vec::new();
-    // 创建 单线程 异步运行时
-    let runner = SingleTaskRunner::default();
-    let runtime = runner.startup().unwrap();
-    let single = AsyncRuntime::Local(runtime);
+    // // 创建 单线程 异步运行时
+	// let pool = MultiTaskRuntimeBuilder::<(), StealableTaskPool<()>>::default();
+	// // 创建一个运行时
+	// let runner = pool.build();
+
+    let single = AsyncRuntimeBuilder::default_worker_thread(
+		None,
+		None,
+		None,
+		None,
+	);
     {
         let mut s1 = StageBuilder::new();
 
@@ -54,17 +59,16 @@ fn multi_dispatch() {
         // 第二个参数：是否单线程执行
         stages.push((Arc::new(s2.build(&world)), Some(single.clone())));
     }
-    let multi = AsyncRuntime::Multi(MultiTaskRuntimeBuilder::default().build());
+
+	let multi = AsyncRuntimeBuilder::default_multi_thread(
+		None,
+		None,
+		None,
+		None,
+	);
 
     let dispatcher = MultiDispatcher::new(stages, multi);
     dispatcher.run();
-    
-    // 单线程 异步运行时，哪个线程推，就由哪个线程执行 future
-    for _ in 0..10 {
-        let _ = runner.run();
-        // 推一次 休眠一次
-        std::thread::sleep(std::time::Duration::from_millis(50));
-    }
 
     std::thread::sleep(std::time::Duration::from_secs(1));
 }

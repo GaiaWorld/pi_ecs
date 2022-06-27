@@ -1,7 +1,7 @@
 use std::{
 	marker::PhantomData,
 	sync::Arc,
-	mem::transmute,
+	mem::transmute, any::type_name,
 };
 
 use pi_share::cell::TrustCell;
@@ -20,7 +20,7 @@ pub struct Write<T>(PhantomData<T>);
 pub struct WriteItem<'s, T: Component> {
 	value: Option<&'s T>,
 	container: usize,
-	default: &'s T,
+	default: Option<&'s DefaultComponent<T>>,
 	local: LocalVersion,
 	tick: u32
 }
@@ -91,26 +91,30 @@ impl<'s, T: Component + Clone> WriteItem<'s, T> {
 			return unsafe{&mut *(r as *const T as *mut T)};
 		}
 		let c = unsafe{&mut *(self.container as *mut MultiCaseImpl<T>)};
-		c.insert_no_notify(self.local, self.default.clone(), self.tick);
+		match self.default {
+			Some(d) => c.insert_no_notify(self.local, (*d).clone(), self.tick),
+			None => panic!("get_mut_or_default fail, {:?} is not impl Default and not have DefaultComponent", type_name::<T>()),
+		};
+		
 		let r: &'static mut T = unsafe{std::mem::transmute(c.get_unchecked_mut(self.local))};
 		self.value = Some(r);
 		unsafe { &mut *(r as *const T as usize as *mut T)}
 	}
 }
 
-impl<T: Component + Default> WorldQuery for Write<T> {
+impl<T: Component> WorldQuery for Write<T> {
     type Fetch = WriteFetch<T>;
     type State = WriteState<T>;
 }
 pub struct WriteFetch<T: Component> {
 	container: usize,
-	default: &'static DefaultComponent<T>,
+	default: Option<&'static DefaultComponent<T>>,
 	matchs: bool,
 	tick: u32,
 	mark: PhantomData<T>,
 }
 
-impl<'s, T: Component + Default> Fetch<'s> for WriteFetch<T> {
+impl<'s, T: Component> Fetch<'s> for WriteFetch<T> {
     type Item = WriteItem<'s, T>;
     type State = WriteState<T>;
 
@@ -187,22 +191,17 @@ impl<'s, T: Component + Default> Fetch<'s> for WriteFetch<T> {
 
 pub struct WriteState<T: Component> {
     component_id: ComponentId,
-	default: &'static DefaultComponent<T>,
+	default: Option<&'static DefaultComponent<T>>,
     marker: PhantomData<T>,
 }
 
 // SAFE: component access and archetype component access are properly updated to reflect that T is
 // read
-unsafe impl<T: Component + Default> FetchState for WriteState<T> {
-    fn init(world: &mut World, _query_id: usize, archetype_id: ArchetypeId) -> Self {
-		// DefaultComponent<T>永远不能被销毁
-		if world.get_resource_id::<DefaultComponent<T>>().is_none() {
-			world.insert_resource(DefaultComponent(T::default()));
-		}
-
+unsafe impl<T: Component> FetchState for WriteState<T> {
+    default fn init(world: &mut World, _query_id: usize, archetype_id: ArchetypeId) -> Self {
 		let component_id = world.get_or_register_component::<T>(archetype_id);
 
-		let default_value = world.get_resource_mut::<DefaultComponent<T>>().unwrap();
+		let default_value = world.get_resource_mut::<DefaultComponent<T>>();
         WriteState {
             component_id,
 			default: unsafe {transmute(default_value)},
@@ -224,5 +223,24 @@ unsafe impl<T: Component + Default> FetchState for WriteState<T> {
 
     fn matches_archetype(&self, archetype: &Archetype) -> bool {
         archetype.contains(self.component_id)
+    }
+}
+
+
+unsafe impl<T: Component + Default> FetchState for WriteState<T> {
+    fn init(world: &mut World, _query_id: usize, archetype_id: ArchetypeId) -> Self {
+		// DefaultComponent<T>永远不能被销毁
+		if world.get_resource_id::<DefaultComponent<T>>().is_none() {
+			world.insert_resource(DefaultComponent(T::default()));
+		}
+
+		let component_id = world.get_or_register_component::<T>(archetype_id);
+
+		let default_value = world.get_resource_mut::<DefaultComponent<T>>();
+        WriteState {
+            component_id,
+			default: unsafe {transmute(default_value)},
+            marker: PhantomData,
+        }
     }
 }

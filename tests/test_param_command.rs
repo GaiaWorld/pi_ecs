@@ -1,7 +1,7 @@
 /// 测试系统参数Tick
 
 use pi_ecs::prelude::{World, StageBuilder, SingleDispatcher, Dispatcher, Commands, EntityCommands, Local, Query, Id, Offset, IntoSystem};
-use pi_async::rt::{multi_thread::{MultiTaskRuntimeBuilder, StealableTaskPool}, AsyncRuntime};
+use pi_async::rt::{multi_thread::MultiTaskRuntime, AsyncRuntimeBuilder};
 use std::sync::Arc;
 
 struct Node;
@@ -74,8 +74,13 @@ fn test() {
 	std::thread::sleep(std::time::Duration::from_secs(1));
 }
 
-fn get_dispatcher(world: &mut World) -> SingleDispatcher<StealableTaskPool<()>> {
-	let rt = AsyncRuntime::Multi(MultiTaskRuntimeBuilder::default().build());
+fn get_dispatcher(world: &mut World) -> SingleDispatcher<MultiTaskRuntime> {
+	let rt = AsyncRuntimeBuilder::default_multi_thread(
+		None,
+		None,
+		None,
+		None,
+	);
 	let system = command.system(world);
 
 	let mut stage = StageBuilder::new();

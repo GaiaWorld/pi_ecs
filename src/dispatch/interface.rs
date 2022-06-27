@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::{collections::HashSet, io::Result};
 
 use futures::future::BoxFuture;
-use pi_async::rt::{AsyncRuntime, AsyncTaskPool, AsyncTaskPoolExt};
+use pi_async::rt::AsyncRuntime;
 use fixedbitset::FixedBitSet;
 use thiserror::Error;
 
@@ -30,19 +30,15 @@ pub trait Dispatcher {
 }
 
 /// 串行 派发器
-pub struct SingleDispatcher<P>
-where
-    P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P>,
+pub struct SingleDispatcher<A:  AsyncRuntime<()>>
 {
     /// 异步运行时
-    rt: AsyncRuntime<(), P>,
+    rt: A,
     /// 派发器 包含 一组 Stage
     vec: Arc<Vec<Stage>>,
 }
 
-impl<P> SingleDispatcher<P>
-where
-    P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P>,
+impl<A: AsyncRuntime<()>> SingleDispatcher<A>
 {
     pub fn init(&mut self, vec: Vec<Stage>, arrange: &World) {
         let mut v1 = Vec::new();
@@ -60,7 +56,7 @@ where
 		self.vec =  Arc::new(v1);
     }
 
-	pub fn new(rt: AsyncRuntime<(), P>) -> Self {
+	pub fn new(rt: A) -> Self {
         SingleDispatcher {
             vec: Arc::new(Vec::new()),
             rt,
@@ -70,7 +66,7 @@ where
     /// 执行指定阶段的指定节点
     pub fn exec(
         vec: Arc<Vec<Stage>>,
-        rt: AsyncRuntime<(), P>,
+        rt: A,
         mut stage_index: usize,
         mut node_index: usize,
     ) {
@@ -101,6 +97,7 @@ where
                         SingleDispatcher::exec(vec1, rt1, stage_index, node_index);
                     })
                     .unwrap();
+
                     return;
                 }
             }
@@ -108,37 +105,26 @@ where
     }
 }
 
-impl<P> Dispatcher for SingleDispatcher<P>
-where
-    P: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P>,
+impl<A: AsyncRuntime<()>> Dispatcher for SingleDispatcher<A>
 {
     /// 同步节点自己执行， 如果有异步节点，则用单线程运行时执行
     fn run(&self) {
         Self::exec(self.vec.clone(), self.rt.clone(), 0, 0);
     }
 }
-pub struct MultiDispatcher<P1, P2>(Arc<MultiInner<P1, P2>>)
-where
-    P1: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P1>,
-    P2: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P2>;
+pub struct MultiDispatcher<A1: AsyncRuntime<()>, A2: AsyncRuntime<()>>(Arc<MultiInner<A1, A2>>);
 
-impl<P1, P2> MultiDispatcher<P1, P2>
-where
-    P1: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P1>,
-    P2: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P2>,
+impl<A1: AsyncRuntime<()>, A2: AsyncRuntime<()>> MultiDispatcher<A1, A2>
 {
     pub fn new(
-        vec: Vec<(Stage, Option<AsyncRuntime<(), P2>>)>,
-        multi: AsyncRuntime<(), P1>,
+        vec: Vec<(Stage, Option<A2>)>,
+        multi: A1,
     ) -> Self {
         MultiDispatcher(Arc::new(MultiInner::new(vec, multi)))
     }
 }
 
-impl<
-        P1: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P1>,
-        P2: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P2>,
-    > Dispatcher for MultiDispatcher<P1, P2>
+impl<A1: AsyncRuntime<()>, A2: AsyncRuntime<()>> Dispatcher for MultiDispatcher<A1, A2>
 {
     /// 根据阶段是单线程还是多线程，
     /// 如果多线程阶段，同步节点和异步节点，则用多线程运行时并行执行
@@ -150,33 +136,24 @@ impl<
     }
 }
 
-struct MultiInner<P1, P2>
-where
-    P1: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P1>,
-    P2: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P2>,
+struct MultiInner<A1: AsyncRuntime<()>, A2: AsyncRuntime<()>>
 {
-    vec: Vec<(Stage, Option<AsyncRuntime<(), P2>>)>,
-    multi: AsyncRuntime<(), P1>,
+    vec: Vec<(Stage, Option<A2>)>,
+    multi: A1,
 }
 
-impl<P1, P2> MultiInner<P1, P2>
-where
-    P1: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P1>,
-    P2: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P2>,
+impl<A1: AsyncRuntime<()>, A2: AsyncRuntime<()>> MultiInner<A1, A2>
 {
     pub fn new(
-        vec: Vec<(Stage, Option<AsyncRuntime<(), P2>>)>,
-        multi: AsyncRuntime<(), P1>,
+        vec: Vec<(Stage, Option<A2>)>,
+        multi: A1,
     ) -> Self {
         MultiInner { vec, multi }
     }
 }
 
 /// 执行指定阶段
-fn exec<P1, P2>(d: Arc<MultiInner<P1, P2>>, stage_index: usize)
-where
-    P1: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P1>,
-    P2: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P2>,
+fn exec<A1: AsyncRuntime<()>, A2: AsyncRuntime<()>>(d: Arc<MultiInner<A1, A2>>, stage_index: usize)
 {
     if stage_index >= d.vec.len() {
         return;
@@ -190,14 +167,12 @@ where
 }
 
 /// 单线程执行, 尽量本线程运行，遇到异步节点则用单线程运行时运行
-fn single_exec<P1, P2>(
-    d: Arc<MultiInner<P1, P2>>,
+fn single_exec<A1: AsyncRuntime<()>, A2: AsyncRuntime<()>>(
+    d: Arc<MultiInner<A1, A2>>,
     stage_index: usize,
     mut node_index: usize,
-    single: AsyncRuntime<(), P2>,
-) where
-    P1: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P1>,
-    P2: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P2>,
+    single: A2,
+)
 {
     let g = &d.vec[stage_index].0;
     let single1 = single.clone();
@@ -247,10 +222,7 @@ fn single_exec<P1, P2>(
 }
 
 /// 多线程执行
-fn multi_exec<P1, P2>(d: Arc<MultiInner<P1, P2>>, stage_index: usize)
-where
-    P1: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P1>,
-    P2: AsyncTaskPoolExt<()> + AsyncTaskPool<(), Pool = P2>,
+fn multi_exec<A1: AsyncRuntime<()>, A2: AsyncRuntime<()>>(d: Arc<MultiInner<A1, A2>>, stage_index: usize)
 {
     let d1 = d.clone();
     d.multi

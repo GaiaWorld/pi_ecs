@@ -1,7 +1,7 @@
 /// 测试函数类型的监听器
 
 use pi_ecs::{
-	prelude::{ World, Local, Entity},
+	prelude::{ World, Local},
 	monitor::{Event, ListenSetup, Listeners}
 };
 use pi_ecs_macros::listen;

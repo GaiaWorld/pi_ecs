@@ -3,7 +3,10 @@
 use std::sync::Arc;
 
 use pi_ecs::{prelude::{Query, IntoSystem, StageBuilder, SingleDispatcher, Dispatcher, With, WithOut, Or}, entity::Id, world::World, storage::Offset};
-use pi_async::rt::{AsyncRuntime, multi_thread::{MultiTaskRuntimeBuilder, StealableTaskPool}};
+use pi_async::rt::{
+	multi_thread::{MultiTaskRuntime}, 
+	AsyncRuntimeBuilder
+};
 
 
 pub struct Node;
@@ -69,8 +72,13 @@ fn test() {
 }
 
 
-fn create_dispatcher(world: &mut World) -> SingleDispatcher<StealableTaskPool<()>> {
-	let rt = AsyncRuntime::Multi(MultiTaskRuntimeBuilder::default().build());
+fn create_dispatcher(world: &mut World) -> SingleDispatcher<MultiTaskRuntime> {
+	let rt = AsyncRuntimeBuilder::default_multi_thread(
+		None,
+		None,
+		None,
+		None,
+	);
 	let system1 = or.system(world);
 	let system2 = and.system(world);
 

@@ -3,7 +3,7 @@
 use std::ops::{Deref, DerefMut};
 
 use pi_ecs::{prelude::{Query, World, Id, StageBuilder, SingleDispatcher, Dispatcher, Join}, sys::system::IntoSystem, storage::Offset};
-use pi_async::rt::{multi_thread::MultiTaskRuntimeBuilder, AsyncRuntime};
+use pi_async::rt::AsyncRuntimeBuilder;
 use std::sync::Arc;
 
 /// 定义一个名为Node原型类型
@@ -95,7 +95,12 @@ fn test() {
 }
 
 fn test_system(world: &mut World) {
-	let rt = AsyncRuntime::Multi(MultiTaskRuntimeBuilder::default().build());
+	let rt = AsyncRuntimeBuilder::default_multi_thread(
+		None,
+		None,
+		None,
+		None,
+	);
 	let system = join.system(world);
 
 	let mut stage = StageBuilder::new();

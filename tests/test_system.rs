@@ -1,7 +1,7 @@
 /// 测试System
 
 use pi_ecs::{prelude::{Query, With,Res, World, Local, ResMut, StageBuilder, SingleDispatcher, Dispatcher, Id}, sys::system::IntoSystem};
-use pi_async::rt::{multi_thread::MultiTaskRuntimeBuilder, AsyncRuntime};
+use pi_async::rt::AsyncRuntimeBuilder;
 use std::{sync::Arc, io::Result};
 
 /// 定义一个名为Node原型类型
@@ -128,7 +128,12 @@ fn test() {
 }
 
 fn test_system(world: &mut World) {
-	let rt = AsyncRuntime::Multi(MultiTaskRuntimeBuilder::default().build());
+	let rt = AsyncRuntimeBuilder::default_multi_thread(
+		None,
+		None,
+		None,
+		None,
+	);
 	let sync_system = _sync_sys.system(world);
 	// let async_system = _async_sys.system(world.clone());
 	let async_system = _async_sys1.system(world);

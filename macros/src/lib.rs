@@ -14,9 +14,9 @@ use syn::{
     parse::{Parse, ParseStream},
     parse_macro_input,
     punctuated::{Punctuated, Pair},
-    token::{Comma, Colon2},
+    token::Comma,
     Data, DataStruct, DeriveInput, Field, Fields, GenericParam, Ident, Index, LitInt,
-    Path, Result, Token, Type, TypePath, PathArguments, GenericArgument, LifetimeDef,
+    Path, Result, Token, Type, TypePath, PathArguments, GenericArgument,
 };
 use quote::ToTokens;
 
@@ -123,15 +123,6 @@ pub fn listen(attr: TokenStream, item: TokenStream) -> TokenStream {
 pub fn setup(attr: TokenStream, item: TokenStream) -> TokenStream {
     let gen = impl_setup(attr, item);
     gen.into()
-}
-
-#[proc_macro_attribute]
-pub fn setup1(attr: TokenStream, item: TokenStream) -> TokenStream {
-	// let ast = syn::parse(item).unwrap();
-    // let gen = impl_setup(attr, item);
-	let r = quote! {
-	};
-    r.into()
 }
 
 #[derive(Default)]
@@ -429,7 +420,7 @@ fn impl_setup(_attr: TokenStream, item: TokenStream) -> proc_macro2::TokenStream
 	};
 
 	let self_type1 = &f.self_ty;
-	let mut self_type = GenericsCall(&f.self_ty);
+	let self_type = GenericsCall(&f.self_ty);
 	// panic!("self_type==={:?}", quote! {self_type1});
 
 	let mut runfn = Vec::new();

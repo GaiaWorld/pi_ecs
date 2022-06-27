@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use pi_async::rt::{multi_thread::MultiTaskRuntimeBuilder, AsyncRuntime};
+use pi_async::rt::multi_thread::{MultiTaskRuntimeBuilder, StealableTaskPool};
 use pi_ecs::prelude::{World, StageBuilder, IntoSystem, SingleDispatcher, Dispatcher};
 
 
@@ -10,8 +10,9 @@ fn hello_world() {
 
 fn main() {
 	let mut world = World::new();
+	let pool = MultiTaskRuntimeBuilder::<(), StealableTaskPool<()>>::default();
 	// 创建一个运行时
-	let rt = AsyncRuntime::Multi(MultiTaskRuntimeBuilder::default().build());
+	let rt = pool.build();
 
 	// 创建阶段
 	let mut stage = StageBuilder::new();
