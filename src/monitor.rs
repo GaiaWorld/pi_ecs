@@ -451,5 +451,5 @@ macro_rules! impl_event_setup {
 
 all_tuples!(impl_event_function, 1, 3, T);
 all_tuples!(impl_event_init, 1, 3, L);
-all_tuples!(impl_event_setup, 0, 16, P);
+all_tuples!(impl_event_setup, 0, 59, P);
 

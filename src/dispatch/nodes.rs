@@ -38,6 +38,10 @@ where
     type R = ();
 
     fn run(&self) {
+		// if std::any::type_name::<F>().find("user_setting").is_some() {
+		// 	println!("run============{:?}", std::any::type_name::<F>());
+		// }
+		
         self.0.borrow_mut().run(());
     }
 
@@ -59,6 +63,10 @@ where
     type R = BoxFuture<'static, Result<()>>;
 
     fn run(&self) -> BoxFuture<'static, Result<()>> {
+		// println!("async============{:?}", std::any::type_name::<F>());
+		// if std::any::type_name::<F>().find("calc_border_color").is_some() {
+		// 	println!("xxxxxxxxxxx");
+		// }
 		Box::pin(self.0.borrow_mut().run(()))
     }
     fn apply(&self) {

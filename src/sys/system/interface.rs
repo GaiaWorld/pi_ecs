@@ -100,7 +100,7 @@ pub struct SystemState {
     // NOTE: this must be kept private. making a SystemState non-send is irreversible to prevent
     // SystemParams from overriding each other
     pub(crate) is_send: bool,
-    pub(crate) last_change_tick: u32,
+    pub last_change_tick: u32,
 }
 
 impl SystemState {

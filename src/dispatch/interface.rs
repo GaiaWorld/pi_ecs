@@ -87,13 +87,17 @@ impl<A: AsyncRuntime<()>> SingleDispatcher<A>
             node_index += 1;
             if let Some(sync) = node.is_sync() {
                 if sync {
+					// println!("start1======");
                     node.get_sync().run();
+					// println!("end1======");
                 } else {
                     let f = node.get_async();
                     let vec1 = vec.clone();
                     let rt1 = rt.clone();
                     rt.spawn(rt.alloc(), async move {
+						// println!("start======");
                         f.await.unwrap();
+						// println!("end======");
                         SingleDispatcher::exec(vec1, rt1, stage_index, node_index);
                     })
                     .unwrap();

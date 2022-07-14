@@ -214,6 +214,13 @@ impl Offset for LocalVersion {
 	}
 }
 
+impl LocalVersion {
+	#[inline]
+    pub fn from_ffi(r: u64) -> Self {
+		LocalVersion(r)
+	}
+}
+
 
 #[derive(Debug, Copy, Clone, Hash, Ord, PartialOrd, Eq, PartialEq, Default)]
 pub struct Local(usize);

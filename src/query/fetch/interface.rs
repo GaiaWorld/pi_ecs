@@ -84,7 +84,7 @@ pub struct MianFetch<'a> {
 }
 
 #[derive(Deref, DerefMut)]
-pub struct DefaultComponent<T: Component>(pub(crate) T);
+pub struct DefaultComponent<T: Component>(pub T);
 
 
 macro_rules! impl_tuple_fetch {

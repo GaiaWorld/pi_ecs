@@ -212,6 +212,18 @@ where
         unsafe { self.iter_unchecked(world) }
     }
 
+	pub fn setting<'w, 's>(
+        &'s mut self,
+        world: &'w WorldInner,
+        last_change_tick: u32,
+        change_tick: u32,
+    ) {
+        unsafe {
+			self.fetch_fetch.setting(world, last_change_tick, change_tick);
+			self.filter_fetch.setting(world, last_change_tick, change_tick);
+		}
+    }
+
     /// # Safety
     /// This does not check for mutable query correctness. To be safe, make sure mutable queries
     /// have unique access to the components they query.
