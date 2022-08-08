@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, intrinsics::transmute};
 
 use crate::{
     entity::{Id, Entity},
@@ -12,18 +12,18 @@ use crate::{
 use std::marker::PhantomData;
 
 /// Provides scoped access to a [`World`] according to a given [`WorldQuery`] and query filter.
-pub struct Query<A: ArchetypeIdent, Q: WorldQuery, F: WorldQuery = ()>
+pub struct Query<'world, 'state, A: ArchetypeIdent, Q: WorldQuery, F: WorldQuery = ()>
 where
     F::Fetch: FilterFetch,
 {
 	pub(crate) _world: World, // 抓住World， 因为Query可能在异步块中，需要保证WorldInner不被释放
-	pub(crate) world_ref: &'static WorldInner,
-    pub(crate) state: Arc<QueryState<A, Q, F>>, // 如果sys是异步函数，在异步函数没有执行完时，不能删除sys，否则可能造成未定义行为， TODO
+	pub(crate) world_ref: &'world WorldInner,
+    pub(crate) state: &'state QueryState<A, Q, F>, // 如果sys是异步函数，在异步函数没有执行完时，不能删除sys，否则可能造成未定义行为， TODO
     pub(crate) last_change_tick: u32,
     pub(crate) change_tick: u32,
 }
 
-impl<A: ArchetypeIdent, Q: WorldQuery, F: WorldQuery> Query<A, Q, F>
+impl<'w, 's, A: ArchetypeIdent, Q: WorldQuery, F: WorldQuery> Query<'w, 's, A, Q, F>
 where
     F::Fetch: FilterFetch,
 {
@@ -34,7 +34,7 @@ where
     /// This will create a query that could violate memory safety rules. Make sure that this is only
     /// called in ways that ensure the queries have unique mutable access.
     #[inline]
-    pub(crate) unsafe fn new<'w>(
+    pub(crate) unsafe fn new(
         world: &'w World,
         state: &Arc<QueryState<A, Q, F>>,
         last_change_tick: u32,
@@ -43,7 +43,7 @@ where
         Self {
             _world: world.clone(),
 			world_ref: std::mem::transmute(&**world),
-            state: state.clone(),
+            state: std::mem::transmute(&**state),
             last_change_tick,
             change_tick,
         }
@@ -94,7 +94,7 @@ where
     ///
     /// This can only be called for read-only queries, see [`Self::get_mut`] for write-queries.
     #[inline]
-    pub fn get<'s>(&'s self, entity: Id<A>) -> Option<<Q::Fetch as Fetch<'s>>::Item>
+    pub fn get(&self, entity: Id<A>) -> Option<<Q::Fetch as Fetch>::Item>
     // where
     //     Q::Fetch: ReadOnlyFetch,
     {
@@ -110,7 +110,7 @@ where
         }
     }
 
-	pub fn get_by_entity<'s>(&'s self, entity: Entity) -> Option<<Q::Fetch as Fetch<'s>>::Item>
+	pub fn get_by_entity(&self, entity: Entity) -> Option<<Q::Fetch as Fetch>::Item>
     // where
     //     Q::Fetch: ReadOnlyFetch,
     {
@@ -133,7 +133,7 @@ where
     ///
     /// This can only be called for read-only queries, see [`Self::get_mut`] for write-queries.
     #[inline]
-    pub fn get_unchecked<'s>(&'s self, entity: Id<A>) -> <Q::Fetch as Fetch<'s>>::Item
+    pub fn get_unchecked(&self, entity: Id<A>) -> <Q::Fetch as Fetch>::Item
     // where
     //     Q::Fetch: ReadOnlyFetch,
     {
@@ -148,7 +148,7 @@ where
 	}
 
 	#[inline]
-    pub fn get_unchecked_by_entity<'s>(&'s self, entity: Entity) -> <Q::Fetch as Fetch<'s>>::Item
+    pub fn get_unchecked_by_entity(&self, entity: Entity) -> <Q::Fetch as Fetch>::Item
     // where
     //     Q::Fetch: ReadOnlyFetch,
     {
@@ -167,7 +167,7 @@ where
 	
 
 	#[inline]
-    pub fn get_unchecked_mut<'s>(&'s mut self, entity: Id<A>) -> <Q::Fetch as Fetch>::Item
+    pub fn get_unchecked_mut(&mut self, entity: Id<A>) -> <Q::Fetch as Fetch>::Item
     // where
     //     Q::Fetch: ReadOnlyFetch,
     {
@@ -182,7 +182,7 @@ where
 	}
 
 	#[inline]
-    pub fn get_unchecked_mut_by_entity<'s>(&'s mut self, entity: Entity) -> <Q::Fetch as Fetch<'s>>::Item
+    pub fn get_unchecked_mut_by_entity(&mut self, entity: Entity) -> <Q::Fetch as Fetch>::Item
     // where
     //     Q::Fetch: ReadOnlyFetch,
     {
@@ -201,10 +201,10 @@ where
 
     /// Gets the query result for the given [`Entity`].
     #[inline]
-    pub fn get_mut<'s>(
-        &'s mut self,
+    pub fn get_mut(
+        &mut self,
         entity: Id<A>,
-    ) -> Option<<Q::Fetch as Fetch<'s>>::Item> {
+    ) -> Option<<Q::Fetch as Fetch>::Item> {
         // SAFE: system runs without conflicts with other systems.
         // same-system queries have runtime borrow checks when they conflict
         unsafe {
@@ -217,7 +217,7 @@ where
         }
     }
 
-	pub fn get_mut_by_entity<'s>(&'s self, entity: Entity) -> Option<<Q::Fetch as Fetch<'s>>::Item>
+	pub fn get_mut_by_entity(&self, entity: Entity) -> Option<<Q::Fetch as Fetch>::Item>
     // where
     //     Q::Fetch: ReadOnlyFetch,
     {
@@ -258,7 +258,7 @@ where
 
 pub struct QueryFetch<Q, F>(PhantomData<(Q, F)>);
 
-impl<A: ArchetypeIdent, Q: WorldQuery + 'static, F: WorldQuery + 'static> SystemParam for Query< A, Q, F>
+impl<'w, 's, A: ArchetypeIdent, Q: WorldQuery + 'static, F: WorldQuery + 'static> SystemParam for Query<'w, 's, A, Q, F>
 where
     F::Fetch: FilterFetch,
 {
@@ -306,7 +306,7 @@ impl<'w, 's, A: ArchetypeIdent, Q: WorldQuery + 'static, F: WorldQuery + 'static
 where
     F::Fetch: FilterFetch,
 {
-    type Item = Query<A, Q, F>;
+    type Item = Query<'static, 'static, A, Q, F>;
 
     #[inline]
     unsafe fn get_param(
@@ -319,7 +319,7 @@ where
 		s.fetch_fetch.setting(world, system_state.last_change_tick, change_tick);
 		s.filter_fetch.setting(world, system_state.last_change_tick, change_tick);
 		
-        Query::new(world, state, system_state.last_change_tick, change_tick)
+        transmute(Query::new(world, state, system_state.last_change_tick, change_tick)) 
     }
 }
 

@@ -30,6 +30,10 @@ unsafe impl<Param, Out, F> Send for AsyncRun<Param, Out, F> where
 	Param: SystemParam + Send + 'static, 
 	Out: Future<Output=Result<()>> + Send + 'static, 
 	F: Send + 'static {}
+unsafe impl<Param, Out, F> Sync for AsyncRun<Param, Out, F> where 
+Param: SystemParam + Send + 'static, 
+Out: Future<Output=Result<()>> + Send + 'static, 
+F: Send + 'static {}
 
 impl<Param: SystemParam + 'static, Out: 'static + Send, F> Operate for SyncRun<Param, Out, F>
 where
@@ -39,7 +43,7 @@ where
 
     fn run(&self) {
 		// if std::any::type_name::<F>().find("user_setting").is_some() {
-		// 	println!("run============{:?}", std::any::type_name::<F>());
+			// println!("run============{:?}", std::any::type_name::<F>());
 		// }
 		
         self.0.borrow_mut().run(());
@@ -58,7 +62,7 @@ impl<Param, Out, F> Operate for AsyncRun<Param, Out, F>
 where
     F: Send + SystemParamFunction<(), Out, Param, ()>,
 	Out: Future<Output = Result<()>  > + Send + 'static,
-	Param: SystemParam + 'static
+	Param: SystemParam + 'static + Send
 {
     type R = BoxFuture<'static, Result<()>>;
 
@@ -67,7 +71,12 @@ where
 		// if std::any::type_name::<F>().find("calc_border_color").is_some() {
 		// 	println!("xxxxxxxxxxx");
 		// }
-		Box::pin(self.0.borrow_mut().run(()))
+		let context: AsyncRun<Param, Out, F> = Self(self.0.clone());
+		Box::pin(async move {
+			// 将context捕获，使得future在执行时，system始终存在，保证future执行的安全性
+			let mut b = context.0.borrow_mut();
+			b.run(()).await
+		})
     }
     fn apply(&self) {
         self.0.borrow_mut().apply_buffers();

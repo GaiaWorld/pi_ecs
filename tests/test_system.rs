@@ -1,6 +1,6 @@
 /// 测试System
 
-use pi_ecs::{prelude::{Query, With,Res, World, Local, ResMut, StageBuilder, SingleDispatcher, Dispatcher, Id}, sys::system::IntoSystem};
+use pi_ecs::{prelude::{Query, With,Res, World, Local, ResMut, StageBuilder, SingleDispatcher, Dispatcher, Id, SystemParam}, sys::system::IntoSystem};
 use pi_async::rt::AsyncRuntimeBuilder;
 use std::{sync::Arc, io::Result};
 
@@ -43,13 +43,15 @@ fn _sync_sys(
 }
 
 // 异步系统()
-async fn _async_sys1<'a>(
-	_query1: Query<Node, &'a Velocity>,
-	mut query2: Query<Node, (Id<Node>, &'a mut Position), With<Velocity>>, // Query<Node, &mut Position, WithOut<Velocity>>
-	local: Local<'a, DirtyMark>,
-	res: Res<'a, Resource1>,
-	res_mut: ResMut<'a, Resource2>,
+async fn _async_sys1 (
+	_query1: Query<'static, 'static, Node, &'static Velocity>,
+	mut query2: Query<'static, 'static, Node, (Id<Node>, &'static mut Position), With<Velocity>>, // Query<Node, &mut Position, WithOut<Velocity>>
+	local: Local<'static, DirtyMark>,
+	res: Res<'static, Resource1>,
+	res_mut: ResMut<'static, Resource2>,
 ) -> Result<()> {
+	_async_sys2(_query1);
+	
 	// async move {
 	// 	// let r1 = &*res;
 	// 	// let r2 = &*res_mut;
@@ -67,6 +69,9 @@ async fn _async_sys1<'a>(
 		println!("run _async_sys1, entity: {:?}, position:{:?}",entity, &*position);
 	}
 	Ok(())
+}
+fn _async_sys2<T: SystemParam> (xx: T) {
+
 }
 
 // async fn aa(x: &usize) {

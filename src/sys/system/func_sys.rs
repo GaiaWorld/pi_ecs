@@ -41,6 +41,15 @@ where
 unsafe impl<In, Out, Param: SystemParam, InMarker, F> Send for FunctionSystem<In, Out, Param, InMarker, F> {
 }
 
+unsafe impl<In, Out, Param: SystemParam, InMarker, F> Sync for FunctionSystem<In, Out, Param, InMarker, F> where
+In: 'static + Send,
+Out: 'static + Send,
+Param: SystemParam + 'static,
+InMarker: 'static,
+F: SystemParamFunction<In, Out, Param, InMarker> + Send + 'static, {
+}
+
+
 
 impl<In, Out, Param: SystemParam, InMarker, F> FunctionSystem<In, Out, Param, InMarker, F> {
     /// Gives mutable access to the systems config via a callback. This is useful to set up system
@@ -236,7 +245,7 @@ macro_rules! impl_system_function {
 
 		// 异步实现
 		#[allow(non_snake_case)]
-        impl<Out, Func, $($param: SystemParam + 'static),*> SystemParamFunction<(), Out, ($($param,)*), ()> for Func
+        impl<Out, Func, $($param: SystemParam),*> SystemParamFunction<(), Out, ($($param,)*), ()> for Func
         where
             Func:
                 FnMut($($param),*) -> Out +
@@ -254,7 +263,7 @@ macro_rules! impl_system_function {
         }
 
 		#[allow(non_snake_case)]
-        impl<Input: SysInput, Out, Func, $($param: SystemParam + 'static),*> SystemParamFunction<Input, Out, ($($param,)*), InputMarker> for Func
+        impl<Input: SysInput, Out, Func, $($param: SystemParam),*> SystemParamFunction<Input, Out, ($($param,)*), InputMarker> for Func
         where
             Func:
                 FnMut(Input, $($param),*) -> Out +

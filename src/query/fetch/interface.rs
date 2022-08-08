@@ -10,7 +10,7 @@ use crate::{
 };
 
 /// WorldQuery 从world上fetch组件、实体、资源，需要实现该triat
-pub trait WorldQuery {
+pub trait WorldQuery: Send + Sync {
     type Fetch: for<'s> Fetch<'s, State = Self::State>;
     type State: FetchState;
 }

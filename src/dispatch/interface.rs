@@ -1,5 +1,6 @@
 use std::borrow::Cow;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use std::{collections::HashSet, io::Result};
 
 use futures::future::BoxFuture;
@@ -66,6 +67,7 @@ impl<A: AsyncRuntime<()>> SingleDispatcher<A>
     /// 执行指定阶段的指定节点
     pub fn exec(
         vec: Arc<Vec<Stage>>,
+		statistics: Arc<Mutex<Vec<(Cow<'static, str>, Duration)>>>,
         rt: A,
         mut stage_index: usize,
         mut node_index: usize,
@@ -81,24 +83,35 @@ impl<A: AsyncRuntime<()>> SingleDispatcher<A>
                 }
                 stage_index += 1;
                 node_index = 0;
+
+				// if stage_index == vec.len()  {
+				// 	for i in statistics.lock().unwrap().iter() {
+				// 		log::warn!("{:?}", i);
+				// 	}
+				// }
                 continue;
             }
             let node = g.get(&arr[node_index]).unwrap().value();
             node_index += 1;
             if let Some(sync) = node.is_sync() {
                 if sync {
+					let t = Instant::now();
 					// println!("start1======");
                     node.get_sync().run();
+					statistics.lock().unwrap().push((node.name(), Instant::now() - t));
 					// println!("end1======");
                 } else {
                     let f = node.get_async();
                     let vec1 = vec.clone();
                     let rt1 = rt.clone();
+					let name = node.name();
                     rt.spawn(rt.alloc(), async move {
 						// println!("start======");
+						let t = Instant::now();
                         f.await.unwrap();
+						statistics.lock().unwrap().push((name, Instant::now() - t));
 						// println!("end======");
-                        SingleDispatcher::exec(vec1, rt1, stage_index, node_index);
+                        SingleDispatcher::exec(vec1, statistics, rt1, stage_index, node_index);
                     })
                     .unwrap();
 
@@ -113,7 +126,8 @@ impl<A: AsyncRuntime<()>> Dispatcher for SingleDispatcher<A>
 {
     /// 同步节点自己执行， 如果有异步节点，则用单线程运行时执行
     fn run(&self) {
-        Self::exec(self.vec.clone(), self.rt.clone(), 0, 0);
+		let statistics = Arc::new(Mutex::new(Vec::new()));
+        Self::exec(self.vec.clone(),  statistics, self.rt.clone(), 0, 0);
     }
 }
 pub struct MultiDispatcher<A1: AsyncRuntime<()>, A2: AsyncRuntime<()>>(Arc<MultiInner<A1, A2>>);
@@ -337,6 +351,14 @@ impl ExecNode {
             _ => (),
         };
     }
+
+	fn name(&self) -> Cow<'static, str> {
+		match self {
+            ExecNode::Sync(f) => f.0.name(),
+            ExecNode::Async(f) => f.name(),
+            _ => "".into(),
+        }
+	}
 }
 
 /// 阶段构造器
