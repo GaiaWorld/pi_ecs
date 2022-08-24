@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::{collections::HashSet, io::Result};
 
@@ -16,6 +16,7 @@ use crate::{
 	world::World,
 	storage::Local,
 };
+use pi_share::ShareMutex;
 
 pub trait Arrange {
     fn arrange(&self) -> Option<GraphNode>;
@@ -67,7 +68,7 @@ impl<A: AsyncRuntime<()>> SingleDispatcher<A>
     /// 执行指定阶段的指定节点
     pub fn exec(
         vec: Arc<Vec<Stage>>,
-		statistics: Arc<Mutex<Vec<(Cow<'static, str>, Duration)>>>,
+		statistics: Arc<ShareMutex<Vec<(Cow<'static, str>, Duration)>>>,
         rt: A,
         mut stage_index: usize,
         mut node_index: usize,
@@ -86,7 +87,8 @@ impl<A: AsyncRuntime<()>> SingleDispatcher<A>
 
 				// if stage_index == vec.len()  {
 				// 	for i in statistics.lock().unwrap().iter() {
-				// 		log::warn!("{:?}", i);
+				// 		// log::warn!("{:?}", i);
+				// 		println!("{:?}", i);
 				// 	}
 				// }
                 continue;
@@ -98,7 +100,7 @@ impl<A: AsyncRuntime<()>> SingleDispatcher<A>
 					let t = Instant::now();
 					// println!("start1======");
                     node.get_sync().run();
-					statistics.lock().unwrap().push((node.name(), Instant::now() - t));
+					statistics.lock().push((node.name(), Instant::now() - t));
 					// println!("end1======");
                 } else {
                     let f = node.get_async();
@@ -109,7 +111,7 @@ impl<A: AsyncRuntime<()>> SingleDispatcher<A>
 						// println!("start======");
 						let t = Instant::now();
                         f.await.unwrap();
-						statistics.lock().unwrap().push((name, Instant::now() - t));
+						statistics.lock().push((name, Instant::now() - t));
 						// println!("end======");
                         SingleDispatcher::exec(vec1, statistics, rt1, stage_index, node_index);
                     })
@@ -126,7 +128,7 @@ impl<A: AsyncRuntime<()>> Dispatcher for SingleDispatcher<A>
 {
     /// 同步节点自己执行， 如果有异步节点，则用单线程运行时执行
     fn run(&self) {
-		let statistics = Arc::new(Mutex::new(Vec::new()));
+		let statistics = Arc::new(ShareMutex::new(Vec::new()));
         Self::exec(self.vec.clone(),  statistics, self.rt.clone(), 0, 0);
     }
 }
