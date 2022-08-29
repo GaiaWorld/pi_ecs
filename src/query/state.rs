@@ -1,5 +1,6 @@
 use std::marker::PhantomData;
 
+// use crate::storage::LocalVersion;
 use crate::world::World;
 use crate::{
     archetype::{ArchetypeId, ArchetypeIdent, ArchetypeComponentId},
@@ -11,6 +12,8 @@ use crate::{
     world::{WorldInner, WorldId},
 };
 use thiserror::Error;
+
+// use super::EntityIter;
 
 pub struct QueryState<A: ArchetypeIdent, Q: WorldQuery, F: WorldQuery = ()>
 where
@@ -211,6 +214,90 @@ where
         // SAFE: query has unique world access
         unsafe { self.iter_unchecked(world) }
     }
+
+	// #[inline]
+    // pub async fn par_for_each<
+    //     'w,
+    //     's,
+    //     FN: Fn(<Q::Fetch as Fetch<'s>>::Item) + Send + Sync + Clone,
+    // >(
+    //     &'s mut self,
+    //     world: &'w World,
+    //     batch_size: usize,
+    //     func: FN,
+	// 	last_change_tick: u32,
+    //     change_tick: u32,
+    // ) {
+    //     // SAFETY: query is read only
+    //     unsafe {
+    //         // self.update_archetypes(world);
+	// 		let fetch = &mut self.fetch_fetch;
+		
+
+	// 		// let mut entity = EntityFetch::init(world,
+	// 		//     &query_state.entity_state);
+	// 		// fetch.setting(world, last_change_tick, change_tick);
+	// 		// query_state.filter_fetch.setting(world, last_change_tick, change_tick);
+	
+	// 		let filter = & self.filter_fetch;
+	// 		let iter = match filter.main_fetch(&self.filter_state, last_change_tick, change_tick) {
+	// 			Some(iter) => {
+	// 				let (value, mut next) = (iter.value,iter.next);
+	// 				let mut iter1 = EntityIter(Vec::new(), value);
+	// 				loop {
+	// 					match next {
+	// 						Some(r) => {
+	// 							let r = Box::into_inner(r);
+	// 							let (value, next1) = (r.value,r.next);
+	// 							iter1.0.push(value);
+	// 							next = next1;
+	// 						},
+	// 						None => break
+	// 					}
+	// 				}
+	// 				Some(iter1)
+	// 			},
+	// 			None => None,
+	// 		};
+	// 		let all_entities: pi_slotmap::dense::Keys<'s, LocalVersion, ()> = std::mem::transmute(world.archetypes()[self.archetype_id].entities.keys());
+
+
+
+	// 		if !self.matchs {
+	// 			return;
+	// 		}
+			
+	// 		if let Some(iter) = &mut iter {
+	// 			loop {
+	// 				let entity = iter.next()?;
+	
+	// 				if !self.filter.archetype_filter_fetch(entity) {
+	// 					continue;
+	// 				}
+	
+	// 				let item = self.fetch.archetype_fetch(entity);
+	// 				if let None = item {
+	// 					continue;
+	// 				}
+	// 				return item;
+	// 			}
+	// 		} else {
+	// 			loop {
+	// 				let entity = self.all_entities_iter.next()?;
+	
+	// 				if !self.filter.archetype_filter_fetch(entity) {
+	// 					continue;
+	// 				}
+	
+	// 				let item = self.fetch.archetype_fetch(entity);
+	// 				if let None = item {
+	// 					continue;
+	// 				}
+	// 				return item;
+	// 			}
+	// 		}
+    //     }
+    // }
 
 	pub fn setting<'w, 's>(
         &'s mut self,

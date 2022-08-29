@@ -97,7 +97,7 @@ where
     F: SystemParamFunction<In, Out, Param, InMarker> + Send + 'static,
 {
     fn system(self, world: &mut World) -> FunctionSystem<In, Out, Param, InMarker, F> {
-        let id = SystemId::new(world.archetype_component_grow(type_name::<Self>().to_string()));
+        let id = SystemId::new(world.archetype_component_grow(type_name::<Self>(), false));
 		let mut system_state =  SystemState::new::<F>();
 		FunctionSystem {
             func: self,

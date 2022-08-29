@@ -1,5 +1,5 @@
 /// 原型
-use std::any::type_name;
+use std::{any::type_name, marker::PhantomData};
 
 use crate::{
     component::{ComponentId, CellMultiCase, MultiCase, Component, MultiCaseImpl},
@@ -17,6 +17,7 @@ use std::{
 	sync::Arc,
 };
 
+use fixedbitset::FixedBitSet;
 use pi_share::cell::TrustCell;
 use pi_hash::XHashMap;
 use pi_slotmap::SecondaryMap;
@@ -261,7 +262,8 @@ pub struct Archetypes {
     archetype_ids: XHashMap<ArchetypeIdentity, ArchetypeId>,
 	/// 原型组件的当前数量（用于生成原型组件id）
 	// pub(crate) archetype_component_count: usize,
-	pub(crate) archetype_component_info: Vec<String>,
+	pub(crate) archetype_component_info: Vec<&'static str>,
+	pub(crate) data_mark: FixedBitSet, // archetype_component_info中的数据标记（archetype_component_info也包含system，这里排除了system）
 
 	/// 资源map， 通过资源id查询到资源
 	pub(crate) resources: Singles,
@@ -272,6 +274,11 @@ pub struct Archetypes {
 	/// todo, 手机监听器的资源访问，设置再system上，以便有正确的数据访问依赖
 	pub listener_component_access: XHashMap<ArchetypeComponentId, Vec<FilteredAccessSet<ArchetypeComponentId>>>,
 }
+
+pub struct EntityDeleteType<A: Send + Sync + 'static>(PhantomData<A>);
+pub struct EntityType<A: Send + Sync + 'static>(PhantomData<A>);
+pub struct EntityComponentType<A: Send + Sync + 'static, C>(PhantomData<(A, C)>);
+pub struct ResourceType<R: Send + Sync + 'static>(PhantomData<R>);
 
 impl Archetypes {
 	/// 构造方法
@@ -284,6 +291,7 @@ impl Archetypes {
 			resources: Singles::new(),
 			listener_component_access: XHashMap::default(),
 			archetype_component_info: Vec::default(),
+			data_mark: FixedBitSet::default(),
 		}
 	}
 
@@ -300,8 +308,8 @@ impl Archetypes {
 
 		let archetype = Archetype::new(
 			id, 
-			Local::new(self.archetype_component_grow(type_name::<A>().to_string())),
-			Local::new(self.archetype_component_grow(type_name::<A>().to_string() + "-Delete")),
+			Local::new(self.archetype_component_grow(type_name::<EntityType<A>>(), true)),
+			Local::new(self.archetype_component_grow(type_name::<EntityDeleteType<A>>(), true)),
 		);
 		archetype
     }
@@ -383,16 +391,24 @@ impl Archetypes {
 
 	/// 原型组件id增长
 	#[inline]
-	pub(crate) fn archetype_component_grow(&mut self, info: String) -> usize {
+	pub(crate) fn archetype_component_grow(&mut self, info: &'static str, is_data: bool) -> usize {
+		let index = self.archetype_component_info.len();
 		self.archetype_component_info.push(info);
-		self.archetype_component_info.len()
+		self.data_mark.grow(self.archetype_component_info.len());
+
+		// 如果是数据类型，则标记该位置
+		if is_data {
+			self.data_mark.insert(index)
+		}
+
+		index
 	}
 
 	/// 添加组件监听器
 	pub fn add_component_listener<T: ListenType, A: 'static + Send + Sync, C: Component>(&mut self, listener: Listener, id: ComponentId) {
 		let archetype_id = self.get_or_create_archetype::<A>();
 		if self.archetypes[archetype_id.offset()].components.get(id).is_none() {
-			let archetype_component_id = self.archetype_component_grow(std::any::type_name::<C>().to_string());
+			let archetype_component_id = self.archetype_component_grow(std::any::type_name::<EntityComponentType<A, C>>(), true);
 			self.archetypes[archetype_id.offset()].register_component_type::<C>(id, ArchetypeComponentId::new(archetype_component_id))
 		}
 		
@@ -452,8 +468,12 @@ impl Archetypes {
         self.archetype_ids.get(&ArchetypeIdentity::Identity(type_id))
     }
 
-	pub fn archetype_component_info(&self)  -> &Vec<String>{
+	pub fn archetype_component_info(&self)  -> &Vec<&'static str>{
 		&self.archetype_component_info
+	}
+
+	pub fn data_mark(&self)  -> &FixedBitSet {
+		&self.data_mark
 	}
 }
 

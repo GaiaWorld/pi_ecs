@@ -47,6 +47,7 @@ where
 		// }
 		
         self.0.borrow_mut().run(());
+		// println!("run end============{:?}", std::any::type_name::<F>());
     }
 
     fn apply(&self) {
@@ -133,7 +134,7 @@ where
 impl Arrange for World {
     fn arrange(&self) -> Option<GraphNode> {
         let mut w = self.clone();
-        let id = w.archetype_component_grow("arrange".to_string());
+        let id = w.archetype_component_grow("arrange", false);
         let sys = move || {
 			for l in w.listeners.iter() {
 				l.apply();

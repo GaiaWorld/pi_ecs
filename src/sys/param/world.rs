@@ -30,6 +30,9 @@ unsafe impl SystemParamState for WorldRead {
         let w: &mut WorldInner = world;
 		
         for r in 0..w.archetypes().archetype_component_info.len() {
+			if !w.archetypes().data_mark().contains(r) {
+				continue;
+			}
             let archetype_component_id = ArchetypeComponentId::new(r);
             if combined_access.has_write(archetype_component_id) {
                 panic!(
@@ -90,10 +93,13 @@ unsafe impl SystemParamState for WorldMut {
 
 		let combined_access = system_state.archetype_component_access.combined_access_mut();
 		for r in 0..w.archetypes().archetype_component_info.len() {
+			if !w.archetypes().data_mark().contains(r) {
+				continue;
+			}
             let archetype_component_id = ArchetypeComponentId::new(r);
             if combined_access.has_write(archetype_component_id) || combined_access.has_read(archetype_component_id) {
                 panic!(
-                    "WorldRead in system {} conflicts with a previous access. Allowing this would break Rust's mutability rules. Consider removing the duplicate access.",
+                    "WorldMut in system {} conflicts with a previous access. Allowing this would break Rust's mutability rules. Consider removing the duplicate access.",
                     system_state.name);
             }
 

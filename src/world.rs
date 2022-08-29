@@ -9,7 +9,7 @@ use pi_share::cell::TrustCell;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
-use crate::archetype::{ArchetypeComponentId, ArchetypeId, ArchetypeIdent, Archetypes};
+use crate::archetype::{ArchetypeComponentId, ArchetypeId, ArchetypeIdent, Archetypes, ResourceType, EntityComponentType};
 use crate::component::{Component, ComponentId, Components};
 use crate::entity::{Entities, Entity, Id};
 use crate::monitor::{ListenType, Listener, Apply};
@@ -100,7 +100,7 @@ pub struct WorldInner {
     pub(crate) components: Components,
     pub(crate) archetypes: Archetypes,
 
-    /// 该字段描述了监听器监听的组件做访问的数据id
+    /// 该字段描述了监听器监听的组件所访问的数据id
     pub(crate) listener_access:
         SecondaryMap<ArchetypeComponentId, Vec<FilteredAccessSet<ArchetypeComponentId>>>,
 
@@ -137,7 +137,7 @@ impl WorldInner {
     pub fn insert_resource<T: Resource>(&mut self, value: T) -> ResourceRef<T> {
 		let component_id = if let None = self.components.get_resource_id::<T>() {
 			let component_id = self.components.get_or_insert_resource_id::<T>();
-			let archetype_component_id = self.archetypes.archetype_component_grow(type_name::<T>().to_string());
+			let archetype_component_id = self.archetypes.archetype_component_grow(type_name::<T>(), true);
 			self.archetypes.register_resource::<T>(component_id, archetype_component_id);
 			component_id
 		} else {
@@ -167,7 +167,7 @@ impl WorldInner {
 		match self.components.get_resource_id::<T>() {
 			Some(r) => r.clone(),
 			None => {
-				let archetype_component_id = self.archetypes.archetype_component_grow(type_name::<T>().to_string());
+				let archetype_component_id = self.archetypes.archetype_component_grow(type_name::<ResourceType<T>>(), true);
 				let component_id = self.components.get_or_insert_resource_id::<T>();
 				self.archetypes.register_resource::<T>(component_id, archetype_component_id);
 				component_id
@@ -191,8 +191,8 @@ impl WorldInner {
 
     /// 原型组件id增长
     #[inline]
-    pub fn archetype_component_grow(&mut self, info: String) -> usize {
-        self.archetypes.archetype_component_grow(info)
+    pub fn archetype_component_grow(&mut self, info: &'static str, is_data: bool) -> usize {
+        self.archetypes.archetype_component_grow(info, is_data)
     }
 
     /// 创建原型
@@ -264,7 +264,7 @@ impl WorldInner {
     pub fn add_resource_listener<T: ListenType, R: Component>(&mut self, listener: Listener) {
 		let component_id = if let None = self.components.get_resource_id::<R>() {
 			let component_id = self.components.get_or_insert_resource_id::<R>();
-			let archetype_component_id = self.archetypes.archetype_component_grow(type_name::<R>().to_string());
+			let archetype_component_id = self.archetypes.archetype_component_grow(type_name::<ResourceType<R>>(), true);
 			self.archetypes.register_resource::<R>(component_id, archetype_component_id);
 			component_id
 		} else {
@@ -354,7 +354,8 @@ impl WorldInner {
 			if archetype.contains(id) {
 				return id;
 			}
-			let g = self.archetypes.archetype_component_grow(type_name::<C>().to_string());
+			// 实体类型， TODO
+			let g = self.archetypes.archetype_component_grow(type_name::<EntityComponentType<usize, C>>(), true);
 			let archetype = &mut self.archetypes[archetype_id];
             archetype.register_component_type::<C>(
                 id,
@@ -385,7 +386,8 @@ impl<'a> ArchetypeInfo<'a> {
         let r = self.components.insert(id);
 
         if r {
-			let archetype_component_id = self.world.archetypes.archetype_component_grow(type_name::<C>().to_string());
+			// 实体类型， TODO
+			let archetype_component_id = self.world.archetypes.archetype_component_grow(type_name::<EntityComponentType<usize, C>>(), true);
             self.world.archetypes[self.archetype_id].register_component_type::<C>(
                 id,
                 Local::new(archetype_component_id),
@@ -417,7 +419,7 @@ impl<'a, A: ArchetypeIdent> EntityRef<'a, A> {
     pub fn insert<C: Component>(&mut self, value: C) -> &mut Self {
         let id = self.components.get_or_insert_id::<C>();
 		if !self.archetypes[self.archetype_id].contains(id) {
-			let archetype_component_id = self.archetypes.archetype_component_grow(type_name::<C>().to_string());
+			let archetype_component_id = self.archetypes.archetype_component_grow(type_name::<EntityComponentType<A, C>>(), true);
             self.archetypes[self.archetype_id].register_component_type::<C>(
                 id,
                 Local::new(archetype_component_id),

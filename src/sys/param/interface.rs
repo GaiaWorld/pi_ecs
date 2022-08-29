@@ -110,7 +110,7 @@ pub fn assert_component_access_compatibility(
 
     let conflicting_components = conflicts
         .drain(..)
-        .map(|component_id| info[component_id.offset()].as_str())
+        .map(|component_id| info[component_id.offset()])
         .collect::<Vec<&str>>();
     let accesses = conflicting_components.join(", ");
     panic!("Query<{}, {}> in system {} accesses component(s) {} in a way that conflicts with a previous system parameter. Allowing this would break Rust's mutability rules. Consider merging conflicting Queries into a QuerySet.",

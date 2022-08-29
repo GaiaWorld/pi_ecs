@@ -44,7 +44,7 @@ unsafe impl<T: Send + Sync + 'static> SystemParamState for EntityInsertState<T> 
 		if system_state.archetype_component_access.combined_access().has_read(archetype_component_id) {
 			panic!("init {:?} fail, entity access conflict, entity: {:?}", std::any::type_name::<Self>(), std::any::type_name::<T>());
 		}
-		system_state.archetype_component_access.combined_access_mut().add_write(arch_id);
+		system_state.archetype_component_access.combined_access_mut().add_write(archetype_component_id);
         Self(arch_id, PhantomData)
     }
 
@@ -106,7 +106,7 @@ unsafe impl<T: Send + Sync + 'static> SystemParamState for EntityDeleteState<T> 
 		if system_state.archetype_component_access.combined_access().has_read(archetype_component_id) {
 			panic!("init {:?} fail, entity access conflict, entity: {:?}, in system: {:?}", std::any::type_name::<Self>(), std::any::type_name::<T>(), system_state.name());
 		}
-		system_state.archetype_component_access.combined_access_mut().add_write(arch_id);
+		system_state.archetype_component_access.combined_access_mut().add_write(archetype_component_id);
         Self(arch_id, PhantomData)
     }
 

@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::{collections::HashSet, io::Result};
@@ -308,11 +309,17 @@ impl Runner for Run {
 /// 执行节点
 pub enum ExecNode {
     /// 不执行任何操作
-    None,
+    None(&'static str),
     /// 同步函数
     Sync(Run),
     /// 异步函数
     Async(Box<dyn Operate<R = BoxFuture<'static, Result<()>>>>),
+}
+
+impl Debug for ExecNode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(&*self.name()).finish()
+    }
 }
 
 unsafe impl Sync for ExecNode {}
@@ -322,7 +329,7 @@ impl Runnble for ExecNode {
 
     fn is_sync(&self) -> Option<bool> {
         match self {
-            ExecNode::None => None,
+            ExecNode::None(_) => None,
             ExecNode::Sync(_) => Some(true),
             _ => Some(false),
         }
@@ -358,7 +365,7 @@ impl ExecNode {
 		match self {
             ExecNode::Sync(f) => f.0.name(),
             ExecNode::Async(f) => f.name(),
-            _ => "".into(),
+            ExecNode::None(n) => Cow::from(*n),
         }
 	}
 }
@@ -420,7 +427,7 @@ impl StageBuilder {
 					}
 				},
 				Err(c) => {
-					let c: Vec<String> = c.ones().map(|i| {(*&w.archetypes().archetype_component_info[i]).clone()}).collect();
+					let c: Vec<&'static str> = c.ones().map(|i| {(*&w.archetypes().archetype_component_info[i]).clone()}).collect();
 					panic!("{:?}", BuildErr::WriteConflict(s.label.clone(), c));
 				}
 			}
@@ -428,7 +435,7 @@ impl StageBuilder {
 
         for id in self.components {
             // 每个 Component 都是一个节点
-            builder = builder.node(id, ExecNode::None);
+            builder = builder.node(id, ExecNode::None(w.archetypes().archetype_component_info[id]));
         }
 
         for n in self.systems {
@@ -441,7 +448,7 @@ impl StageBuilder {
             builder = builder.edge(n.0, n.1);
         }
 
-        builder.build().unwrap()
+		builder.build().unwrap()
     }
 }
 
@@ -450,7 +457,7 @@ pub enum BuildErr {
 	#[error("build fail, node is circly: {0:?}")]
 	Circly(Vec<usize>),
 	#[error("build fail, write conflict, system: {0:?}, write access {1:?}")]
-	WriteConflict(String, Vec<String>)
+	WriteConflict(String, Vec<&'static str>)
 }
 
 
