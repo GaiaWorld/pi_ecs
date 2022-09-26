@@ -9,6 +9,7 @@ license = "MIT OR Apache-2.0"
 keywords = ["pi", "ecs"]
 
 [dependencies]
+async-trait = "0.1"
 quote = "1.0"
 pi_null = "0.1"
 pi_slotmap = "0.1"
@@ -16,17 +17,28 @@ pi_map = "0.1"
 pi_any = "0.1"
 pi_listener = "0.2"
 pi_hash = "0.1"
-pi_share = "0.4"
 pi_graph = "0.1"
-pi_async_graph = "0.2"
-pi_async = "0.4"
+pi_share = "0.4"
+pi_async_graph = "0.3"
+pi_async = "0.5"
+pi_futures = "0.1"
 pi_ecs_macros = {version="0.1", path = "macros"}
 paste = "0.1"
 log = "0.4"
 thiserror = "1.0"
 futures = "0.3"
+
 fixedbitset = "0.4"
 derive_deref = "1.1"
 
+# pi_async = {version="0.5", features=["serial"]}
+# pi_futures = {version="0.1", features=["local"]}
+# pi_share = {version="0.4", features=["serial", "rc"]}
+# pi_async_graph = {path = "../pi_async_graph"}
+# pi_share = {path="../pi_share"}
+
 [dev-dependencies]
 rand = "0.8"
+
+
+

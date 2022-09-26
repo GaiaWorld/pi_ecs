@@ -4,8 +4,9 @@ use crate::sys::system::interface::SystemState;
 use crate::world::World;
 use crate::storage::Offset;
 use pi_ecs_macros::all_tuples;
+use pi_share::ThreadSync;
 
-pub trait SystemParam: Sized + Send + Sync {
+pub trait SystemParam: Sized + ThreadSync {
     type Fetch: for<'w, 's> SystemParamFetch<'w, 's>;
 }
 
@@ -23,8 +24,8 @@ pub trait SystemParamFetch<'w, 's>: SystemParamState {
     ) -> Self::Item;
 }
 
-pub unsafe trait SystemParamState: Send + Sync + 'static {
-    type Config: Send + Sync;
+pub unsafe trait SystemParamState: ThreadSync + 'static {
+    type Config: ThreadSync + 'static;
     /// 系统状态初始化
     /// 通常做以下事情：
     /// * 检查当前参数是否与当前系统中的数据访问是否冲突（同一系统，不能同时读写相同数据）

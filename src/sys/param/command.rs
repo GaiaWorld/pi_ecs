@@ -6,9 +6,10 @@ use pi_slotmap::Key;
 use crate::{component::Component, archetype::ArchetypeIdent, entity::{Entities, Id}, world::World, storage::Local, sys::system::SystemState};
 
 use super::{SystemParam, SystemParamState, SystemParamFetch};
+use pi_share::ThreadSync;
 
 /// 实体指令，用于创建和删除实体
-pub struct EntityCommands<A: 'static + Send + Sync> {
+pub struct EntityCommands<A: ArchetypeIdent> {
 	delete: &'static mut CommandQueue<EntityDelete<A>>,
 	entities: &'static Entities,
 	_world: World,
@@ -90,13 +91,13 @@ impl<A: ArchetypeIdent, T: Component> Commands<A, T> {
 
 }
 
-pub struct CommandQueue<T: 'static + Send + Sync + Command> {
+pub struct CommandQueue<T: Command> {
 	list: Vec<T>,
 	ty_id: Local,
 	arch_id: Local,
 }
 
-impl<T: 'static + Send + Sync + Command> CommandQueue<T> {
+impl<T: Command> CommandQueue<T> {
 	pub fn new(_world: &World, arch_id: Local, component_id: Local) -> Self {
 		Self {
 			list: Vec::new(),
@@ -117,7 +118,7 @@ impl<T: 'static + Send + Sync + Command> CommandQueue<T> {
 }
 
 /***********************Command***************************/
-pub trait Command: Send + Sync + 'static {
+pub trait Command: ThreadSync + 'static {
     fn write(self, world: &mut World, arch_id: Local, type_id: Local);
 }
 pub struct EntityDelete<A: ArchetypeIdent>(pub(crate) Id<A>);

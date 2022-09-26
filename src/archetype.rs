@@ -21,6 +21,7 @@ use fixedbitset::FixedBitSet;
 use pi_share::cell::TrustCell;
 use pi_hash::XHashMap;
 use pi_slotmap::SecondaryMap;
+use pi_share::ThreadSync;
 
 pub struct Archetype {
 	// 原型id
@@ -223,9 +224,9 @@ impl Archetype {
 pub type ArchetypeId = Local;
 
 /// 标识符原型
-pub trait ArchetypeIdent : 'static + Send + Sync {}
+pub trait ArchetypeIdent : ThreadSync + 'static {}
 
-impl<C: Send + Sync + 'static> ArchetypeIdent for C  {}
+impl<C: ThreadSync + 'static> ArchetypeIdent for C  {}
 
 /// 原型id生成器
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -275,10 +276,10 @@ pub struct Archetypes {
 	pub listener_component_access: XHashMap<ArchetypeComponentId, Vec<FilteredAccessSet<ArchetypeComponentId>>>,
 }
 
-pub struct EntityDeleteType<A: Send + Sync + 'static>(PhantomData<A>);
-pub struct EntityType<A: Send + Sync + 'static>(PhantomData<A>);
-pub struct EntityComponentType<A: Send + Sync + 'static, C>(PhantomData<(A, C)>);
-pub struct ResourceType<R: Send + Sync + 'static>(PhantomData<R>);
+pub struct EntityDeleteType<A: ThreadSync + 'static>(PhantomData<A>);
+pub struct EntityType<A: ThreadSync + 'static>(PhantomData<A>);
+pub struct EntityComponentType<A: ThreadSync + 'static, C>(PhantomData<(A, C)>);
+pub struct ResourceType<R: ThreadSync + 'static>(PhantomData<R>);
 
 impl Archetypes {
 	/// 构造方法
@@ -298,7 +299,7 @@ impl Archetypes {
 	/// 创建原型
 	/// * `type_id`为原型类型的TypeId，返回原型实例
 	/// 该方法仅仅创建的一个原型实例，必须调用Archetypes.init_archetype原型方法，才能将原型由world管理起来。
-	pub(crate) fn create_archetype_by_ident<A: Send + Sync + 'static>(&mut self) -> Archetype {
+	pub(crate) fn create_archetype_by_ident<A: ArchetypeIdent>(&mut self) -> Archetype {
 		let type_id = TypeId::of::<A>();
 		if let Some(_) = self.archetype_ids.get(&ArchetypeIdentity::Identity(type_id)) {
 			panic!("archetype is exist");
@@ -315,7 +316,7 @@ impl Archetypes {
     }
 
 	/// 取到原型，如果原型不存在，则创建原型
-	pub fn get_or_create_archetype<T: Send + Sync + 'static>(&mut self) -> ArchetypeId {
+	pub fn get_or_create_archetype<T: ArchetypeIdent>(&mut self) -> ArchetypeId {
 		let type_id = TypeId::of::<T>();
 		if let Some(archetype) = self.archetype_ids.get(&ArchetypeIdentity::Identity(type_id)) {
 			return archetype.clone();
@@ -328,7 +329,7 @@ impl Archetypes {
 	}
 
 	/// 创建原型
-	pub fn create_archetype<T: Send + Sync + 'static>(&mut self) -> ArchetypeId {
+	pub fn create_archetype<T: ArchetypeIdent>(&mut self) -> ArchetypeId {
 		let type_id = TypeId::of::<T>();
 		let archetype = self.create_archetype_by_ident::<T>();
 		let archetype_id = archetype.id();
@@ -343,7 +344,7 @@ impl Archetypes {
 	}
 
 	/// 创建实体
-	pub(crate) fn spawn<E: Send + Sync + 'static>(&mut self, id: ArchetypeId) -> Entity {
+	pub(crate) fn spawn<E: ArchetypeIdent>(&mut self, id: ArchetypeId) -> Entity {
 		self.archetypes[id.offset()].create_entity()
     }
 
@@ -405,7 +406,7 @@ impl Archetypes {
 	}
 
 	/// 添加组件监听器
-	pub fn add_component_listener<T: ListenType, A: 'static + Send + Sync, C: Component>(&mut self, listener: Listener, id: ComponentId) {
+	pub fn add_component_listener<T: ListenType, A: ArchetypeIdent, C: Component>(&mut self, listener: Listener, id: ComponentId) {
 		let archetype_id = self.get_or_create_archetype::<A>();
 		if self.archetypes[archetype_id.offset()].components.get(id).is_none() {
 			let archetype_component_id = self.archetype_component_grow(std::any::type_name::<EntityComponentType<A, C>>(), true);
@@ -416,7 +417,7 @@ impl Archetypes {
 	}
 
 	/// 添加原型监听器
-	pub fn add_entity_listener<T: ListenType, A: 'static + Send + Sync>(&mut self, listener: Listener) {
+	pub fn add_entity_listener<T: ListenType, A: ArchetypeIdent>(&mut self, listener: Listener) {
 		let archetype_id = self.get_or_create_archetype::<A>();
 		self.archetypes[archetype_id.offset()].add_entity_listener::<T>(listener);
 	}

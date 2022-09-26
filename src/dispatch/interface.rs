@@ -1,13 +1,16 @@
 use std::borrow::Cow;
 use std::fmt::Debug;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
-use std::{collections::HashSet, io::Result};
+use std::{collections::HashSet, io::Result as IoResult};
 
-use futures::future::BoxFuture;
-use pi_async::rt::AsyncRuntime;
+use pi_futures::BoxFuture;
+use pi_async::prelude::{AsyncRuntime, AsyncValue};
 use fixedbitset::FixedBitSet;
+use pi_slotmap::{SlotMap, DefaultKey};
 use thiserror::Error;
+use async_trait::async_trait;
 
 use pi_async_graph::{async_graph, Runnble, Runner};
 use pi_graph::{DirectedGraph, DirectedGraphNode, NGraph, NGraphBuilder};
@@ -17,19 +20,48 @@ use crate::{
 	world::World,
 	storage::Local,
 };
-use pi_share::ShareMutex;
+use pi_share::{ShareMutex, ThreadSend, ThreadSync};
 
-pub trait Arrange {
-    fn arrange(&self) -> Option<GraphNode>;
+#[derive(Default)]
+pub struct DispatcherMgr {
+	arr: SlotMap<DefaultKey, Box<dyn Dispatcher>>,
+	running: AtomicBool, // true代表有派发器正在运行，false代表
 }
 
-/// Stage 是 由 可执行节点 组成的 图
-type Stage = Arc<NGraph<usize, ExecNode>>;
+impl DispatcherMgr {
+	pub fn insert(&mut self, value: Box<dyn Dispatcher>) -> DefaultKey {
+		self.arr.insert(value)
+	}
+
+	pub fn remove(&mut self, key: DefaultKey) {
+		self.arr.remove(key);
+	}
+
+	pub async fn run(&self, key: DefaultKey) {
+		// println!("loop DispatcherMgr start" );
+		if let Some(r) = self.arr.get(key) {
+			// 如果其他dispatcher正在运行，需要等待其他的dispatcher结束后才能运行当前dispatcher
+			// 暂时用死循环来实现等待， TODO
+			loop {
+				// println!("loop DispatcherMgr" );
+				if !self.running.load(Ordering::Relaxed) {
+					break;
+				}
+			}
+
+			self.running.store(true, Ordering::Relaxed);
+			r.run().await;
+			self.running.store(false, Ordering::Relaxed);
+		}
+	}
+}
+
 
 /// 派发器 接口
-pub trait Dispatcher {
+#[async_trait]
+pub trait Dispatcher: ThreadSync + 'static {
     /// 只有 run 方法
-    fn run(&self);
+    async fn run(&self);
 }
 
 /// 串行 派发器
@@ -73,6 +105,8 @@ impl<A: AsyncRuntime<()>> SingleDispatcher<A>
         rt: A,
         mut stage_index: usize,
         mut node_index: usize,
+		wait: AsyncValue<()>,
+		has_async: bool,
     ) {
         while stage_index < vec.len() {
             let g = &vec[stage_index];
@@ -114,7 +148,7 @@ impl<A: AsyncRuntime<()>> SingleDispatcher<A>
                         f.await.unwrap();
 						statistics.lock().push((name, Instant::now() - t));
 						// println!("end======");
-                        SingleDispatcher::exec(vec1, statistics, rt1, stage_index, node_index);
+                        SingleDispatcher::exec(vec1, statistics, rt1, stage_index, node_index, wait, true);
                     })
                     .unwrap();
 
@@ -122,15 +156,25 @@ impl<A: AsyncRuntime<()>> SingleDispatcher<A>
                 }
             }
         }
+
+		// 派发器执行完毕, 用wait派发一个任务，试await触发
+		if has_async {
+			wait.set(());
+		} else {
+			rt.spawn(rt.alloc(), async move {wait.set(())}).unwrap();
+		}
     }
 }
 
+#[async_trait]
 impl<A: AsyncRuntime<()>> Dispatcher for SingleDispatcher<A>
 {
     /// 同步节点自己执行， 如果有异步节点，则用单线程运行时执行
-    fn run(&self) {
+    async fn run(&self) {
 		let statistics = Arc::new(ShareMutex::new(Vec::new()));
-        Self::exec(self.vec.clone(),  statistics, self.rt.clone(), 0, 0);
+		let wait = pi_async::prelude::AsyncValue::new();
+        Self::exec(self.vec.clone(),  statistics, self.rt.clone(), 0, 0, wait.clone(), false);
+        wait.await;
     }
 }
 pub struct MultiDispatcher<A1: AsyncRuntime<()>, A2: AsyncRuntime<()>>(Arc<MultiInner<A1, A2>>);
@@ -145,15 +189,22 @@ impl<A1: AsyncRuntime<()>, A2: AsyncRuntime<()>> MultiDispatcher<A1, A2>
     }
 }
 
+#[async_trait]
 impl<A1: AsyncRuntime<()>, A2: AsyncRuntime<()>> Dispatcher for MultiDispatcher<A1, A2>
 {
     /// 根据阶段是单线程还是多线程，
     /// 如果多线程阶段，同步节点和异步节点，则用多线程运行时并行执行
     /// 如果单线程阶段，同步节点自己执行， 如果有异步节点，则用单线程运行时执行
     /// 一般为了线程安全，第一个阶段都是单线程执行
-    fn run(&self) {
+    async fn run(&self) {
         let c = self.0.clone();
-        exec(c, 0)
+		// 没有任务，直接返回
+		if c.vec.len() == 0 {
+			return;
+		}
+		let wait = pi_async::prelude::AsyncValue::new();
+        exec(c, 0, wait.clone());
+		wait.await;
     }
 }
 
@@ -174,16 +225,17 @@ impl<A1: AsyncRuntime<()>, A2: AsyncRuntime<()>> MultiInner<A1, A2>
 }
 
 /// 执行指定阶段
-fn exec<A1: AsyncRuntime<()>, A2: AsyncRuntime<()>>(d: Arc<MultiInner<A1, A2>>, stage_index: usize)
+fn exec<A1: AsyncRuntime<()>, A2: AsyncRuntime<()>>(d: Arc<MultiInner<A1, A2>>, stage_index: usize, wait: AsyncValue<()>)
 {
     if stage_index >= d.vec.len() {
+		wait.set(());
         return;
     }
     if let Some(single) = &d.vec[stage_index].1 {
         let s = single.clone();
-        single_exec(d, stage_index, 0, s);
+        single_exec(d, stage_index, 0, s, wait);
     } else {
-        multi_exec(d, stage_index);
+        multi_exec(d, stage_index, wait);
     }
 }
 
@@ -193,6 +245,7 @@ fn single_exec<A1: AsyncRuntime<()>, A2: AsyncRuntime<()>>(
     stage_index: usize,
     mut node_index: usize,
     single: A2,
+	wait: AsyncValue<()>,
 )
 {
     let g = &d.vec[stage_index].0;
@@ -207,7 +260,7 @@ fn single_exec<A1: AsyncRuntime<()>, A2: AsyncRuntime<()>>(
             }
 
             // 本阶段执行完毕，执行下一阶段
-            return exec(d, stage_index + 1);
+            return exec(d, stage_index + 1, wait);
         }
 
         let node = g.get(&arr[node_index]).unwrap().value();
@@ -220,7 +273,7 @@ fn single_exec<A1: AsyncRuntime<()>, A2: AsyncRuntime<()>>(
                     single1
                         .spawn(single1.alloc(), async move {
                             f.run();
-                            single_exec(d1, stage_index, node_index, single);
+                            single_exec(d1, stage_index, node_index, single, wait);
                         })
                         .unwrap();
                     return;
@@ -233,7 +286,7 @@ fn single_exec<A1: AsyncRuntime<()>, A2: AsyncRuntime<()>>(
                 single1
                     .spawn(single1.alloc(), async move {
                         let _ = f.await;
-                        single_exec(d1, stage_index, node_index, single);
+                        single_exec(d1, stage_index, node_index, single, wait);
                     })
                     .unwrap();
                 return;
@@ -243,7 +296,7 @@ fn single_exec<A1: AsyncRuntime<()>, A2: AsyncRuntime<()>>(
 }
 
 /// 多线程执行
-fn multi_exec<A1: AsyncRuntime<()>, A2: AsyncRuntime<()>>(d: Arc<MultiInner<A1, A2>>, stage_index: usize)
+fn multi_exec<A1: AsyncRuntime<()>, A2: AsyncRuntime<()>>(d: Arc<MultiInner<A1, A2>>, stage_index: usize, wait: AsyncValue<()>)
 {
     let d1 = d.clone();
     d.multi
@@ -258,13 +311,14 @@ fn multi_exec<A1: AsyncRuntime<()>, A2: AsyncRuntime<()>>(d: Arc<MultiInner<A1, 
                     node.apply();
                 }
 
-                exec(d1, stage_index + 1);
+                exec(d1, stage_index + 1, wait);
             }
         })
         .unwrap();
 }
 
 /// 图 的 节点
+#[derive(Clone)]
 pub struct GraphNode {
     // 节点id，每个节点有 独一无二的 id
     pub(crate) id: usize,
@@ -280,7 +334,7 @@ pub struct GraphNode {
 }
 
 /// 操作
-pub trait Operate: Send + 'static {
+pub trait Operate: ThreadSync + 'static {
     /// 返回类型
     type R;
 
@@ -296,7 +350,8 @@ pub trait Operate: Send + 'static {
 	fn name(&self) -> Cow<'static, str>;
 }
 
-/// 对操作的 封装
+/// 同步的run方法
+#[derive(Clone)]
 pub struct Run(pub(crate) Arc<dyn Operate<R = ()>>);
 unsafe impl Send for Run {}
 
@@ -306,14 +361,20 @@ impl Runner for Run {
     }
 }
 
+/// 异步的run方法
+#[derive(Clone)]
+pub struct AsyncRun(pub (crate) Arc<dyn Operate<R = BoxFuture<'static, IoResult<()>>>>);
+unsafe impl Send for AsyncRun {}
+
 /// 执行节点
+#[derive(Clone)]
 pub enum ExecNode {
     /// 不执行任何操作
     None(&'static str),
     /// 同步函数
     Sync(Run),
     /// 异步函数
-    Async(Box<dyn Operate<R = BoxFuture<'static, Result<()>>>>),
+    Async(AsyncRun),
 }
 
 impl Debug for ExecNode {
@@ -344,9 +405,9 @@ impl Runnble for ExecNode {
     }
 
     /// 获得需要执行的异步块
-    fn get_async(&self) -> BoxFuture<'static, Result<()>> {
+    fn get_async(&self) -> BoxFuture<'static, IoResult<()>> {
         match self {
-            ExecNode::Async(f) => f.run(),
+            ExecNode::Async(f) => f.0.run(),
             _ => panic!(),
         }
     }
@@ -356,7 +417,7 @@ impl ExecNode {
     fn apply(&self) {
         match self {
             ExecNode::Sync(f) => f.0.apply(),
-            ExecNode::Async(f) => f.apply(),
+            ExecNode::Async(f) => f.0.apply(),
             _ => (),
         };
     }
@@ -364,11 +425,18 @@ impl ExecNode {
 	fn name(&self) -> Cow<'static, str> {
 		match self {
             ExecNode::Sync(f) => f.0.name(),
-            ExecNode::Async(f) => f.name(),
+            ExecNode::Async(f) => f.0.name(),
             ExecNode::None(n) => Cow::from(*n),
         }
 	}
 }
+
+pub trait Arrange {
+    fn arrange(&self) -> Option<GraphNode>;
+}
+
+/// Stage 是 由 可执行节点 组成的 图
+type Stage = Arc<NGraph<usize, ExecNode>>;
 
 /// 阶段构造器
 #[derive(Default)]
@@ -396,6 +464,16 @@ impl StageBuilder {
 
         self
     }
+
+	/// 取到刚添加的最后一个节点
+	pub fn get_last_node(&self) -> Option<&GraphNode> {
+		let len = self.systems.len();
+		if len > 0 {
+			Some(&self.systems[len - 1])
+		} else {
+			None
+		}
+	}
 
     /// 显示指定 节点的依赖 关系
     pub fn order(mut self, before: usize, after: usize) -> Self {
@@ -461,7 +539,7 @@ pub enum BuildErr {
 }
 
 
-fn write_depend(w: &World, read_writes: &FixedBitSet, writes: &FixedBitSet, modifys: &FixedBitSet) -> std::result::Result<(FixedBitSet, FixedBitSet), FixedBitSet> {
+fn write_depend(w: &World, read_writes: &FixedBitSet, writes: &FixedBitSet, modifys: &FixedBitSet) -> Result<(FixedBitSet, FixedBitSet), FixedBitSet> {
 	let (mut read_writes_new, mut write_new) = (read_writes.clone(), writes.clone());
 	let conflict = FixedBitSet::default();
 

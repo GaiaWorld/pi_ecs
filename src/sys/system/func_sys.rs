@@ -12,6 +12,7 @@ use pi_ecs_macros::all_tuples;
 use std::{borrow::Cow, marker::PhantomData};
 use std::future::Future;
 use std::mem::transmute;
+use pi_share::{ThreadSend, ThreadSync};
 
 use super::{SystemId, In};
 
@@ -22,11 +23,11 @@ use super::{SystemId, In};
 /// [`In`] tagged parameter or `()` if no such paramater exists.
 pub struct FunctionSystem<In, Out, Param, InMarker, F>
 where
-    Param: SystemParam + Send + 'static,
-	// In: Send + 'static,
-	// Out: Send + 'static,
-	// InMarker: Send + 'static,
-	// F: Send + 'static
+    Param: SystemParam,
+	// In: ThreadSend + 'static,
+	// Out: ThreadSend + 'static,
+	// InMarker: ThreadSend + 'static,
+	// F: ThreadSend + 'static
 
 {
     pub(crate) func: F,
@@ -42,11 +43,11 @@ unsafe impl<In, Out, Param: SystemParam, InMarker, F> Send for FunctionSystem<In
 }
 
 unsafe impl<In, Out, Param: SystemParam, InMarker, F> Sync for FunctionSystem<In, Out, Param, InMarker, F> where
-In: 'static + Send,
-Out: 'static + Send,
-Param: SystemParam + 'static,
+In: ThreadSync + 'static,
+Out: ThreadSend + 'static,
+Param: SystemParam,
 InMarker: 'static,
-F: SystemParamFunction<In, Out, Param, InMarker> + Send + 'static, {
+F: SystemParamFunction<In, Out, Param, InMarker> + ThreadSync + 'static, {
 }
 
 
@@ -94,7 +95,7 @@ where
     Out: 'static,
     Param: SystemParam + 'static,
     InMarker: 'static,
-    F: SystemParamFunction<In, Out, Param, InMarker> + Send + 'static,
+    F: SystemParamFunction<In, Out, Param, InMarker> + ThreadSync + 'static,
 {
     fn system(self, world: &mut World) -> FunctionSystem<In, Out, Param, InMarker, F> {
         let id = SystemId::new(world.archetype_component_grow(type_name::<Self>(), false));
@@ -122,7 +123,7 @@ where
     Out: 'static ,
     Param: SystemParam + 'static,
     InMarker: 'static,
-    F: SystemParamFunction<In, Out, Param, InMarker> + Send + 'static,
+    F: SystemParamFunction<In, Out, Param, InMarker> + ThreadSync + 'static,
 {
     type In = In;
     type Out = Out;
@@ -179,7 +180,7 @@ where
 }
 
 /// A trait implemented for all functions that can be used as [`System`]s.
-pub trait SystemParamFunction<In, Out, Param: SystemParam, InMarker>: Send + 'static {
+pub trait SystemParamFunction<In, Out, Param: SystemParam, InMarker>: ThreadSync + 'static {
     fn run(
         &mut self,
         input: In,
@@ -194,7 +195,7 @@ pub trait SystemParamFunction<In, Out, Param: SystemParam, InMarker>: Send + 'st
 // where
 // 	Func:
 // 	FnMut(Input, Param) -> Out + 
-// 	FnMut(Input, <<Param as SystemParam>::Fetch as SystemParamFetch>::Item) -> Out + Send + Sync + 'static, Out: 'static
+// 	FnMut(Input, <<Param as SystemParam>::Fetch as SystemParamFetch>::Item) -> Out + ThreadSync + 'static, Out: 'static
 // {
 // 	fn run(&mut self, input: Input, state: &mut <Param as SystemParam>::Fetch, system_state: &SystemState, world: &World, change_tick: u32) -> Out {
 // 		unsafe {
@@ -213,7 +214,7 @@ macro_rules! impl_system_function {
             Func:
                 FnMut($($param),*) -> Out +
                 FnMut($(<<$param as SystemParam>::Fetch as SystemParamFetch>::Item),*) -> Out + 
-				Send + Sync + 'static, 
+				ThreadSync + 'static, 
 			// Out: 'static
         {
             #[inline]
@@ -231,7 +232,7 @@ macro_rules! impl_system_function {
             Func:
                 FnMut(Input, $($param),*) -> Out +
                 FnMut(Input, $(<<$param as SystemParam>::Fetch as SystemParamFetch>::Item),*) -> Out + 
-				Send + Sync + 'static, 
+				ThreadSync + 'static, 
 			// Out: 'static
         {
             #[inline]
@@ -250,7 +251,7 @@ macro_rules! impl_system_function {
             Func:
                 FnMut($($param),*) -> Out +
                 FnMut($(<<$param as SystemParam>::Fetch as SystemParamFetch>::Item),*) -> Out + 
-				Send + Sync + 'static, 
+				ThreadSync + 'static, 
 			Out: Future,
         {
             #[inline]
@@ -267,7 +268,7 @@ macro_rules! impl_system_function {
         where
             Func:
                 FnMut(Input, $($param),*) -> Out +
-                FnMut(Input, $(<<$param as SystemParam>::Fetch as SystemParamFetch>::Item),*) -> Out + Send + Sync + 'static, 
+                FnMut(Input, $(<<$param as SystemParam>::Fetch as SystemParamFetch>::Item),*) -> Out + ThreadSync + 'static, 
 			Out: Future,
         {
             #[inline]

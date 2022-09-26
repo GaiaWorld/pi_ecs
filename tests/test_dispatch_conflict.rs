@@ -1,6 +1,6 @@
 //! 测试派发器访问冲突
 use pi_ecs::prelude::*;
-use pi_async::rt::AsyncRuntimeBuilder;
+use pi_async::prelude::AsyncRuntimeBuilder;
 use std::{io::Result, sync::Arc};
 
 // 同步 System

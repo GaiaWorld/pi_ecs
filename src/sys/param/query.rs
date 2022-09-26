@@ -1,4 +1,4 @@
-use std::{sync::Arc, intrinsics::transmute};
+use std::{intrinsics::transmute};
 
 use crate::{
     entity::{Id, Entity},
@@ -36,14 +36,14 @@ where
     #[inline]
     pub(crate) unsafe fn new(
         world: &'w World,
-        state: &Arc<QueryState<A, Q, F>>,
+		state: &'s QueryState<A, Q, F>,
         last_change_tick: u32,
         change_tick: u32,
     ) -> Self {
         Self {
             _world: world.clone(),
+			state,
 			world_ref: std::mem::transmute(&**world),
-            state: std::mem::transmute(&**state),
             last_change_tick,
             change_tick,
         }
@@ -262,12 +262,12 @@ impl<'w, 's, A: ArchetypeIdent, Q: WorldQuery + 'static, F: WorldQuery + 'static
 where
     F::Fetch: FilterFetch,
 {
-    type Fetch = Arc<QueryState<A, Q, F>>;
+    type Fetch = QueryState<A, Q, F>;
 }
 
 // SAFE: Relevant query ComponentId and ArchetypeComponentId access is applied to SystemState. If
 // this QueryState conflicts with any prior access, a panic will occur.
-unsafe impl<A: ArchetypeIdent, Q: WorldQuery + 'static, F: WorldQuery + 'static> SystemParamState for Arc<QueryState<A, Q, F>>
+unsafe impl<A: ArchetypeIdent, Q: WorldQuery + 'static, F: WorldQuery + 'static> SystemParamState for QueryState<A, Q, F>
 where
     F::Fetch: FilterFetch,
 {
@@ -291,18 +291,18 @@ where
             .archetype_component_access.combined_access_mut()
             .extend(state.archetype_component_access.access());
 			
-        Arc::new(state)
+        state
     }
 
     fn default_config() {}
 
 	// 
 	fn apply(&mut self, world: &mut World) {
-		(**self).apply(world)
+		(*self).apply(world)
 	}
 }
 
-impl<'w, 's, A: ArchetypeIdent, Q: WorldQuery + 'static, F: WorldQuery + 'static> SystemParamFetch<'w, 's> for Arc<QueryState<A, Q, F>>
+impl<'w, 's, A: ArchetypeIdent, Q: WorldQuery + 'static, F: WorldQuery + 'static> SystemParamFetch<'w, 's> for QueryState<A, Q, F>
 where
     F::Fetch: FilterFetch,
 {
@@ -315,12 +315,12 @@ where
         world: &'w World,
         change_tick: u32,
     ) -> Self::Item {
-		let s ={ &mut *(Arc::as_ptr(state) as usize as *mut QueryState<A, Q, F>)};
+		let s ={ &mut *(state as *mut QueryState<A, Q, F>)};
 		s.fetch_fetch.setting(world, system_state.last_change_tick, change_tick);
 		s.filter_fetch.setting(world, system_state.last_change_tick, change_tick);
 		
-        transmute(Query::new(world, state, system_state.last_change_tick, change_tick)) 
+        transmute(Query::new(world, s, system_state.last_change_tick, change_tick)) 
     }
 }
 
-impl<A: ArchetypeIdent, Q: WorldQuery, F: WorldQuery> NotApply for Arc<QueryState<A, Q, F>> where F::Fetch: FilterFetch {}
+impl<A: ArchetypeIdent, Q: WorldQuery, F: WorldQuery> NotApply for QueryState<A, Q, F> where F::Fetch: FilterFetch {}

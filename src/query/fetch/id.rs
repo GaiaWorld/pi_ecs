@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use super::interface::{WorldQuery, ReadOnlyFetch, FetchState, Fetch};
 
 use crate::{
-	archetype::{Archetype, ArchetypeId},
+	archetype::{Archetype, ArchetypeId, ArchetypeIdent},
 	storage::LocalVersion,
 	component::ComponentId,
 	query::access::FilteredAccess,
@@ -12,7 +12,7 @@ use crate::{
 };
 
 /// 为实例实现WorldQuery
-impl<T: Send + Sync + 'static> WorldQuery for Id<T> {
+impl<T: ArchetypeIdent> WorldQuery for Id<T> {
     type Fetch = IdFetch<T>;
     type State = IdState;
 }
@@ -45,7 +45,7 @@ unsafe impl FetchState for IdState {
     }
 }
 
-impl<'s, T: Send + Sync + 'static> Fetch<'s> for IdFetch<T> {
+impl<'s, T: ArchetypeIdent> Fetch<'s> for IdFetch<T> {
     type Item = Id<T>;
     type State = IdState;
 

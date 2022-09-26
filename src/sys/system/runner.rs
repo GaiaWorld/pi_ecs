@@ -8,7 +8,7 @@ use crate::{
     world::World,
 };
 use derive_deref::{Deref, DerefMut};
-use pi_share::cell::TrustCell;
+use pi_share::{cell::TrustCell, ThreadSend, ThreadSync};
 // use bevy_ecs_macros::all_tuples;
 use std::{borrow::Cow, marker::PhantomData, sync::Arc};
 
@@ -87,8 +87,8 @@ where
 
 impl<In, Out, Param, InMarker, R> IntoSystem<Param, RunnerSystem<In, Out, Param, InMarker, R>> for R
 where
-    In: 'static + Send + Sync,
-    Out: 'static + Send + Sync,
+    In: ThreadSync + 'static,
+    Out: ThreadSend + 'static,
     Param: SystemParam + 'static,
     InMarker: 'static,
     R:  RunnerInner<In, Out, Param>,
@@ -114,8 +114,8 @@ where
 
 impl<In, Out, Param, InMarker, R> System for RunnerSystem<In, Out, Param, InMarker, R>
 where
-	In: 'static + Send + Sync,
-	Out: 'static + Send + Sync,
+	In: ThreadSync + 'static,
+	Out: ThreadSend + 'static,
 	Param: SystemParam + 'static,
 	InMarker: 'static,
 	R:  RunnerInner<In, Out, Param>,
@@ -257,16 +257,16 @@ where
 //     }
 // }
 
-pub trait Runner: Sync + Send + 'static {
-	type In: 'static + Sync + Send = ();
-	type Out: 'static + Sync + Send = ();
+pub trait Runner: ThreadSync + 'static{
+	type In: ThreadSync + 'static = ();
+	type Out: ThreadSend + 'static = ();
 	type Param: SystemParam = ();
 	fn run(&mut self, input: Self::In, param: <<Self::Param as SystemParam>::Fetch as SystemParamFetch>::Item ) -> Self::Out;
 }
 
 impl<In, Out, Param, S> RunnerInner<In, Out, Param> for ShareSystem<S> where
-	In: 'static + Sync + Send,
-	Out: 'static + Sync + Send,
+	In: ThreadSync + 'static,
+	Out: ThreadSend + 'static,
 	Param: SystemParam,
 	S: Runner<In = In, Out = Out, Param = Param> {
 
@@ -276,16 +276,18 @@ impl<In, Out, Param, S> RunnerInner<In, Out, Param> for ShareSystem<S> where
     }
 }
 
-pub trait RunnerInner<In, Out, Param>: Sync + Send + 'static 
+pub trait RunnerInner<In, Out, Param>: ThreadSync + 'static
 	where
-		In: 'static + Sync + Send,
-		Out: 'static + Sync + Send,
+		In: ThreadSync + 'static,
+		Out: ThreadSend + 'static,
 		Param: SystemParam {
 	fn run(&mut self, input: In, param: <<Param as SystemParam>::Fetch as SystemParamFetch>::Item ) -> Out;
 }
 
 #[derive(Deref, DerefMut)]
 pub struct ShareSystem<R>(Arc<TrustCell<R>>);
+
+unsafe impl<R: Send> Send for ShareSystem<R> {}
 
 impl<R> ShareSystem<R> {
 	pub fn new(r: R) -> Self {

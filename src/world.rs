@@ -196,7 +196,7 @@ impl WorldInner {
     }
 
     /// 创建原型
-    pub fn new_archetype<T: Send + Sync + 'static>(&mut self) -> ArchetypeInfo {
+    pub fn new_archetype<T: ArchetypeIdent>(&mut self) -> ArchetypeInfo {
         ArchetypeInfo {
             archetype_id: self.archetypes.get_or_create_archetype::<T>(),
             world: self,
@@ -206,7 +206,7 @@ impl WorldInner {
     }
 
     /// 创建实体
-    pub fn spawn<T: Send + Sync + 'static>(&mut self) -> EntityRef<T> {
+    pub fn spawn<T: Component>(&mut self) -> EntityRef<T> {
         let archetype_id = match self.archetypes.get_id_by_ident(TypeId::of::<T>()) {
             Some(r) => r.clone(),
             None => self.archetypes.create_archetype::<T>(),
@@ -251,7 +251,7 @@ impl WorldInner {
     }
 
     /// 添加组件监听器
-    pub fn add_component_listener<T: ListenType, A: 'static + Send + Sync, C: Component>(
+    pub fn add_component_listener<T: ListenType, A: ArchetypeIdent, C: Component>(
         &mut self,
         listener: Listener,
     ) {
@@ -276,7 +276,7 @@ impl WorldInner {
 
     /// 添加实体监听器
     #[inline]
-    pub fn add_entity_listener<T: ListenType, A: 'static + Send + Sync>(
+    pub fn add_entity_listener<T: ListenType, A: ArchetypeIdent>(
         &mut self,
         listener: Listener,
     ) {

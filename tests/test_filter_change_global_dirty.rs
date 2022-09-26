@@ -7,7 +7,7 @@ use pi_ecs::{
 	prelude::{Query, IntoSystem, StageBuilder, SingleDispatcher, Dispatcher}, entity::Id, world::World,
 	query::filter::change_with_mark::Changed,
 };
-use pi_async::rt::{multi_thread:: MultiTaskRuntime, AsyncRuntimeBuilder};
+use pi_async::prelude::{multi_thread:: MultiTaskRuntime, AsyncRuntimeBuilder};
 
 
 pub struct Node;

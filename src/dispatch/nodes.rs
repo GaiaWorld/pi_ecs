@@ -12,39 +12,38 @@ use crate::{
     world::World,
 };
 use futures::Future;
-use futures::future::BoxFuture;
+use pi_futures::BoxFuture;
 use pi_share::cell::TrustCell;
 use std::borrow::Cow;
 use std::io::Result;
 use std::sync::Arc;
+use pi_share::{ThreadSync, ThreadSend};
 
 pub struct SyncRun<Param: SystemParam + 'static, Out, F>(
     pub(crate) TrustCell<FunctionSystem<(), Out, Param, (), F>>,
 );
 
-pub struct AsyncRun<Param: SystemParam + Send + 'static, Out: Future<Output=Result<()>> + Send + 'static, F: Send + 'static>(
+pub struct AsyncRun<Param: SystemParam, Out: Future<Output=Result<()>> + ThreadSend + 'static, F: ThreadSync + 'static>(
     pub(crate) Arc<TrustCell<FunctionSystem<(), Out, Param, (), F>>>,
 );
 
 unsafe impl<Param, Out, F> Send for AsyncRun<Param, Out, F> where 
-	Param: SystemParam + Send + 'static, 
-	Out: Future<Output=Result<()>> + Send + 'static, 
-	F: Send + 'static {}
+	Param: SystemParam, 
+	Out: Future<Output=Result<()>> + ThreadSend + 'static, 
+	F: ThreadSync + 'static {}
 unsafe impl<Param, Out, F> Sync for AsyncRun<Param, Out, F> where 
-Param: SystemParam + Send + 'static, 
-Out: Future<Output=Result<()>> + Send + 'static, 
-F: Send + 'static {}
+Param: SystemParam, 
+Out: Future<Output=Result<()>> + ThreadSend + 'static, 
+F: ThreadSync + 'static {}
 
-impl<Param: SystemParam + 'static, Out: 'static + Send, F> Operate for SyncRun<Param, Out, F>
+impl<Param: SystemParam, Out: ThreadSend + 'static, F> Operate for SyncRun<Param, Out, F>
 where
-    F: Send + SystemParamFunction<(), Out, Param, ()>,
+    F: SystemParamFunction<(), Out, Param, ()> + ThreadSync + 'static,
 {
     type R = ();
 
     fn run(&self) {
-		// if std::any::type_name::<F>().find("user_setting").is_some() {
-			// println!("run============{:?}", std::any::type_name::<F>());
-		// }
+		// println!("run============{:?}", std::any::type_name::<F>());
 		
         self.0.borrow_mut().run(());
 		// println!("run end============{:?}", std::any::type_name::<F>());
@@ -61,17 +60,14 @@ where
 
 impl<Param, Out, F> Operate for AsyncRun<Param, Out, F>
 where
-    F: Send + SystemParamFunction<(), Out, Param, ()>,
-	Out: Future<Output = Result<()>  > + Send + 'static,
-	Param: SystemParam + 'static + Send
+    F: SystemParamFunction<(), Out, Param, ()> + ThreadSync + 'static,
+	Out: Future<Output = Result<()>  > + ThreadSend + 'static,
+	Param: SystemParam + 'static
 {
     type R = BoxFuture<'static, Result<()>>;
 
     fn run(&self) -> BoxFuture<'static, Result<()>> {
 		// println!("async============{:?}", std::any::type_name::<F>());
-		// if std::any::type_name::<F>().find("calc_border_color").is_some() {
-		// 	println!("xxxxxxxxxxx");
-		// }
 		let context: AsyncRun<Param, Out, F> = Self(self.0.clone());
 		Box::pin(async move {
 			// 将context捕获，使得future在执行时，system始终存在，保证future执行的安全性
@@ -88,9 +84,9 @@ where
     }
 }
 
-impl<Param: SystemParam + 'static, Out: 'static + Send, F> Into<GraphNode> for FunctionSystem<(), Out, Param, (), F>
+impl<Param: SystemParam + 'static, Out: ThreadSend + 'static, F> Into<GraphNode> for FunctionSystem<(), Out, Param, (), F>
 where
-    F: Send + SystemParamFunction<(), Out, Param, ()>,
+    F: SystemParamFunction<(), Out, Param, ()> + ThreadSync + 'static,
 {
     default fn into(self) -> GraphNode {
         let id = self.id();
@@ -112,9 +108,9 @@ where
 impl<Param, Out, F> Into<GraphNode>
     for FunctionSystem<(), Out, Param, (), F>
 where
-    F: SystemParamFunction<(), Out, Param, ()> + Send + 'static,
-	Param: SystemParam + Send + 'static,
-	Out: Future<Output = Result<()>> + Send + 'static
+    F: SystemParamFunction<(), Out, Param, ()> + ThreadSync + 'static,
+	Param: SystemParam + 'static,
+	Out: Future<Output = Result<()>> + ThreadSend + 'static
 {
     fn into(self) -> GraphNode {
         let id = self.id();
@@ -124,7 +120,7 @@ where
         let sys = Arc::new(TrustCell::new(self));
         GraphNode {
             id: id.id(),
-            node: ExecNode::Async(Box::new(AsyncRun(sys))),
+            node: ExecNode::Async(super::interface::AsyncRun(Arc::new(AsyncRun(sys)))),
 			access: component_access,
 			label: name,
         }
@@ -150,7 +146,10 @@ impl Arrange for World {
     }
 }
 
-pub struct FnSys(pub(crate) Box<dyn Fn() + Send + 'static>);
+pub trait FnSysTrait: Fn() + ThreadSync + 'static {}
+impl<T: Fn() + ThreadSync + 'static> FnSysTrait for T {}
+
+pub struct FnSys(pub(crate) Box<dyn FnSysTrait>);
 
 impl Operate for FnSys {
     type R = ();

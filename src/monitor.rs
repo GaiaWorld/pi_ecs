@@ -1,14 +1,14 @@
 use pi_listener::{Listener as LibListener, Listeners as LibListeners};
 use pi_map::Map;
 use pi_ecs_macros::all_tuples;
-use pi_share::cell::TrustCell;
+use pi_share::{cell::TrustCell, ThreadSync};
 use std::{ops::Deref, sync::Arc, marker::PhantomData};
 use crate::{
 	world::World, 
 	entity::Entity, 
 	component::Component,
 	sys::{system::{System, IntoSystem, SystemState, InputMarker, func_sys::{FunctionSystem, SystemParamFunction, SysInput}, runner::{ShareSystem, RunnerSystem, RunnerInner}}, 
-	param::{SystemParam, SystemParamFetch, SystemParamState, NotApply}}, archetype::ArchetypeComponentId, prelude::{FilteredAccessSet}};
+	param::{SystemParam, SystemParamFetch, SystemParamState, NotApply}}, archetype::{ArchetypeComponentId, ArchetypeIdent}, prelude::{FilteredAccessSet}};
 
 
 impl SysInput for Event {}
@@ -48,7 +48,7 @@ where
     // F: System<In=Event, Out=()>,
 	F: 
 		IntoSystem<P, FunctionSystem<Event, (), P, InputMarker, F>> +
-		SystemParamFunction<Event, (), P, InputMarker> + Send + Sync + 'static,
+		SystemParamFunction<Event, (), P, InputMarker> + ThreadSync + 'static,
 	P::Fetch: NotApply
 {
 	fn setup(self, world: &mut World) {
@@ -66,18 +66,18 @@ where
 	}
 }
 
-pub trait Monitor<Listen: ListenInit>: Sync + Send + 'static {
-	type Param: SystemParam;
+pub trait Monitor<Listen: ListenInit>: ThreadSync + 'static{
+	type Param: SystemParam + 'static;
 	fn monitor(&mut self, e: Event, param: <<Self::Param as SystemParam>::Fetch as SystemParamFetch>::Item);
 }
 
-impl<L: ListenInit, P: SystemParam + 'static + Send + Sync, S: Monitor<L, Param = P>> RunnerInner<Event, (), P> for ShareListener<L, P, ShareSystem<S>> {
+impl<L: ListenInit, P: SystemParam + ThreadSync + 'static, S: Monitor<L, Param = P>> RunnerInner<Event, (), P> for ShareListener<L, P, ShareSystem<S>> {
 	fn run(&mut self, input: Event, param: <<P as SystemParam>::Fetch as SystemParamFetch>::Item ) {
 		self.v.borrow_mut().monitor(input, param);
 	}
 }
 
-impl<L: ListenInit, P: SystemParam + 'static + Send + Sync, S> ListenSetup for ShareListener<L, P, ShareSystem<S>>
+impl<L: ListenInit, P: SystemParam + ThreadSync + 'static, S> ListenSetup for ShareListener<L, P, ShareSystem<S>>
 where S: 
 	Monitor<L, Param = P>,
 	P::Fetch: NotApply
@@ -107,7 +107,7 @@ where S:
 	}
 }
 
-pub trait ListenInit: Send + Sync + 'static {
+pub trait ListenInit: ThreadSync + 'static {
 	fn init(world: &mut World, listener: Listener);
 	fn add_access(world: &mut World, access: FilteredAccessSet<ArchetypeComponentId>);
 }
@@ -126,7 +126,7 @@ pub fn add_access(world: &mut World, access: FilteredAccessSet<ArchetypeComponen
 
 pub struct ComponentListen<A, C, T>(PhantomData<(A, C, T)>);
 impl<A, C, T> ListenInit for ComponentListen<A, C, T> where 
-	A: 'static + Send + Sync,
+	A: ArchetypeIdent,
 	C: Component,
 	T: ListenType{
 	fn init(world: &mut World, listener: Listener) {
@@ -157,7 +157,7 @@ impl<R, T> ListenInit for ResourceListen<R, T> where
 
 pub struct EntityListen<A, T>(PhantomData<(A, T)>);
 impl<A, T> ListenInit for EntityListen<A, T> where 
-	A: 'static + Send + Sync,
+	A: ArchetypeIdent,
 	T: ListenType{
 	fn init(world: &mut World, listener: Listener) {
 		world.add_entity_listener::<T, A>(listener);
@@ -207,7 +207,7 @@ impl<'w, 's, T: ListenInit> SystemParamFetch<'w, 's> for ListenState<T> {
     }
 }
 
-pub trait ListenType: Send + Sync + 'static {
+pub trait ListenType: ThreadSync + 'static {
 	fn add(notify: &dyn Notify, listener: Listener);
 }
 
@@ -389,7 +389,7 @@ macro_rules! impl_event_init {
 // impl<L: ListenInit, P: SystemParam + 'static, S> Listeners<P, FunctionListeners<L, S>> for S 
 // 	where S: 
 // 		IntoSystem<P, FunctionSystem<Event, (), P, InputMarker, S>> +
-// 		SystemParamFunction<Event, (), P, InputMarker> + Send + Sync + 'static + 
+// 		SystemParamFunction<Event, (), P, InputMarker> + ThreadSync + 
 // 		FnMut(Event, Listen<L>, ) -> () +
 // 		Clone,
 // 		{
@@ -431,7 +431,7 @@ macro_rules! impl_event_setup {
 		impl<L: ListenInit, S, $($param: SystemParam + 'static),*> Listeners<(Listen<L>, $($param,)*), FunctionListeners<L, S, (Listen<L>, $($param,)*)>> for S 
 			where S: 
 				IntoSystem<(Listen<L>, $($param,)*), FunctionSystem<Event, (), (Listen<L>, $($param,)*), InputMarker, S>> +
-				SystemParamFunction<Event, (), (Listen<L>, $($param,)*), InputMarker> + Send + Sync + 'static + 
+				SystemParamFunction<Event, (), (Listen<L>, $($param,)*), InputMarker> + ThreadSync + 'static +
 				FnMut(Event, Listen<L>, $($param,)*) -> () +
 				Clone,
 				$($param::Fetch: NotApply),*

@@ -1,4 +1,6 @@
 //! 本地数据
+use pi_share::ThreadSync;
+
 use crate::{
 	component::{Component},
 	sys::param::interface::{SystemParam, SystemParamFetch, SystemParamState, NotApply},
@@ -62,4 +64,4 @@ impl<'w, 's, T: Component + FromWorld> SystemParamFetch<'w, 's> for LocalState<T
     }
 }
 
-impl<T: Send + Sync + 'static> NotApply for LocalState<T> {}
+impl<T: ThreadSync + 'static> NotApply for LocalState<T> {}

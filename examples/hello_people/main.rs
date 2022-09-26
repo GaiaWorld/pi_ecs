@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use pi_async::rt::multi_thread::{MultiTaskRuntimeBuilder, StealableTaskPool};
+use pi_async::prelude::multi_thread::{MultiTaskRuntimeBuilder, StealableTaskPool};
 use pi_ecs::prelude::{World, StageBuilder, IntoSystem, SingleDispatcher, Dispatcher, Query};
 
 struct Person;

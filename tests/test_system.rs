@@ -1,7 +1,7 @@
 /// 测试System
 
 use pi_ecs::{prelude::{Query, With,Res, World, Local, ResMut, StageBuilder, SingleDispatcher, Dispatcher, Id, SystemParam}, sys::system::IntoSystem};
-use pi_async::rt::AsyncRuntimeBuilder;
+use pi_async::prelude::AsyncRuntimeBuilder;
 use std::{sync::Arc, io::Result};
 
 /// 定义一个名为Node原型类型

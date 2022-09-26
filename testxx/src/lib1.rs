@@ -23,7 +23,7 @@ macro_rules! impl_system_function {
         where
             Func:
                 FnMut(Input, $($param),*) -> Out +
-                FnMut(Input, $(<<$param as SystemParam>::Fetch as SystemParamFetch>::Item),*) -> Out + Send + Sync + 'static, Out: 'static
+                FnMut(Input, $(<<$param as SystemParam>::Fetch as SystemParamFetch>::Item),*) -> Out + ThreadSend + 'static, Out: 'static
         {
             #[inline]
             fn run(&mut self, input: Input, state: &mut <($($param,)*) as SystemParam>::Fetch, system_state: &SystemState, world: &Arc<TrustCell<World>>, change_tick: u32) -> Out {

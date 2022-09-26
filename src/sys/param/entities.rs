@@ -6,7 +6,7 @@ use crate::{
 	sys::param::interface::{SystemParam, SystemParamFetch, SystemParamState, NotApply},
 	sys::system::interface::SystemState,
 	world::World,
-	archetype::ArchetypeId,
+	archetype::{ArchetypeId, ArchetypeIdent},
 	entity::{Entities, Id},
 };
 
@@ -17,7 +17,7 @@ pub struct EntityInsert<T> {
 	mark: PhantomData<T>,
 }
 
-impl<T: Send + Sync + 'static> EntityInsert<T> {
+impl<T: ArchetypeIdent> EntityInsert<T> {
 	pub fn spawn(&mut self) -> Id<T> {
 		Id(
 			unsafe { &mut *(self.entities as *mut Entities) }
@@ -27,14 +27,14 @@ impl<T: Send + Sync + 'static> EntityInsert<T> {
 	}
 }
 
-impl<T: Send + Sync + 'static> SystemParam for EntityInsert<T> {
+impl<T: ArchetypeIdent> SystemParam for EntityInsert<T> {
     type Fetch = EntityInsertState<T>;
 }
 
 /// The [`SystemParamState`] of [`SystemChangeTick`].
 pub struct EntityInsertState<T>(ArchetypeId,  PhantomData<T>);
 
-unsafe impl<T: Send + Sync + 'static> SystemParamState for EntityInsertState<T> {
+unsafe impl<T: ArchetypeIdent> SystemParamState for EntityInsertState<T> {
     type Config = ();
 
     fn init(world:  &mut World, system_state: &mut SystemState, _config: Self::Config) -> Self {
@@ -53,7 +53,7 @@ unsafe impl<T: Send + Sync + 'static> SystemParamState for EntityInsertState<T> 
     }
 }
 
-impl<'w, 's, T: Send + Sync + 'static> SystemParamFetch<'w, 's> for EntityInsertState<T> {
+impl<'w, 's, T: ArchetypeIdent> SystemParamFetch<'w, 's> for EntityInsertState<T> {
     type Item = EntityInsert<T>;
 
     #[inline]
@@ -70,7 +70,7 @@ impl<'w, 's, T: Send + Sync + 'static> SystemParamFetch<'w, 's> for EntityInsert
     }
 }
 
-impl<T: Send + Sync + 'static> NotApply for EntityInsertState<T> {}
+impl<T: ArchetypeIdent> NotApply for EntityInsertState<T> {}
 
 
 
@@ -83,20 +83,20 @@ pub struct EntityDelete<T> {
 	mark: PhantomData<T>,
 }
 
-impl<T: Send + Sync + 'static> EntityDelete<T> {
+impl<T: ArchetypeIdent> EntityDelete<T> {
 	pub fn despawn(&mut self, id: Id<T>) -> Option<()> {
 		unsafe { &mut *(self.entities as *mut Entities) }.remove(id.0)
 	}
 }
 
-impl<T: Send + Sync + 'static> SystemParam for EntityDelete<T> {
+impl<T: ArchetypeIdent> SystemParam for EntityDelete<T> {
     type Fetch = EntityDeleteState<T>;
 }
 
 /// The [`SystemParamState`] of [`SystemChangeTick`].
 pub struct EntityDeleteState<T>(ArchetypeId,  PhantomData<T>);
 
-unsafe impl<T: Send + Sync + 'static> SystemParamState for EntityDeleteState<T> {
+unsafe impl<T: ArchetypeIdent> SystemParamState for EntityDeleteState<T> {
     type Config = ();
 
     fn init(world:  &mut World, system_state: &mut SystemState, _config: Self::Config) -> Self {
@@ -115,7 +115,7 @@ unsafe impl<T: Send + Sync + 'static> SystemParamState for EntityDeleteState<T> 
     }
 }
 
-impl<'w, 's, T: Send + Sync + 'static> SystemParamFetch<'w, 's> for EntityDeleteState<T> {
+impl<'w, 's, T: ArchetypeIdent> SystemParamFetch<'w, 's> for EntityDeleteState<T> {
     type Item = EntityDelete<T>;
 
     #[inline]
@@ -132,4 +132,4 @@ impl<'w, 's, T: Send + Sync + 'static> SystemParamFetch<'w, 's> for EntityDelete
     }
 }
 
-impl<T: Send + Sync + 'static> NotApply for EntityDeleteState<T> {}
+impl<T: ArchetypeIdent> NotApply for EntityDeleteState<T> {}

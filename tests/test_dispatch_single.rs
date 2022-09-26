@@ -1,5 +1,5 @@
 // use futures::{future::BoxFuture, FutureExt};
-// use pi_async::rt::{single_thread::SingleTaskRunner, AsyncRuntime};
+// use pi_async::prelude::{single_thread::SingleTaskRunner, AsyncRuntime};
 // use pi_ecs::prelude::*;
 // use std::{io::Result, sync::Arc};
 

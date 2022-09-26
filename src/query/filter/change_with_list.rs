@@ -1,11 +1,11 @@
 use pi_map::Map;
-use pi_share::cell::TrustCell;
+use pi_share::{cell::TrustCell};
 
 use std::sync::Arc;
 use std::default::Default;
 
 use crate::{
-    archetype::{Archetype, ArchetypeComponentId, ArchetypeId},
+    archetype::{Archetype, ArchetypeComponentId, ArchetypeId, ArchetypeIdent},
 	monitor::{Event, Listen, ComponentListen, Create, Modify, Listeners, ListenSetup, Delete},
     component::{Component, ComponentId, MultiCaseImpl},
     query::{
@@ -124,7 +124,7 @@ macro_rules! impl_tick_filter {
                 archetype.contains(self.component_id)
             }
 			
-			fn init_archetype<A: 'static + Send + Sync>(&self, world: &mut World) {
+			fn init_archetype<A: ArchetypeIdent>(&self, world: &mut World) {
 				let lists = unsafe{&mut *(self.dirty_list as *mut DirtyLists)};
 				let list = &mut lists.list[self.index];
 				if let None = list.init_list.get(&self.component_id) {

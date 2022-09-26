@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use pi_ecs::{prelude::{Query, IntoSystem, StageBuilder, SingleDispatcher, Dispatcher}, entity::Id, world::World, storage::Offset};
 use pi_ecs::query::filter::Changed;
-use pi_async::rt::{multi_thread::MultiTaskRuntime, AsyncRuntimeBuilder};
+use pi_async::prelude::{multi_thread::MultiTaskRuntime, AsyncRuntimeBuilder};
 
 
 

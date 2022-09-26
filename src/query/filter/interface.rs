@@ -6,11 +6,10 @@ use crate::{
 		fetch::interface::{Fetch, WorldQuery, MianFetch, FetchState},
 		access::FilteredAccess,
 	},
-	archetype::{Archetype, ArchetypeId, ArchetypeComponentId},
+	archetype::{Archetype, ArchetypeId, ArchetypeComponentId, ArchetypeIdent},
 	storage::LocalVersion,
 	world::{World, WorldInner},
 };
-
 /// Fetch methods used by query filters. This trait exists to allow "short circuit" behaviors for
 /// relevant query filter fetches.
 pub trait FilterFetch: for<'s> Fetch<'s> {
@@ -124,7 +123,7 @@ macro_rules! impl_query_filter_tuple {
             fn init(world: &mut World, query_id: usize, archetype_id: ArchetypeId) -> Self {
                 Or(($($filter::init(world, query_id, archetype_id),)*))
             }
-			fn init_archetype<A: 'static + Send + Sync>(&self, world: &mut World)  {
+			fn init_archetype<A: ArchetypeIdent>(&self, world: &mut World)  {
 				let ($($filter,)*) = &self.0;
                 // let ($($state,)*) = &state.0;
                 $(

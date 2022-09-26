@@ -10,6 +10,7 @@ use crate::{
     },
 };
 use log::trace;
+use pi_share::ThreadSync;
 use std::{
     fmt::{self},
     hash::Hash,
@@ -812,6 +813,6 @@ mod tests {
 }
 
 
-impl<TSystemParamState, T: Send + Sync + 'static> NotApply for EventReaderState<TSystemParamState,T> {}
+impl<TSystemParamState, T: ThreadSync + 'static> NotApply for EventReaderState<TSystemParamState,T> {}
 
-impl<TSystemParamState, T: Send + Sync + 'static> NotApply for EventWriterState<TSystemParamState, T> {}
+impl<TSystemParamState, T: ThreadSync + 'static> NotApply for EventWriterState<TSystemParamState, T> {}

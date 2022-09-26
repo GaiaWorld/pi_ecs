@@ -1,7 +1,7 @@
 use pi_share::cell::TrustCell;
 
 use crate::{
-    archetype::{Archetype, ArchetypeId, ArchetypeComponentId},
+    archetype::{Archetype, ArchetypeId, ArchetypeComponentId, ArchetypeIdent},
     component::{Component, ComponentId, MultiCaseImpl},
     entity::Id,
 	query::{
@@ -25,12 +25,12 @@ use std::{
 pub struct Join<C: Component + Deref<Target = Id<A>>, A, Q: WorldQuery, F: WorldQuery = ()>(PhantomData<(C, A, Q, F)>) where F::Fetch: FilterFetch;
 
 
-impl<C: Component + Deref<Target = Id<A>>, A: Send + Sync + 'static, Q: WorldQuery, F: WorldQuery> WorldQuery for Join<C, A, Q, F> where F::Fetch: FilterFetch {
+impl<C: Component + Deref<Target = Id<A>>, A: ArchetypeIdent, Q: WorldQuery, F: WorldQuery> WorldQuery for Join<C, A, Q, F> where F::Fetch: FilterFetch {
     type Fetch = JoinFetch<C, A, Q::Fetch, F::Fetch>;
     type State = JoinState<C, A, Q::State, F::State>;
 }
 
-pub struct JoinFetch<C: Component + Deref<Target = Id<A>>, A: Send + Sync + 'static, Q, F> {
+pub struct JoinFetch<C: Component + Deref<Target = Id<A>>, A: ArchetypeIdent, Q, F> {
 	fetch: Q,
 	filter: F,
 	// container: MaybeUninit<NonNull<u8>>,
@@ -40,11 +40,11 @@ pub struct JoinFetch<C: Component + Deref<Target = Id<A>>, A: Send + Sync + 'sta
 
 unsafe impl<C, A, Q, F> ReadOnlyFetch for JoinFetch<C, A, Q, F> 
 	where Q: ReadOnlyFetch,
-		  A: Send + Sync + 'static,
+		  A: ArchetypeIdent,
 		  C: Component + Deref<Target = Id<A>> {}
 
 
-impl<'s, C: Component + Deref<Target = Id<A>>, A: Send + Sync + 'static, Q: Fetch<'s>, F: FilterFetch> Fetch<'s> for JoinFetch<C, A, Q, F> {
+impl<'s, C: Component + Deref<Target = Id<A>>, A: ArchetypeIdent, Q: Fetch<'s>, F: FilterFetch> Fetch<'s> for JoinFetch<C, A, Q, F> {
     type Item = Q::Item;
     type State = JoinState<C, A, Q::State, <F as Fetch<'s>>::State>;
 
@@ -122,7 +122,7 @@ pub struct JoinState<C: Component + Deref<Target = Id<A>>, A, Q, F> {
 	mark: PhantomData<(A, C)>
 }
 
-unsafe impl<C: Component + Deref<Target = Id<A>>, A: Send + Sync + 'static, Q: FetchState, F: FetchState> FetchState for JoinState<C, A, Q, F> {
+unsafe impl<C: Component + Deref<Target = Id<A>>, A: ArchetypeIdent, Q: FetchState, F: FetchState> FetchState for JoinState<C, A, Q, F> {
     fn init(world: &mut World, query_id: usize, archetype_id: ArchetypeId) -> Self {
 		let archetype_id_next = world.archetypes_mut().get_or_create_archetype::<A>();
 		let component_id = world.get_or_register_component::<C>(archetype_id);

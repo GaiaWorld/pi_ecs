@@ -3,19 +3,20 @@ use pi_ecs_macros::all_tuples;
 
 use crate::{
 	world::{WorldInner, World},
-	archetype::{Archetype, ArchetypeId, ArchetypeComponentId},
+	archetype::{Archetype, ArchetypeId, ArchetypeComponentId, ArchetypeIdent},
 	storage::LocalVersion,
 	component::{ComponentId, Component},
 	query::access::FilteredAccess,
 };
+use pi_share::ThreadSync;
 
 /// WorldQuery 从world上fetch组件、实体、资源，需要实现该triat
-pub trait WorldQuery: Send + Sync {
+pub trait WorldQuery {
     type Fetch: for<'s> Fetch<'s, State = Self::State>;
     type State: FetchState;
 }
 
-pub trait Fetch<'s>: Send + Sync + Sized {
+pub trait Fetch<'s>: Sized + ThreadSync + 'static {
     type Item;
     type State: FetchState;
 
@@ -61,13 +62,13 @@ pub trait Fetch<'s>: Send + Sync + Sized {
 /// [FetchState::update_archetype_component_access] exactly reflects the results of
 /// [FetchState::matches_archetype], [FetchState::matches_table], [Fetch::archetype_fetch], and
 /// [Fetch::table_fetch]
-pub unsafe trait FetchState: Send + Sync + Sized {
+pub unsafe trait FetchState: ThreadSync + 'static + Sized {
 	/// 创建FetchState实例
     fn init(world: &mut World, query_id: usize, archetype_id: ArchetypeId) -> Self;
     fn update_archetype_component_access(&self, archetype: &Archetype, access: &mut FilteredAccess<ArchetypeComponentId>);
     fn matches_archetype(&self, archetype: &Archetype) -> bool;
 	// fn get_matches(&self) -> bool;
-	fn init_archetype<A: 'static + Send + Sync>(&self, _world: &mut World) {}
+	fn init_archetype<A: ArchetypeIdent>(&self, _world: &mut World) {}
     // fn matches_table(&self, table: &Table) -> bool;
 
 	fn apply(&self, _world: &mut World) {
@@ -155,7 +156,7 @@ macro_rules! impl_tuple_fetch {
                 ($($name::init(_world, query_id, archetype_id),)*)
             }
 
-			fn init_archetype<A: 'static + Send + Sync>(&self, _world: &mut World)  {
+			fn init_archetype<A: ArchetypeIdent>(&self, _world: &mut World)  {
 				let ($($name,)*) = self;
                 $($name.init_archetype::<A>(_world);)*
 			}

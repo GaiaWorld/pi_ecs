@@ -2,17 +2,16 @@ use std::mem::forget;
 
 use pi_map::Map;
 use pi_null::Null;
+use pi_share::ThreadSync;
 
 use crate::{
 	monitor::{Notify, NotifyImpl, Listener, ListenType},
 	entity::Entity, storage::{SecondaryMap, Local}, component::ComponentTicks
 };
 
-pub trait Resource: Send + Sync + 'static {}
+pub trait Resource: ThreadSync + 'static{}
 
-impl<T: Send + Sync + 'static> Resource for T {
-	
-}
+impl<T: ThreadSync + 'static> Resource for T {}
 
 pub type ResourceId = Local;
 

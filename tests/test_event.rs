@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use pi_async::rt::{AsyncRuntimeBuilder, multi_thread::MultiTaskRuntime};
+use pi_async::prelude::{AsyncRuntimeBuilder, multi_thread::MultiTaskRuntime};
 use pi_ecs::prelude::{
     event::{EventReader, EventWriter, Events}, IntoSystem, SingleDispatcher, StageBuilder, World, Dispatcher,
 };

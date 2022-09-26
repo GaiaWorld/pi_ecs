@@ -8,6 +8,7 @@ use pi_hash::XHashMap;
 use pi_any::ArcAny;
 
 use thiserror::Error;
+use pi_share::ThreadSync;
 
 
 use crate::{
@@ -16,18 +17,18 @@ use crate::{
 };
 
 pub trait ComponentStorage {
-	type Type: Map<Key = LocalVersion, Val = Self> + Index<LocalVersion, Output=Self> + IndexMut<LocalVersion, Output=Self> + Sync + Send + 'static;
+	type Type: Map<Key = LocalVersion, Val = Self> + Index<LocalVersion, Output=Self> + IndexMut<LocalVersion, Output=Self> + ThreadSync + 'static;
 }
 
-pub trait Component: Send + Sync + 'static {
-	type Storage: Map<Key = LocalVersion, Val = Self> + Index<LocalVersion, Output=Self> + IndexMut<LocalVersion, Output=Self> + Sync + Send + 'static;
+pub trait Component: ThreadSync + 'static {
+	type Storage: Map<Key = LocalVersion, Val = Self> + Index<LocalVersion, Output=Self> + IndexMut<LocalVersion, Output=Self> + ThreadSync + 'static;
 }
 
-impl<C> Component for C where C: Send + Sync + 'static {
+impl<C> Component for C where C: ThreadSync + 'static {
 	default type Storage = SecondaryMap<LocalVersion, Self>;
 }
 
-impl<C> Component for C where C: ComponentStorage + Send + Sync + 'static{
+impl<C> Component for C where C: ComponentStorage + ThreadSync + 'static{
 	type Storage = <C as ComponentStorage>::Type;
 }
 
@@ -43,6 +44,9 @@ pub struct MultiCaseImpl<C: Component> {
 	archetype_id: Local,
 	ticks: VecMap<ComponentTicks>,
 }
+
+unsafe impl<C: Component> Send for MultiCaseImpl<C> {}
+unsafe impl<C: Component> Sync for MultiCaseImpl<C> {}
 
 impl<C: Component> MultiCaseImpl<C> {
     pub fn get_storage(&self) -> &C::Storage {

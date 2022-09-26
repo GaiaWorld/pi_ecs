@@ -6,7 +6,7 @@ use pi_ecs::{
     },
     sys::system::IntoSystem,
 };
-use pi_async::rt::{
+use pi_async::prelude::{
     multi_thread:: MultiTaskRuntime,
     AsyncRuntimeBuilder,
 };
