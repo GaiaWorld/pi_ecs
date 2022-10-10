@@ -8,7 +8,7 @@ use crate::{
 	component::ComponentId,
 	query::access::FilteredAccess,
 	world::World,
-	entity::Id,
+	entity::{Id, Entities},
 };
 
 /// 为实例实现WorldQuery
@@ -21,6 +21,7 @@ pub struct IdFetch<T> {
     // entities: *const Entity,
 	// iter: MaybeUninit<Keys<'static, LocalVersion, ()>>,
 	archetype_id: ArchetypeId,
+	container: usize,
 	mark: PhantomData<T>,
 }
 
@@ -55,6 +56,7 @@ impl<'s, T: ArchetypeIdent> Fetch<'s> for IdFetch<T> {
     ) -> Self {
         Self {
 			archetype_id: ArchetypeId::default(),
+			container: 0,
             // entities: std::ptr::null::<Entity>(),
 			mark: PhantomData,
         }
@@ -68,15 +70,16 @@ impl<'s, T: ArchetypeIdent> Fetch<'s> for IdFetch<T> {
 		_world: &World,
     ) {
 		self.archetype_id = archetype.id();
+		self.container = &archetype.entities as *const Entities as usize;
     }
 
     #[inline]
     unsafe fn archetype_fetch(&mut self, local: LocalVersion) -> Option<Self::Item> {
-		Some(Id(local, PhantomData))
-		// match self.iter.assume_init_mut().next() {
-		// 	Some(local) => Some(Entity::new(self.archetype_id, local)),
-		// 	None => None,
-		// } 
+		if (&*(self.container as *const Entities)).contains(local) {
+			Some(Id(local, PhantomData))
+		} else {
+			None
+		}
     }
 
 	unsafe fn archetype_fetch_unchecked(&mut self, local: LocalVersion) -> Self::Item {

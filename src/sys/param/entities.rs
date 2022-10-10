@@ -7,7 +7,7 @@ use crate::{
 	sys::system::interface::SystemState,
 	world::World,
 	archetype::{ArchetypeId, ArchetypeIdent},
-	entity::{Entities, Id},
+	entity::{Entities, Id}, prelude::Archetype,
 };
 
 /// 实体插入
@@ -76,16 +76,18 @@ impl<T: ArchetypeIdent> NotApply for EntityInsertState<T> {}
 
 
 /// 实体删除
-/// 可删除实体，但并不是同步删除（删除实体意味着删除组件，其对读写数据有更严格的要求，比如，无法与写入该类型对应组件并发执行）
-/// 其也与entitycommand不同，本参数会对原型上的实体删除列表进行写入，任何其他会对删该列表进行写入的参数，都将与本参入存在写冲突
+/// 可删除实体，同步删除（删除实体意味着删除组件，其对读写数据有更严格的要求，比如，无法与写入该类型对应组件并发执行）
+/// 其也与entitycommand不同，本参数会对原型上的实体删除列表进行写入，任何其他会对删该列表进行写入的参数，都将与本参入数存在写冲突
 pub struct EntityDelete<T> {
-    entities: usize, //*const Entities
+    // entities: usize, //*const Entities
+	archetype: usize,
 	mark: PhantomData<T>,
 }
 
 impl<T: ArchetypeIdent> EntityDelete<T> {
-	pub fn despawn(&mut self, id: Id<T>) -> Option<()> {
-		unsafe { &mut *(self.entities as *mut Entities) }.remove(id.0)
+	pub fn despawn(&mut self, id: Id<T>){
+		unsafe { &mut *(self.archetype as *mut Archetype) }.remove_entity(id.0)
+		// unsafe { &mut *(self.entities as *mut Entities) }.remove(id.0)
 	}
 }
 
@@ -126,7 +128,8 @@ impl<'w, 's, T: ArchetypeIdent> SystemParamFetch<'w, 's> for EntityDeleteState<T
         _change_tick: u32,
     ) -> Self::Item {
 		EntityDelete{
-			entities: world.entities(state.0) as *const Entities as usize,
+			// entities: world.entities(state.0) as *const Entities as usize,
+			archetype: &world.archetypes()[state.0] as *const Archetype as usize,
 			mark: PhantomData,
 		}
     }

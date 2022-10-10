@@ -169,6 +169,10 @@ impl Entities {
 		}
 	}
 
+	pub fn contains(&self, key: LocalVersion) -> bool {
+		self.storage.contains_key(key)
+	}
+
 	pub fn remove(&mut self, local: LocalVersion) -> Option<()> {
 		if self.storage.contains_key(local) {
 			self.entity_listners.delete_event(Entity::new(self.arch_id, local));

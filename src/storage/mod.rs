@@ -156,8 +156,15 @@ pub trait FromOffset: Offset {
 }
 
 
-#[derive(Debug, Copy, Clone, Hash, Ord, PartialOrd, Eq, PartialEq, Default)]
+#[derive(Copy, Clone, Hash, Ord, PartialOrd, Eq, PartialEq, Default)]
 pub struct LocalVersion(pub(crate) u64);
+
+
+impl std::fmt::Debug for LocalVersion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("LocalVersion").field(&(self.0 >> 32)).field(&(self.0 << 32 >> 32)).finish()
+    }
+}
 
 impl Null for LocalVersion {
 	/// 判断当前值是否空
