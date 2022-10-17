@@ -6,12 +6,12 @@ use std::{
 
 use pi_share::cell::TrustCell;
 
-use super::interface::{WorldQuery, FetchState, Fetch, DefaultComponent};
+use super::{interface::{WorldQuery, FetchState, Fetch, DefaultComponent}, ChangeTrackers};
 
 use crate::{
 	archetype::{Archetype, ArchetypeId, ArchetypeComponentId},
 	storage::LocalVersion,
-	component::{ComponentId, Component, MultiCaseImpl},
+	component::{ComponentId, Component, MultiCaseImpl, ComponentTicks},
 	query::access::FilteredAccess,
 	world::{World, WorldInner}, resource::ResourceId,
 };
@@ -23,7 +23,9 @@ pub struct WriteItem<'s, T: Component> {
 	world: &'s World,
 	default: ResourceId, // Option<&'s DefaultComponent<T>>
 	local: LocalVersion,
-	tick: u32
+
+	ticker: ChangeTrackers<T>,
+	// tick: u32
 }
 
 impl<'s, T: Component> WriteItem<'s, T> {
@@ -46,19 +48,24 @@ impl<'s, T: Component> WriteItem<'s, T> {
 	/// 通知修改
 	pub fn notify_modify(&mut self) {
 		let c = unsafe{&mut *(self.container as *mut MultiCaseImpl<T>)};
-		c.notify_modify(self.local, self.tick);
+		c.notify_modify(self.local, self.ticker.change_tick);
+	}
+
+	pub fn notify_delete(&mut self) {
+		let c = unsafe{&mut *(self.container as *mut MultiCaseImpl<T>)};
+		c.notify_delete(self.local, self.ticker.change_tick);
 	}
 
 	pub fn insert_no_notify(&mut self, value: T) {
 		let c = unsafe{&mut *(self.container as *mut MultiCaseImpl<T>)};
-		c.insert_no_notify(self.local,value, self.tick);
+		c.insert_no_notify(self.local,value, self.ticker.change_tick);
 		self.value = unsafe{std::mem::transmute(c.get_mut(self.local))};
 	}
 
 	/// 修改组件并通知监听函数
 	pub fn write<'a>(&'a mut self, value: T) {
 		let c = unsafe{&mut *(self.container as *mut MultiCaseImpl<T>)};
-		c.insert(self.local,value, self.tick);
+		c.insert(self.local,value, self.ticker.change_tick);
 		self.value = unsafe{std::mem::transmute(c.get_mut(self.local))};
 	}
 
@@ -84,6 +91,16 @@ impl<'s, T: Component> WriteItem<'s, T> {
 		// self.value = Some(r);
 		// self.value.as_ref().unwrap()
 	}
+
+	#[inline]
+	pub fn is_changed(&self) -> bool {
+		self.ticker.is_changed()
+	}
+
+	#[inline]
+	pub fn is_added(&self) -> bool {
+		self.ticker.is_added()
+	}
 }
 
 impl<'s, T: Component + Clone> WriteItem<'s, T> {
@@ -93,7 +110,7 @@ impl<'s, T: Component + Clone> WriteItem<'s, T> {
 		}
 		let c = unsafe{&mut *(self.container as *mut MultiCaseImpl<T>)};
 		match unsafe { self.world.archetypes().get_resource::<DefaultComponent<T>>(self.default) } {
-			Some(d) => c.insert_no_notify(self.local, (*d).clone(), self.tick),
+			Some(d) => c.insert_no_notify(self.local, (*d).clone(), self.ticker.change_tick),
 			None => panic!("get_mut_or_default fail, {:?} is not impl Default and not have DefaultComponent", type_name::<T>()),
 		};
 		
@@ -112,7 +129,8 @@ pub struct WriteFetch<T: Component> {
 	default: ResourceId,
 	world: World,
 	matchs: bool,
-	tick: u32,
+	last_change_tick: u32,
+	change_tick: u32,
 	mark: PhantomData<T>,
 }
 
@@ -127,7 +145,8 @@ impl<'s, T: Component> Fetch<'s> for WriteFetch<T> {
         Self {
 			container: 0,
 			matchs: false,
-			tick: 0,
+			last_change_tick: 0,
+			change_tick: 0,
 			default: state.default,
 			world: world.clone(),
 			mark: PhantomData,
@@ -136,8 +155,9 @@ impl<'s, T: Component> Fetch<'s> for WriteFetch<T> {
 
 	unsafe fn setting(
 		&mut self, 
-		_world: &WorldInner, _last_change_tick: u32, change_tick: u32) {
-		self.tick = change_tick;
+		_world: &WorldInner, last_change_tick: u32, change_tick: u32) {
+		self.last_change_tick = last_change_tick;
+		self.change_tick = change_tick;
 	}
 
     #[inline]
@@ -170,26 +190,38 @@ impl<'s, T: Component> Fetch<'s> for WriteFetch<T> {
 			return None;
 		}
 		let value = std::mem::transmute((&mut *(self.container as *mut MultiCaseImpl<T>)).get_mut(local));
+		let tick = (&mut *(self.container as *mut MultiCaseImpl<T>)).tick(local);
 		Some(WriteItem {
 			value,
 			container: self.container,
 			world: std::mem::transmute(&self.world),
 			default: self.default,
-			local: local,
-			tick: self.tick,
+			local,
+			ticker: ChangeTrackers {
+				component_ticks: tick.map_or(ComponentTicks{added: 0, changed: 0}, |r| {r.clone()}),
+				last_change_tick: self.last_change_tick,
+				change_tick: self.change_tick,
+				marker: PhantomData,
+			},
 		})
     }
 
 	#[inline]
     unsafe fn archetype_fetch_unchecked(&mut self, local: LocalVersion) -> Self::Item {
         let value: Option<&'static T> = std::mem::transmute((&mut *(self.container as *mut MultiCaseImpl<T>)).get(local));
+		let tick = (&mut *(self.container as *mut MultiCaseImpl<T>)).tick(local);
 		WriteItem {
 			value,
 			container: self.container,
 			world: std::mem::transmute(&self.world),
-			local: local,
+			local,
 			default: self.default,
-			tick: self.tick,
+			ticker: ChangeTrackers {
+				component_ticks: tick.map_or(ComponentTicks{added: 0, changed: 0}, |r| {r.clone()}),
+				last_change_tick: self.last_change_tick,
+				change_tick: self.change_tick,
+				marker: PhantomData,
+			},
 		}
     }
 }

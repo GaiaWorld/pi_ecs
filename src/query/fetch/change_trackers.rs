@@ -23,7 +23,7 @@ pub struct ChangeTrackers<T: Component> {
     pub(crate) component_ticks: ComponentTicks,
     pub(crate) last_change_tick: u32,
     pub(crate) change_tick: u32,
-    marker: PhantomData<T>,
+    pub(crate) marker: PhantomData<T>,
 }
 pub struct ChangeTrackersFetch<T> {
 	pub(crate) container: usize,

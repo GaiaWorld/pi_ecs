@@ -119,6 +119,11 @@ impl< C: Component> MultiCaseImpl<C> {
 		self.notify.modify_event(Entity::new(self.archetype_id, id), "", 0)
 	}
 
+	pub fn notify_delete(&mut self, id: LocalVersion, tick: u32) {
+		self.ticks[id.offset()].changed = tick;
+		self.notify.delete_event(Entity::new(self.archetype_id, id))
+	}
+
 	pub fn tick(&self, id: LocalVersion) -> Option<&ComponentTicks> {
 		self.ticks.get(id.offset())
 	}

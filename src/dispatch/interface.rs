@@ -494,28 +494,31 @@ impl StageBuilder {
     }
 
     /// 构建 拓扑 序
-    pub fn build(mut self, w: &World) -> NGraph<usize, ExecNode> {
+    pub fn build(mut self, world: &World) -> NGraph<usize, ExecNode> {
         // Stages --> NGraph
         let mut builder = NGraphBuilder::new();
 
 		for s in self.systems.iter() {
-			match write_depend(w, s.access.get_reads_and_writes(), s.access.get_writes(), s.access.get_modify()) {
+			match write_depend(world, s.access.get_reads_and_writes(), s.access.get_writes(), s.access.get_modify()) {
 				Ok((mut r, w)) => {
 					r.difference_with(&w);
 
+					// log::warn!("system: {:?}", s.node.name());
 					// 边: 该节点 --> 输出
 					for k in r.ones() {
 					    self.components.insert(k);
 					    self.edges.push((k, s.id));
+						// log::warn!("read: {:?}", &world.archetypes().archetype_component_info[k]);
 					}
 
 					for k in w.ones() {
 					    self.components.insert(k);
 					    self.edges.push((s.id, k));
+						// log::warn!("write: {:?}", &world.archetypes().archetype_component_info[k]);
 					}
 				},
 				Err(c) => {
-					let c: Vec<&'static str> = c.ones().map(|i| {(*&w.archetypes().archetype_component_info[i]).clone()}).collect();
+					let c: Vec<&'static str> = c.ones().map(|i| {(*&world.archetypes().archetype_component_info[i]).clone()}).collect();
 					panic!("{:?}", BuildErr::WriteConflict(s.label.clone(), c));
 				}
 			}
@@ -523,7 +526,7 @@ impl StageBuilder {
 
         for id in self.components {
             // 每个 Component 都是一个节点
-            builder = builder.node(id, ExecNode::None(w.archetypes().archetype_component_info[id]));
+            builder = builder.node(id, ExecNode::None(world.archetypes().archetype_component_info[id]));
         }
 
         for n in self.systems {
