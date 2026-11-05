@@ -1,0 +1,10 @@
+[package]
+name = "pi_ecs_partition"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+pi_ecs_core.workspace = true
+pi_ecs_schedule.workspace = true
+pi_ecs_app.workspace = true

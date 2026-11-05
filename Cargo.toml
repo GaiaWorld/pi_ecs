@@ -1,0 +1,38 @@
+[workspace]
+members = [".", "crates/pi_ecs_types", "crates/pi_ecs_storage", "crates/pi_ecs_command", "crates/pi_ecs_core", "crates/pi_ecs_schedule", "crates/pi_ecs_macros", "crates/pi_ecs_app", "crates/pi_ecs_partition"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace.dependencies]
+pi_ecs_types = { path = "crates/pi_ecs_types" }
+pi_ecs_storage = { path = "crates/pi_ecs_storage" }
+pi_ecs_command = { path = "crates/pi_ecs_command" }
+pi_ecs_core = { path = "crates/pi_ecs_core" }
+pi_ecs_schedule = { path = "crates/pi_ecs_schedule" }
+pi_ecs_app = { path = "crates/pi_ecs_app" }
+pi_ecs_partition = { path = "crates/pi_ecs_partition" }
+pi_ecs_macros = { path = "crates/pi_ecs_macros" }
+pi_key = { path = "../pi_key", version = "=0.4.0" }
+pi_slotmap = { path = "../pi_slotmap", version = "=0.5.0" }
+pi_arr = "=0.33.0"
+pi_buckets = "=0.5.0"
+pi_share = "=2.1.0"
+
+[package]
+name = "pi_ecs"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+pi_ecs_core.workspace = true
+pi_ecs_schedule.workspace = true
+pi_ecs_app.workspace = true
+pi_ecs_partition.workspace = true
+
+[patch.crates-io]
+pi_key = { path = "../pi_key" }

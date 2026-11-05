@@ -1,0 +1,12 @@
+[package]
+name = "pi_ecs_storage"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+pi_ecs_types.workspace = true
+pi_arr.workspace = true
+pi_buckets.workspace = true
+pi_share.workspace = true
+papaya = "=0.2.5"

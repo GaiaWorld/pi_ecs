@@ -1,0 +1,8 @@
+[package]
+name = "pi_ecs_command"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+pi_ecs_types.workspace = true

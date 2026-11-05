@@ -1,0 +1,12 @@
+[package]
+name = "pi_ecs_core"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+pi_ecs_types.workspace = true
+pi_ecs_storage.workspace = true
+pi_ecs_command.workspace = true
+pi_slotmap.workspace = true
+pi_share.workspace = true
