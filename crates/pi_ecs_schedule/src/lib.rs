@@ -1,25 +1,21 @@
 //! 系统运行时：依赖数据内核，不依赖应用与分区扩展。
+mod empty_param;
 pub mod executor;
-mod executor_inner;
+pub mod function_adapter;
 pub mod local;
-mod local_inner;
 pub mod notification_reader;
-mod notification_reader_inner;
 pub mod param_composition;
-mod param_composition_inner;
+pub mod param_state;
 pub mod recovery;
-mod recovery_inner;
 pub mod resource_param;
-mod resource_param_inner;
 pub mod schedule;
-mod schedule_inner;
 pub mod snapshot;
+pub mod spawn;
 pub mod stage;
-mod stage_inner;
+pub mod stage_plan;
 pub mod system;
 pub mod system_builder;
-mod system_builder_inner;
-mod system_inner;
 pub mod system_param;
-// @to_design System/SystemParam、函数适配、Local、Commands、消息适配、Observer 与执行器契约待逐项设计。
+mod system_param_impls;
+// RC SystemParam/函数适配/Local/命令与串行执行按各壳声明；通用消息、Observer 和运行期系统控制延期。
 // 查询执行归 core，参数注入和系统观察窗口归本包；跨包借用和 trait 实现需要实际编译验证。

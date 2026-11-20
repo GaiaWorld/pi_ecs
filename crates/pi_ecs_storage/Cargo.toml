@@ -4,9 +4,13 @@ version.workspace = true
 edition.workspace = true
 publish.workspace = true
 
+[features]
+default = []
+rc = ["pi_ecs_types/rc", "pi_arr/rc"]
+
 [dependencies]
 pi_ecs_types.workspace = true
 pi_arr.workspace = true
 pi_buckets.workspace = true
-pi_share.workspace = true
-papaya = "=0.2.5"
+
+pi_append_vec.workspace = true

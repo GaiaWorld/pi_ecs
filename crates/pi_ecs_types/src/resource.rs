@@ -2,6 +2,6 @@
 /// 资源编号，不与 ComponentId 共用命名空间。
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub struct ResourceId(
-    /// 本 World 登记编号。
-    pub(crate) u32,
+    /// 本 World 登记编号；由 World 注册表从零递增分配，不跨 World 使用。
+    pub u32,
 );

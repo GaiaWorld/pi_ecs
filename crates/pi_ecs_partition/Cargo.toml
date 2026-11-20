@@ -4,6 +4,10 @@ version.workspace = true
 edition.workspace = true
 publish.workspace = true
 
+[features]
+default = []
+rc = ["pi_ecs_core/rc", "pi_ecs_schedule/rc", "pi_ecs_app/rc"]
+
 [dependencies]
 pi_ecs_core.workspace = true
 pi_ecs_schedule.workspace = true

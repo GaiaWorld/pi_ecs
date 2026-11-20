@@ -1,14 +1,291 @@
-//! App 配对芯；仅明确未实现桩。
-pub(crate) fn capture_game_inner(
-    _app: &mut crate::app::App,
-) -> Result<pi_ecs_schedule::snapshot::GameSnapshot, pi_ecs_core::error::EcsError> {
-    todo!("@to_design 全 Stage 状态协调与维护授权接线")
+//! App 生命周期配对芯。
+#[cfg(all(test, feature = "rc"))]
+mod close_tests {
+    use crate::app::App;
+    use pi_ecs_core::world::World;
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
+    struct Child(Arc<AtomicUsize>);
+    impl crate::plugin::Plugin for Child {
+        fn build(&self, app: &mut App) -> Result<(), pi_ecs_core::error::EcsError> {
+            assert!(app.require_plugin::<Self>().is_err());
+            app.world_mut()?.register_resource::<u32>()?;
+            Ok(())
+        }
+        fn finish(&self, app: &mut App) -> Result<(), pi_ecs_core::error::EcsError> {
+            app.require_plugin::<Self>()?;
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn rc_app_runs_named_stage_and_unregisters_stable_slot() {
+        use crate::app::ScheduleLabel;
+        use pi_ecs_schedule::{
+            executor::{ExecutionMode, Executor},
+            schedule::Schedule,
+            stage::{Stage, StageId},
+            system::SystemId,
+            system_builder::SystemBuilder,
+        };
+        let mut app = App::new(World::new().unwrap());
+        let finishes = Arc::new(AtomicUsize::new(0));
+        app.add_plugin(Child(finishes.clone())).unwrap();
+        assert!(app.add_plugin(Child(finishes.clone())).is_err());
+        let label = ScheduleLabel::of::<Child>();
+        let stage = StageId(4);
+        let mut schedule = Schedule::new();
+        let executor = schedule
+            .add_executor(Executor::new(ExecutionMode::Serial).unwrap())
+            .unwrap();
+        app.add_schedule(label, schedule).unwrap();
+        app.schedule_mut(label)
+            .unwrap()
+            .add_stage(Stage::new(stage, executor))
+            .unwrap();
+        app.finish().unwrap();
+        app.finish().unwrap();
+        assert_eq!(finishes.load(Ordering::SeqCst), 1);
+        assert!(app.world().table_layouts().is_ok());
+        assert!(app.world_mut().is_err());
+        assert_eq!(app.insert_resource(9u32).unwrap(), None);
+        assert_eq!(app.insert_resource(10u32).unwrap(), Some(9));
+        let calls = Arc::new(AtomicUsize::new(0));
+        let observed = calls.clone();
+        let id = SystemId(6);
+        let system = SystemBuilder::new(move || {
+            observed.fetch_add(1, Ordering::SeqCst);
+        })
+        .build(id)
+        .unwrap();
+        assert_eq!(app.add_system(label, stage, system).unwrap(), 0);
+        app.run(label).unwrap();
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        app.unregister_system(label, stage, id).unwrap();
+        app.unregister_system(label, stage, id).unwrap();
+        assert!(app
+            .add_system(label, stage, SystemBuilder::new(|| {}).build(id).unwrap())
+            .is_err());
+        app.run(label).unwrap();
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn rc_app_system_panic_preserves_stopped_world_and_blocks_rerun() {
+        use crate::app::ScheduleLabel;
+        use pi_ecs_schedule::{
+            executor::{ExecutionMode, Executor},
+            schedule::Schedule,
+            stage::{Stage, StageId},
+            system::SystemId,
+            system_builder::SystemBuilder,
+        };
+        let mut app = App::new(World::new().unwrap());
+        let label = ScheduleLabel::of::<()>();
+        let mut schedule = Schedule::new();
+        let executor = schedule
+            .add_executor(Executor::new(ExecutionMode::Serial).unwrap())
+            .unwrap();
+        let mut stage = Stage::new(StageId(0), executor);
+        stage
+            .add_system(
+                SystemBuilder::new(|| panic!("system panic"))
+                    .build(SystemId(0))
+                    .unwrap(),
+            )
+            .unwrap();
+        schedule.add_stage(stage).unwrap();
+        app.add_schedule(label, schedule).unwrap();
+        app.finish().unwrap();
+        let panic =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| app.run(label))).unwrap_err();
+        assert_eq!(panic.downcast_ref::<&str>(), Some(&"system panic"));
+        assert!(app.world().is_stopped());
+        assert!(app.run(label).is_err());
+        app.close().unwrap();
+    }
+
+    struct Payload(Arc<AtomicUsize>);
+    impl Drop for Payload {
+        fn drop(&mut self) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+    #[test]
+    fn app_close_and_drop_release_resources_once() {
+        for explicit in [true, false] {
+            let drops = Arc::new(AtomicUsize::new(0));
+            let mut world = World::new().unwrap();
+            world.register_resource::<Payload>().unwrap();
+            world.insert_resource(Payload(drops.clone())).unwrap();
+            let mut app = App::new(world);
+            let mut schedule = pi_ecs_schedule::schedule::Schedule::new();
+            let executor = schedule
+                .add_executor(
+                    pi_ecs_schedule::executor::Executor::new(
+                        pi_ecs_schedule::executor::ExecutionMode::Serial,
+                    )
+                    .unwrap(),
+                )
+                .unwrap();
+            schedule
+                .add_stage(pi_ecs_schedule::stage::Stage::new(
+                    pi_ecs_schedule::stage::StageId(1),
+                    executor,
+                ))
+                .unwrap();
+            app.add_schedule(crate::app::ScheduleLabel::of::<Payload>(), schedule)
+                .unwrap();
+            if explicit {
+                app.close().unwrap();
+                app.close().unwrap();
+                assert_eq!(drops.load(Ordering::SeqCst), 1);
+            }
+            drop(app);
+            assert_eq!(drops.load(Ordering::SeqCst), 1);
+        }
+    }
 }
-pub(crate) fn restore_game_inner(
-    _app: &mut crate::app::App,
-    _snapshot: &pi_ecs_schedule::snapshot::GameSnapshot,
-) -> Result<(), pi_ecs_core::error::EcsError> {
-    todo!("@to_design 全 Stage 恢复与内部存储排他入口")
+
+#[cfg(feature = "rc")]
+impl crate::app::AppRunGuard<'_> {
+    pub(super) fn complete_inner(&mut self, stopped: bool) {
+        if stopped {
+            *self.state = crate::app::AppState::Failed;
+        }
+        self.completed = true;
+    }
+    pub(super) fn drop_inner(&mut self) {
+        if !self.completed {
+            *self.state = crate::app::AppState::Failed;
+        }
+    }
+}
+#[cfg(feature = "rc")]
+impl crate::app::App {
+    pub(super) fn insert_resource_inner<T: Send + Sync + 'static>(
+        &mut self,
+        value: T,
+    ) -> Result<Option<T>, EcsError> {
+        self.ready_idle()?;
+        self.world.insert_resource(value)
+    }
+    pub(super) fn add_system_inner<S: pi_ecs_schedule::stage::StageSystemBound + 'static>(
+        &mut self,
+        label: ScheduleLabel,
+        stage: pi_ecs_schedule::stage::StageId,
+        system: S,
+    ) -> Result<usize, EcsError> {
+        self.ready_idle()?;
+        let schedule = self.schedule_index(label)?;
+        self.schedules[schedule]
+            .1
+            .stage_mut(stage)?
+            .add_system(system)
+    }
+    pub(super) fn unregister_system_inner(
+        &mut self,
+        label: ScheduleLabel,
+        stage: pi_ecs_schedule::stage::StageId,
+        system: pi_ecs_schedule::system::SystemId,
+    ) -> Result<(), EcsError> {
+        self.ready_idle()?;
+        let schedule = self.schedule_index(label)?;
+        let stage = self.schedules[schedule].1.stage_mut(stage)?;
+        let mut guard = crate::app::AppRunGuard {
+            state: &mut self.state,
+            completed: false,
+        };
+        let result = stage.unregister_system(system, &mut self.world);
+        guard.complete(self.world.is_stopped());
+        result
+    }
+    fn ready_idle(&mut self) -> Result<(), EcsError> {
+        if !matches!(self.state, crate::app::AppState::Ready) {
+            return Err(app_error("App 尚未就绪"));
+        }
+        if self.world.is_stopped() {
+            self.state = crate::app::AppState::Failed;
+            return Err(app_error("World 已停止"));
+        }
+        drop(self.world.pin()?);
+        Ok(())
+    }
+    pub(super) fn close_inner(&mut self) -> Result<(), pi_ecs_core::error::EcsError> {
+        use crate::app::AppState;
+        if matches!(self.state, AppState::Closed) {
+            return Ok(());
+        }
+        if matches!(self.state, AppState::Closing | AppState::Finishing) {
+            return Err(app_error("App 当前不能关闭"));
+        }
+        // 真实清偿作用域只检查门禁；在改变 App 状态前拒绝运行/维护中的关闭。
+        self.world.parameter_unregistration_scope(|_| Ok(()))?;
+        self.state = AppState::Closing;
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let mut first = None;
+            for (_, schedule) in &mut self.schedules {
+                if let Err(error) = schedule.unregister(&mut self.world) {
+                    if first.is_none() {
+                        first = Some(error);
+                    }
+                }
+            }
+            self.schedules.clear();
+            self.plugins.clear();
+            self.plugin_types.clear();
+            self.world.close()?;
+            Ok::<_, EcsError>(first)
+        }));
+        match result {
+            Ok(Ok(first)) => {
+                self.state = AppState::Closed;
+                first.map_or(Ok(()), Err)
+            }
+            Ok(Err(error)) => {
+                self.state = AppState::Failed;
+                Err(error)
+            }
+            Err(payload) => {
+                self.state = AppState::Failed;
+                // 将尚未关闭的 World 单向标停，不允许展开后继续运行。
+                let mut payload = Some(payload);
+                let stopped = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    self.world.parameter_unregistration_scope::<()>(|_| {
+                        std::panic::resume_unwind(payload.take().expect("原始展开载荷"))
+                    })
+                }));
+                match stopped {
+                    Err(payload) => std::panic::resume_unwind(payload),
+                    Ok(_) => std::panic::resume_unwind(payload.expect("门禁拒绝保留原始载荷")),
+                }
+            }
+        }
+    }
+    pub(super) fn drop_inner(&mut self) {
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.close()));
+        if result.is_err() || !matches!(self.state, crate::app::AppState::Closed) {
+            std::process::abort();
+        }
+    }
+}
+impl App {
+    pub(crate) fn capture_game_inner(
+        _app: &mut crate::app::App,
+    ) -> Result<pi_ecs_schedule::snapshot::GameSnapshot, pi_ecs_core::error::EcsError> {
+        todo!("编号：T1，尚未实现， ：全 Stage 状态协调与维护授权接线")
+    }
+}
+impl App {
+    pub(crate) fn restore_game_inner(
+        _app: &mut crate::app::App,
+        _snapshot: &pi_ecs_schedule::snapshot::GameSnapshot,
+    ) -> Result<(), pi_ecs_core::error::EcsError> {
+        todo!("编号：T2，尚未实现， ：全 Stage 恢复与内部存储排他入口")
+    }
 }
 
 use crate::{
@@ -17,43 +294,223 @@ use crate::{
 };
 use pi_ecs_core::{error::EcsError, world::World};
 use pi_ecs_schedule::schedule::Schedule;
-pub(crate) fn label_inner<T: 'static>() -> ScheduleLabel {
-    todo!("尚未实现类型标签")
+fn app_error(message: &'static str) -> EcsError {
+    pi_ecs_core::error::classified_error(pi_ecs_core::error::ErrorKind::InvalidState, message)
 }
-pub(crate) fn new_inner(_world: World) -> App {
-    todo!("尚未实现 App 组装")
+impl ScheduleLabel {
+    pub(crate) fn label_inner<T: 'static>() -> ScheduleLabel {
+        ScheduleLabel {
+            type_id: std::any::TypeId::of::<T>(),
+        }
+    }
 }
-pub(crate) fn add_plugin_inner<P: Plugin + 'static>(
-    _app: &mut App,
-    _plugin: P,
-) -> Result<(), EcsError> {
-    todo!("尚未实现插件安装")
+impl App {
+    pub(crate) fn new_inner(_world: World) -> App {
+        App {
+            #[cfg(feature = "rc")]
+            world: _world,
+            #[cfg(not(feature = "rc"))]
+            world: pi_share::Share::new(_world),
+            schedules: Vec::new(),
+            plugins: Vec::new(),
+            plugin_types: Default::default(),
+            state: crate::app::AppState::Building,
+        }
+    }
 }
-pub(crate) fn require_plugin_inner<P: Plugin + 'static>(_app: &App) -> Result<(), EcsError> {
-    todo!("尚未实现插件依赖检查")
+impl App {
+    pub(crate) fn add_plugin_inner<P: Plugin + 'static>(
+        app: &mut App,
+        plugin: P,
+    ) -> Result<(), EcsError> {
+        use crate::app::{AppState, InstalledPlugin, PluginInstallState};
+        let type_id = std::any::TypeId::of::<P>();
+        if !matches!(app.state, AppState::Building) || app.plugin_types.contains_key(&type_id) {
+            return Err(app_error("当前不能安装此插件"));
+        }
+        app.plugin_types
+            .insert(type_id, PluginInstallState::Installing);
+        app.build_step(|app| {
+            plugin.build(app)?;
+            if !matches!(app.state, AppState::Building) {
+                return Err(app_error("插件构建未保持构建状态"));
+            }
+            app.plugins.push(InstalledPlugin {
+                type_id,
+                plugin: Some(Box::new(plugin)),
+            });
+            app.plugin_types
+                .insert(type_id, PluginInstallState::Installed);
+            Ok(())
+        })
+    }
 }
-pub(crate) fn add_schedule_inner(
-    _app: &mut App,
-    _label: ScheduleLabel,
-    _schedule: Schedule,
-) -> Result<(), EcsError> {
-    todo!("尚未实现调度登记")
+impl App {
+    pub(crate) fn require_plugin_inner<P: Plugin + 'static>(app: &App) -> Result<(), EcsError> {
+        if matches!(
+            app.plugin_types.get(&std::any::TypeId::of::<P>()),
+            Some(crate::app::PluginInstallState::Installed)
+        ) {
+            Ok(())
+        } else {
+            Err(app_error("所需插件尚未安装"))
+        }
+    }
 }
-pub(crate) fn schedule_mut_inner(
-    _app: &mut App,
-    _label: ScheduleLabel,
-) -> Result<&mut Schedule, EcsError> {
-    todo!("尚未实现调度配置访问")
+impl App {
+    pub(crate) fn add_schedule_inner(
+        _app: &mut App,
+        _label: ScheduleLabel,
+        _schedule: Schedule,
+    ) -> Result<(), EcsError> {
+        if !matches!(
+            _app.state,
+            crate::app::AppState::Building | crate::app::AppState::Finishing
+        ) {
+            return Err(app_error("当前不允许登记调度"));
+        }
+        if _app.schedules.iter().any(|(label, _)| *label == _label) {
+            return Err(app_error("调度标签重复"));
+        }
+        _app.schedules.push((_label, _schedule));
+        Ok(())
+    }
 }
-pub(crate) fn world_inner(_app: &App) -> &World {
-    todo!("尚未实现共享 World 访问")
+impl App {
+    pub(crate) fn schedule_mut_inner(
+        app: &mut App,
+        label: ScheduleLabel,
+    ) -> Result<&mut Schedule, EcsError> {
+        if !matches!(
+            app.state,
+            crate::app::AppState::Building | crate::app::AppState::Finishing
+        ) {
+            return Err(app_error("当前不能配置调度"));
+        }
+        let index = app.schedule_index(label)?;
+        Ok(&mut app.schedules[index].1)
+    }
+    fn schedule_index(&self, label: ScheduleLabel) -> Result<usize, EcsError> {
+        self.schedules
+            .iter()
+            .position(|(key, _)| *key == label)
+            .ok_or_else(|| {
+                pi_ecs_core::error::classified_error(
+                    pi_ecs_core::error::ErrorKind::NotFound,
+                    "调度标签未登记",
+                )
+            })
+    }
 }
-pub(crate) fn world_mut_inner(_app: &mut App) -> Result<&mut World, EcsError> {
-    todo!("@to_design 稳定发布与独占配置访问安全限制")
+impl App {
+    pub(crate) fn world_inner(app: &App) -> &World {
+        &app.world
+    }
 }
-pub(crate) fn finish_inner(_app: &mut App) -> Result<(), EcsError> {
-    todo!("尚未实现构建收束")
+impl App {
+    pub(crate) fn world_mut_inner(app: &mut App) -> Result<&mut World, EcsError> {
+        if !matches!(
+            app.state,
+            crate::app::AppState::Building | crate::app::AppState::Finishing
+        ) {
+            return Err(app_error("当前不能独占配置 World"));
+        }
+        if app.world.table_layouts().is_ok() {
+            return Err(app_error("World 已发布冻结布局"));
+        }
+        #[cfg(feature = "rc")]
+        {
+            drop(app.world.pin()?);
+            Ok(&mut app.world)
+        }
+        #[cfg(not(feature = "rc"))]
+        pi_share::Share::get_mut(&mut app.world).ok_or_else(|| app_error("World 并非独占所有"))
+    }
 }
-pub(crate) fn run_inner(_app: &mut App, _label: ScheduleLabel) -> Result<(), EcsError> {
-    todo!("尚未实现命名调度运行")
+impl App {
+    pub(crate) fn finish_inner(app: &mut App) -> Result<(), EcsError> {
+        use crate::app::{AppState, PluginInstallState};
+        match app.state {
+            AppState::Ready => return Ok(()),
+            AppState::Building
+                if !app
+                    .plugin_types
+                    .values()
+                    .any(|state| matches!(state, PluginInstallState::Installing)) => {}
+            _ => return Err(app_error("当前不能收束 App 构建")),
+        }
+        app.state = AppState::Finishing;
+        app.build_step(|app| {
+            for index in 0..app.plugins.len() {
+                let plugin = app.plugins[index]
+                    .plugin
+                    .take()
+                    .expect("已安装插件槽不可为空");
+                let result =
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| plugin.finish(app)));
+                app.plugins[index].plugin = Some(plugin);
+                match result {
+                    Ok(result) => result?,
+                    Err(payload) => std::panic::resume_unwind(payload),
+                }
+            }
+            for (_, schedule) in &app.schedules {
+                schedule.validate_configuration()?;
+            }
+            #[cfg(feature = "rc")]
+            app.world.finish_registration()?;
+            #[cfg(not(feature = "rc"))]
+            if app.world.table_layouts().is_err() {
+                pi_share::Share::get_mut(&mut app.world)
+                    .ok_or_else(|| app_error("World 并非独占所有"))?
+                    .finish_registration()?;
+            }
+            app.state = AppState::Ready;
+            Ok(())
+        })
+    }
+
+    fn build_step(
+        &mut self,
+        step: impl FnOnce(&mut Self) -> Result<(), EcsError>,
+    ) -> Result<(), EcsError> {
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| step(self))) {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(error)) => {
+                if !matches!(self.state, crate::app::AppState::Closed) {
+                    self.state = crate::app::AppState::Failed;
+                }
+                Err(error)
+            }
+            Err(payload) => {
+                if !matches!(self.state, crate::app::AppState::Closed) {
+                    self.state = crate::app::AppState::Failed;
+                }
+                std::panic::resume_unwind(payload)
+            }
+        }
+    }
+}
+impl App {
+    pub(crate) fn run_inner(app: &mut App, label: ScheduleLabel) -> Result<(), EcsError> {
+        let index = app.schedule_index(label)?;
+        #[cfg(feature = "rc")]
+        {
+            app.ready_idle()?;
+            let mut guard = crate::app::AppRunGuard {
+                state: &mut app.state,
+                completed: false,
+            };
+            let result = app.schedules[index].1.run(&mut app.world);
+            guard.complete(app.world.is_stopped());
+            result
+        }
+        #[cfg(not(feature = "rc"))]
+        {
+            if !matches!(app.state, crate::app::AppState::Ready) {
+                return Err(app_error("App 尚未就绪"));
+            }
+            app.schedules[index].1.run(&app.world)
+        }
+    }
 }

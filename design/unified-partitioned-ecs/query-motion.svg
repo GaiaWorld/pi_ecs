@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="780" height="610" viewBox="0 0 780 610" role="img" aria-labelledby="title desc">
+  <title id="title">03　具体查询：Query&lt;Motion&gt;</title>
+  <desc id="desc">同一张 [Position] Table，两个原型，Velocity 来源为稀疏存储。 Motion = Entity + &amp;Position + Option&lt;&amp;Velocity&gt;。Position 是必要读取；Velocity 是可选读取；Entity 返回完整键。 QueryState：检查 Table，再按原型分流。Velocity 不在表列中，全表不能共用一个取值计划。[Position] 与 [Position, Velocity] 两个原型都匹配。 迭代各匹配原型，验证已发布的实体位置。Position 读对应 Table 行；Velocity 存在时按完整实体键取稀疏槽。 原型 [Position]。MotionItem：position = 4，velocity = None → next = 4。 原型 [Position, Velocity]。MotionItem：position = 10，velocity = Some(3) → next = 13。</desc>
+  <defs>
+    <marker id="arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto" markerUnits="strokeWidth"><path d="M0 0 L7 3.5 L0 7 Z" fill="#047857"/></marker>
+  </defs>
+  <style>
+    text { font-family: system-ui, 'Microsoft YaHei', 'PingFang SC', 'Noto Sans CJK SC', sans-serif; }
+    .title { font-size: 27px; font-weight: 700; fill: #0f172a; }
+    .heading { font-size: 17px; font-weight: 700; fill: #0f172a; }
+    .detail { font-size: 14px; fill: #334155; }
+    .label { font-size: 13px; font-weight: 700; fill: #fff; }
+  </style>
+  <rect width="780" height="610" rx="18" fill="#f8fafc"/>
+  <path d="M37 105 H748" stroke="#cbd5e1"/>
+  <text x="36" y="55" class="title">03　具体查询：Query&lt;Motion&gt;</text>
+  <text x="37" y="84" class="detail">同一张 [Position] Table，两个原型，Velocity 来源为稀疏存储。</text>
+  <path d="M61 187 V217" fill="none" stroke="#047857" stroke-width="2" marker-end="url(#arrow)"/>
+  <rect x="94" y="130" width="654" height="80" rx="12" fill="#ecfdf5" stroke="#cbd5e1"/>
+  <rect x="36" y="150" width="50" height="35" rx="10" fill="#047857"/>
+  <text x="61" y="173" text-anchor="middle" class="label">声明</text>
+  <text x="113" y="155" class="heading">Motion = Entity + &amp;Position + Option&lt;&amp;Velocity&gt;</text>
+  <text x="113" y="177" class="detail">Position 是必要读取；Velocity 是可选读取；Entity 返回完整键。</text>
+  <path d="M61 280 V310" fill="none" stroke="#047857" stroke-width="2" marker-end="url(#arrow)"/>
+  <rect x="94" y="223" width="654" height="80" rx="12" fill="#ecfdf5" stroke="#cbd5e1"/>
+  <rect x="36" y="243" width="50" height="35" rx="10" fill="#047857"/>
+  <text x="61" y="266" text-anchor="middle" class="label">规划</text>
+  <text x="113" y="248" class="heading">QueryState：检查 Table，再按原型分流</text>
+  <text x="113" y="270" class="detail">Velocity 不在表列中，全表不能共用一个取值计划。</text>
+  <text x="113" y="290" class="detail">[Position] 与 [Position, Velocity] 两个原型都匹配。</text>
+  <path d="M61 373 V404 H592 M250 404 V428 M592 404 V428" fill="none" stroke="#047857" stroke-width="2"/>
+  <path d="M250 428 V437 M592 428 V437" fill="none" stroke="#047857" stroke-width="2" marker-end="url(#arrow)"/>
+  <rect x="94" y="316" width="654" height="80" rx="12" fill="#ecfdf5" stroke="#cbd5e1"/>
+  <rect x="36" y="336" width="50" height="35" rx="10" fill="#047857"/>
+  <text x="61" y="359" text-anchor="middle" class="label">定位</text>
+  <text x="113" y="341" class="heading">迭代各匹配原型，验证已发布的实体位置</text>
+  <text x="113" y="363" class="detail">Position 读对应 Table 行；Velocity 存在时按完整实体键取稀疏槽。</text>
+  <rect x="94" y="443" width="312" height="98" rx="12" fill="#ecfdf5" stroke="#cbd5e1"/>
+  <text x="113" y="473" class="heading">原型 [Position]</text>
+  <text x="113" y="496" class="detail">position = 4，velocity = None</text>
+  <text x="113" y="517" class="detail">输出：position=4 next=4</text>
+  <rect x="436" y="443" width="312" height="98" rx="12" fill="#ecfdf5" stroke="#cbd5e1"/>
+  <text x="455" y="473" class="heading">原型 [Position, Velocity]</text>
+  <text x="455" y="496" class="detail">position = 10，velocity = Some(3)</text>
+  <text x="455" y="517" class="detail">输出：position=10 next=13</text>
+</svg>

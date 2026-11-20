@@ -8,6 +8,9 @@ edition = "2021"
 publish = false
 
 [workspace.dependencies]
+pi_result = "0.2"
+pi_cancel_timer = { path = "../pi_cancel_timer", version = "0.6" }
+pi_slot_wheel = { path = "../pi_slot_wheel", version = "0.6" }
 pi_ecs_types = { path = "crates/pi_ecs_types" }
 pi_ecs_storage = { path = "crates/pi_ecs_storage" }
 pi_ecs_command = { path = "crates/pi_ecs_command" }
@@ -16,11 +19,17 @@ pi_ecs_schedule = { path = "crates/pi_ecs_schedule" }
 pi_ecs_app = { path = "crates/pi_ecs_app" }
 pi_ecs_partition = { path = "crates/pi_ecs_partition" }
 pi_ecs_macros = { path = "crates/pi_ecs_macros" }
-pi_key = { path = "../pi_key", version = "=0.4.0" }
-pi_slotmap = { path = "../pi_slotmap", version = "=0.5.0" }
-pi_arr = "=0.33.0"
-pi_buckets = "=0.5.0"
-pi_share = "=2.1.0"
+pi_key = { path = "../pi_key", version = "0.4" }
+pi_slotmap = { path = "../pi_slotmap", version = "0.5" }
+pi_slot = { path = "../pi_slot", version = "2.1" }
+pi_slot_deque = { path = "../pi_slot_deque", version = "0.5" }
+pi_arr = "0.33"
+pi_buckets = "0.5"
+pi_share = "2.1"
+pi_append_vec = { path = "../pi_append_vec", version = "0.6" }
+pi_graph_core = { path = "../pi_graph/graph-core", version = "0.6" }
+pi_graph_storage = { path = "../pi_graph/graph-storage", version = "0.6" }
+pi_graph_algo = { path = "../pi_graph/graph-algo", version = "0.6" }
 
 [package]
 name = "pi_ecs"
@@ -28,11 +37,23 @@ version.workspace = true
 edition.workspace = true
 publish.workspace = true
 
+[features]
+default = []
+rc = ["pi_ecs_core/rc", "pi_ecs_schedule/rc", "pi_ecs_app/rc", "pi_ecs_partition/rc"]
+
+[[example]]
+name = "motion"
+required-features = ["rc"]
+
 [dependencies]
 pi_ecs_core.workspace = true
 pi_ecs_schedule.workspace = true
+pi_ecs_macros.workspace = true
 pi_ecs_app.workspace = true
 pi_ecs_partition.workspace = true
 
 [patch.crates-io]
+pi_slot_wheel = { path = "../pi_slot_wheel" }
+pi_slot_deque = { path = "../pi_slot_deque" }
 pi_key = { path = "../pi_key" }
+pi_slotmap = { path = "../pi_slotmap" }

@@ -1,26 +1,40 @@
 //! 批量点查；固定数组可并存，流式可变访问通过短借用避免别名。
+#[path = "query_batch_inner.rs"]
+mod query_batch_inner;
 use crate::{
     entity::Entity,
     query::{NoFilter, Query, QueryData, QueryFilter, QueryMut, ReadOnlyQueryData},
 };
 /// 点查业务错误，不把内部授权失效伪装为不匹配。
-#[derive(Debug)]
-pub enum QueryEntityError {
+#[derive(Debug, pi_ecs_types::error::pi_result::ThisError)]
+#[pi_result(crate = ::pi_ecs_types::error::pi_result)]
+pub enum QueryEntityContext {
     /// 身份失效或已物理销毁；PendingDestroy 在本阶段仍有效。
+    #[error("实体不存在: {0:?}")]
     NoSuchEntity(Entity),
     /// 缺必需组件或未通过过滤。
+    #[error("实体不匹配查询: {0:?}")]
     NotMatched(Entity),
     /// 同一批可变输出存在重复完整 Entity。
+    #[error("可变批次重复实体: {0:?}")]
     AliasedEntity(Entity),
 }
+/// 统一公共报告；精确点查原因作为 QueryEntityContext 保留，不解析显示文本。
+pub type QueryEntityError = crate::error::EcsError;
 /// 固定批量失败，不返回部分借用，也不标记 Changed。
-#[derive(Debug)]
-pub struct BatchQueryError {
+#[derive(Debug, pi_ecs_types::error::pi_result::ThisError)]
+#[pi_result(crate = ::pi_ecs_types::error::pi_result)]
+#[error("批量查询在输入位置 {index} 失败: {cause}")]
+pub struct BatchQueryContext {
     /// 首个失败输入位置；可变查重优先于取值，确定具体索引规则待实现统一。
     pub index: usize,
     /// 失败身份及原因。
-    pub cause: QueryEntityError,
+    pub cause: QueryEntityContext,
 }
+/// 批量查询统一公共报告；输入位置及精确原因作为 BatchQueryContext 保留。
+pub type BatchQueryError = crate::error::EcsError;
+// 点查不存在映射 NotFound，不匹配映射 InvalidInput，可变重复映射 Conflict；
+// 批量保留 BatchQueryContext，沿同一原因映射公共分类，错误不交付部分引用。
 /// 只读逐项结果，输入允许重复，不自动略过错误。
 pub struct QueryMany<'a, 'w, Q: ReadOnlyQueryData, F: QueryFilter, I: Iterator<Item = Entity>> {
     /// 保活查询和 guard。
@@ -34,7 +48,7 @@ impl<'a, Q: ReadOnlyQueryData, F: QueryFilter, I: Iterator<Item = Entity>> Itera
     type Item = Result<Q::Item<'a, 'a>, QueryEntityError>;
     /// 返回一项结果，错误仍占一个输入位置，耗尽后不再取值。
     fn next(&mut self) -> Option<Self::Item> {
-        crate::query_batch_inner::next_inner(self)
+        Self::next_inner(self)
     }
 }
 /// 可变输入允许重复，但每项结果仅借用本次 fetch_next，不能同时保留再访问。
@@ -54,7 +68,7 @@ impl<Q: QueryData, F: QueryFilter, I: Iterator<Item = Entity>> QueryManyMut<'_, 
     /// 结果与本次 &mut self 同寿命；先前可变结果使用结束后才能再调用。
     /// 错误不跳过后续项，不隐式标记 Changed；不是普通 Iterator。
     pub fn fetch_next(&mut self) -> Option<Result<Q::Item<'_, '_>, QueryEntityError>> {
-        crate::query_batch_inner::fetch_next_inner(self)
+        Self::fetch_next_inner(self)
     }
 }
 impl<Q: ReadOnlyQueryData, F: QueryFilter> Query<'_, Q, F> {
@@ -63,7 +77,7 @@ impl<Q: ReadOnlyQueryData, F: QueryFilter> Query<'_, Q, F> {
         &self,
         entities: [Entity; N],
     ) -> Result<[Q::Item<'_, '_>; N], BatchQueryError> {
-        crate::query_batch_inner::get_many_inner(self, entities)
+        Self::get_many_inner(self, entities)
     }
 }
 impl<'w, Q: ReadOnlyQueryData, F: QueryFilter> Query<'w, Q, F> {
@@ -72,7 +86,7 @@ impl<'w, Q: ReadOnlyQueryData, F: QueryFilter> Query<'w, Q, F> {
         &self,
         entities: I,
     ) -> QueryMany<'_, 'w, Q, F, I::IntoIter> {
-        crate::query_batch_inner::iter_many_inner(self, entities)
+        Self::iter_many_inner(self, entities)
     }
 }
 impl<Q: QueryData, F: QueryFilter> QueryMut<'_, Q, F> {
@@ -82,7 +96,7 @@ impl<Q: QueryData, F: QueryFilter> QueryMut<'_, Q, F> {
         &mut self,
         entities: [Entity; N],
     ) -> Result<[Q::Item<'_, '_>; N], BatchQueryError> {
-        crate::query_batch_inner::get_many_mut_inner(self, entities)
+        Self::get_many_mut_inner(self, entities)
     }
 }
 impl<'w, Q: QueryData, F: QueryFilter> QueryMut<'w, Q, F> {
@@ -91,7 +105,7 @@ impl<'w, Q: QueryData, F: QueryFilter> QueryMut<'w, Q, F> {
         &mut self,
         entities: I,
     ) -> QueryManyMut<'_, 'w, Q, F, I::IntoIter> {
-        crate::query_batch_inner::iter_many_mut_inner(self, entities)
+        Self::iter_many_mut_inner(self, entities)
     }
 }
 // 唯一输入包装及其普通可变 Iterator 后置；实际引用/Option/元组 fetch 接线仍待闭合。

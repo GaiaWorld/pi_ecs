@@ -4,5 +4,12 @@ version.workspace = true
 edition.workspace = true
 publish.workspace = true
 
+[features]
+default = []
+rc = ["pi_ecs_core/rc"]
+
 [dependencies]
 pi_ecs_core.workspace = true
+pi_graph_core.workspace = true
+pi_graph_storage.workspace = true
+pi_graph_algo.workspace = true

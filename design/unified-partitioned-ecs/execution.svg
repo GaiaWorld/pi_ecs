@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="780" height="610" viewBox="0 0 780 610" role="img" aria-labelledby="title desc">
+  <title id="title">02　执行：宿主驱动一轮 Frame</title>
+  <desc id="desc">真实登记顺序是 read_motion → seed_stationary → seed_moving。 App::run(frame) → Schedule::run。取得同一 World 的根运行授权，按 Schedule 顺序进入 Stage。 初始化参数 → 应用追踪需求 → 准备系统。阶段排序纳入两个 Spawn 的逻辑目标；发现 Spawn → 读者依赖。 Serial Executor 按阶段计划运行。逐系统刷新真实匹配，分配 this_run，绑定原授权并调用系统。seed_stationary → seed_moving → read_motion。 两次 Spawn 在调用返回前发布。后启动的 read_motion 重新准备后即可读到两个实体。新增实际原型可刷新匹配；本轮既定顺序不重排。 Stage 成功后回收通知与归零实体。本轮结束后退出根运行授权；App::close 则另行注销并关闭 World。</desc>
+  <defs>
+    <marker id="arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto" markerUnits="strokeWidth"><path d="M0 0 L7 3.5 L0 7 Z" fill="#4338ca"/></marker>
+  </defs>
+  <style>
+    text { font-family: system-ui, 'Microsoft YaHei', 'PingFang SC', 'Noto Sans CJK SC', sans-serif; }
+    .title { font-size: 27px; font-weight: 700; fill: #0f172a; }
+    .heading { font-size: 17px; font-weight: 700; fill: #0f172a; }
+    .detail { font-size: 14px; fill: #334155; }
+    .label { font-size: 13px; font-weight: 700; fill: #fff; }
+  </style>
+  <rect width="780" height="610" rx="18" fill="#f8fafc"/>
+  <path d="M37 105 H748" stroke="#cbd5e1"/>
+  <text x="36" y="55" class="title">02　执行：宿主驱动一轮 Frame</text>
+  <text x="37" y="84" class="detail">真实登记顺序是 read_motion → seed_stationary → seed_moving。</text>
+  <path d="M61 187 V217" fill="none" stroke="#4338ca" stroke-width="2" marker-end="url(#arrow)"/>
+  <rect x="94" y="130" width="654" height="80" rx="12" fill="#eef2ff" stroke="#cbd5e1"/>
+  <rect x="36" y="150" width="50" height="35" rx="10" fill="#4338ca"/>
+  <text x="61" y="173" text-anchor="middle" class="label">入场</text>
+  <text x="113" y="155" class="heading">App::run(frame) → Schedule::run</text>
+  <text x="113" y="177" class="detail">取得同一 World 的根运行授权，按 Schedule 顺序进入 Stage。</text>
+  <path d="M61 280 V310" fill="none" stroke="#4338ca" stroke-width="2" marker-end="url(#arrow)"/>
+  <rect x="94" y="223" width="654" height="80" rx="12" fill="#eef2ff" stroke="#cbd5e1"/>
+  <rect x="36" y="243" width="50" height="35" rx="10" fill="#4338ca"/>
+  <text x="61" y="266" text-anchor="middle" class="label">准备</text>
+  <text x="113" y="248" class="heading">初始化参数 → 应用追踪需求 → 准备系统</text>
+  <text x="113" y="270" class="detail">阶段排序纳入两个 Spawn 的逻辑目标；发现 Spawn → 读者依赖。</text>
+  <path d="M61 373 V403" fill="none" stroke="#4338ca" stroke-width="2" marker-end="url(#arrow)"/>
+  <rect x="94" y="316" width="654" height="80" rx="12" fill="#eef2ff" stroke="#cbd5e1"/>
+  <rect x="36" y="336" width="50" height="35" rx="10" fill="#4338ca"/>
+  <text x="61" y="359" text-anchor="middle" class="label">执行</text>
+  <text x="113" y="341" class="heading">Serial Executor 按阶段计划运行</text>
+  <text x="113" y="363" class="detail">逐系统刷新真实匹配，分配 this_run，绑定原授权并调用系统。</text>
+  <text x="113" y="383" class="detail">本轮顺序：seed_stationary → seed_moving → read_motion。</text>
+  <path d="M61 466 V496" fill="none" stroke="#4338ca" stroke-width="2" marker-end="url(#arrow)"/>
+  <rect x="94" y="409" width="654" height="80" rx="12" fill="#eef2ff" stroke="#cbd5e1"/>
+  <rect x="36" y="429" width="50" height="35" rx="10" fill="#4338ca"/>
+  <text x="61" y="452" text-anchor="middle" class="label">观察</text>
+  <text x="113" y="434" class="heading">read_motion 读到两次 Spawn 已发布的结果</text>
+  <text x="113" y="456" class="detail">每次 Spawn 都在调用返回前发布；无需等待阶段结束。</text>
+  <text x="113" y="476" class="detail">新增实际原型可刷新匹配；本轮既定顺序不重排。</text>
+  <rect x="94" y="502" width="654" height="80" rx="12" fill="#eef2ff" stroke="#cbd5e1"/>
+  <rect x="36" y="522" width="50" height="35" rx="10" fill="#4338ca"/>
+  <text x="61" y="545" text-anchor="middle" class="label">收束</text>
+  <text x="113" y="527" class="heading">Stage 成功后回收通知与归零实体</text>
+  <text x="113" y="549" class="detail">本轮结束后退出根运行授权；App::close 则另行注销并关闭 World。</text>
+</svg>

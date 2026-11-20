@@ -4,5 +4,12 @@ version.workspace = true
 edition.workspace = true
 publish.workspace = true
 
+[features]
+default = []
+rc = ["pi_ecs_types/rc", "pi_share/rc"]
+
 [dependencies]
+pi_cancel_timer.workspace = true
+pi_slot_wheel.workspace = true
+pi_share.workspace = true
 pi_ecs_types.workspace = true

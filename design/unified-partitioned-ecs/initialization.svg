@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="780" height="610" viewBox="0 0 780 610" role="img" aria-labelledby="title desc">
+  <title id="title">01　初始化：把应用装配到 Ready</title>
+  <desc id="desc">App::finish 是配置收束点；系统参数在首次阶段准备时初始化。 World::new → App::new(world)。默认单分区，App 持有这个 World。 登记组件与基础 Table。Position → TableEligible，并登记 [Position] 基础表。Velocity → SparseOnly；不需要预登记 [Position, Velocity] 原型。 Serial Executor → Stage → Schedule。可选插件即时 build；示例直接配置。登记 read_motion、seed_stationary、seed_moving，绑定 Frame 标签。 App::finish。执行插件 finish（如有），验证调度配置，冻结 World 登记。 Ready：等待宿主调用 App::run(frame)。此时没有执行系统，也没有发放系统 tick。</desc>
+  <defs>
+    <marker id="arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto" markerUnits="strokeWidth"><path d="M0 0 L7 3.5 L0 7 Z" fill="#155e75"/></marker>
+  </defs>
+  <style>
+    text { font-family: system-ui, 'Microsoft YaHei', 'PingFang SC', 'Noto Sans CJK SC', sans-serif; }
+    .title { font-size: 27px; font-weight: 700; fill: #0f172a; }
+    .heading { font-size: 17px; font-weight: 700; fill: #0f172a; }
+    .detail { font-size: 14px; fill: #334155; }
+    .label { font-size: 13px; font-weight: 700; fill: #fff; }
+  </style>
+  <rect width="780" height="610" rx="18" fill="#f8fafc"/>
+  <path d="M37 105 H748" stroke="#cbd5e1"/>
+  <text x="36" y="55" class="title">01　初始化：把应用装配到 Ready</text>
+  <text x="37" y="84" class="detail">App::finish 是配置收束点；系统参数在首次阶段准备时初始化。</text>
+  <path d="M61 187 V217" fill="none" stroke="#155e75" stroke-width="2" marker-end="url(#arrow)"/>
+  <rect x="94" y="130" width="654" height="80" rx="12" fill="#ecfeff" stroke="#cbd5e1"/>
+  <rect x="36" y="150" width="50" height="35" rx="10" fill="#155e75"/>
+  <text x="61" y="173" text-anchor="middle" class="label">创建</text>
+  <text x="113" y="155" class="heading">World::new → App::new(world)</text>
+  <text x="113" y="177" class="detail">默认单分区，App 持有这个 World。</text>
+  <path d="M61 280 V310" fill="none" stroke="#155e75" stroke-width="2" marker-end="url(#arrow)"/>
+  <rect x="94" y="223" width="654" height="80" rx="12" fill="#ecfeff" stroke="#cbd5e1"/>
+  <rect x="36" y="243" width="50" height="35" rx="10" fill="#155e75"/>
+  <text x="61" y="266" text-anchor="middle" class="label">配置</text>
+  <text x="113" y="248" class="heading">登记组件与基础 Table</text>
+  <text x="113" y="270" class="detail">Position → TableEligible，并登记 [Position] 基础表。</text>
+  <text x="113" y="290" class="detail">Velocity → SparseOnly；不需要预登记 [Position, Velocity] 原型。</text>
+  <path d="M61 373 V403" fill="none" stroke="#155e75" stroke-width="2" marker-end="url(#arrow)"/>
+  <rect x="94" y="316" width="654" height="80" rx="12" fill="#ecfeff" stroke="#cbd5e1"/>
+  <rect x="36" y="336" width="50" height="35" rx="10" fill="#155e75"/>
+  <text x="61" y="359" text-anchor="middle" class="label">装配</text>
+  <text x="113" y="341" class="heading">Serial Executor → Stage → Schedule</text>
+  <text x="113" y="363" class="detail">可选插件即时 build；示例直接配置。</text>
+  <text x="113" y="383" class="detail">登记 read_motion、seed_stationary、seed_moving，绑定 Frame 标签。</text>
+  <path d="M61 466 V496" fill="none" stroke="#155e75" stroke-width="2" marker-end="url(#arrow)"/>
+  <rect x="94" y="409" width="654" height="80" rx="12" fill="#ecfeff" stroke="#cbd5e1"/>
+  <rect x="36" y="429" width="50" height="35" rx="10" fill="#155e75"/>
+  <text x="61" y="452" text-anchor="middle" class="label">冻结</text>
+  <text x="113" y="434" class="heading">App::finish</text>
+  <text x="113" y="456" class="detail">执行插件 finish（如有），验证调度配置，冻结 World 登记。</text>
+  <rect x="94" y="502" width="654" height="80" rx="12" fill="#ecfeff" stroke="#cbd5e1"/>
+  <rect x="36" y="522" width="50" height="35" rx="10" fill="#155e75"/>
+  <text x="61" y="545" text-anchor="middle" class="label">就绪</text>
+  <text x="113" y="527" class="heading">Ready：等待宿主调用 App::run(frame)</text>
+  <text x="113" y="549" class="detail">此时没有执行系统，也没有发放系统 tick。</text>
+</svg>

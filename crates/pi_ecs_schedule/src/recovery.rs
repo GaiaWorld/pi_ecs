@@ -1,6 +1,8 @@
 //! 完整游戏恢复协调；core 不反向依赖系统运行时。
 //! @to_design 下列单 Schedule/&mut World 入口是待迁移兼容壳；正式 App 路径覆盖全部 Stage 一次，
 //! 通过 World 内部维护门禁独占内部状态，不由共享 World 强转整个可变引用。
+#[path = "recovery_inner.rs"]
+mod recovery_inner;
 use crate::{schedule::Schedule, snapshot::GameSnapshot};
 use pi_ecs_core::{error::EcsError, world::World};
 /// 游戏捕获恢复的编排入口，协调世界数据与系统状态。
@@ -29,7 +31,7 @@ impl GameRecovery {
           C -->|成功| F[返回独立快照 不含渲染]
         ```
         */
-        crate::recovery_inner::capture_game_inner(world, schedule)
+        Self::capture_game_inner(world, schedule)
     }
 
     /// 借用快照恢复整个游戏 World；独立渲染 World 不在此入口的操作范围，重演后由桥接协调。
@@ -74,6 +76,6 @@ impl GameRecovery {
           F -->|失败| Y
         ```
         */
-        crate::recovery_inner::restore_game_inner(world, schedule, snapshot)
+        Self::restore_game_inner(world, schedule, snapshot)
     }
 }
