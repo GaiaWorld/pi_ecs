@@ -1,0 +1,22 @@
+[package]
+name = "pi_ecs_testxx"
+version = "0.1.0"
+description = "pi_ecs Macros"
+authors = ["suncy <suncy@gmail.com>"]
+edition = "2018"
+license = "MIT"
+
+
+[dependencies]
+pi_ecs_macros = { path = "../macros"}
+pi_ecs = { path = "../"}
+encase = "0.3"
+encase_derive ="0.3"
+nalgebra = {version = "0.24.0", features = ["serde", "serde-serialize"]}
+# syn = {version="1.0", features=["full"]}
+# quote = "1.0"
+# proc-macro2 = "1.0"
+# pi_share="0.1"
+# # futures = "0.3"
+# derive-deref-rs = "0.1"
+# pi_res_loader={path="../../pi_res_loader"}
