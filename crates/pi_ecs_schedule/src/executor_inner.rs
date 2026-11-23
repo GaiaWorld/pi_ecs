@@ -65,11 +65,13 @@ mod tests {
                     );
                     // 未初始化的真实系统在 prepare 返回错误；不得调用它或后续系统，也不分配 tick。
                     let captured = calls.clone();
-                    stage.add_system(
-                        SystemBuilder::new(move || captured.borrow_mut().push(3))
-                            .build(SystemId(3))
-                            .unwrap(),
-                    )?;
+                    stage
+                        .add_system(
+                            SystemBuilder::new(move || captured.borrow_mut().push(3))
+                                .build(SystemId(3))
+                                .unwrap(),
+                        )
+                        .map_err(|rejected| rejected.error)?;
                     stage.ordering = Some(StagePlan {
                         waves: vec![
                             StageWave {
@@ -135,29 +137,43 @@ impl Executor {
                     "rc 模式不支持并行执行器",
                 ));
             }
-            let plan = _prepared.stage.ordering.as_ref().ok_or_else(|| {
-                pi_ecs_core::error::classified_error(
-                    pi_ecs_core::error::ErrorKind::InvalidState,
-                    "阶段缺少有效执行计划",
-                )
-            })?;
+            let Some(plan) = _prepared.stage.ordering.as_ref() else {
+                return Err(fail_plan(_world, "阶段缺少有效执行计划"));
+            };
+            if plan
+                .waves
+                .iter()
+                .flat_map(|wave| &wave.systems)
+                .any(|&index| {
+                    _prepared
+                        .stage
+                        .systems
+                        .get(index)
+                        .is_none_or(|slot| slot.system.is_none())
+                })
+            {
+                return Err(fail_plan(_world, "执行计划包含无效系统槽"));
+            }
             for wave in &plan.waves {
                 for &index in &wave.systems {
-                    let slot = _prepared.stage.systems.get_mut(index).ok_or_else(|| {
-                        pi_ecs_core::error::classified_error(
-                            pi_ecs_core::error::ErrorKind::InvalidState,
-                            "执行计划包含无效系统槽",
-                        )
-                    })?;
-                    let Some(system) = slot.system.as_mut() else {
-                        continue;
-                    };
+                    let slot = &mut _prepared.stage.systems[index];
+                    let system = slot
+                        .system
+                        .as_mut()
+                        .expect("已验证活动槽，执行期间不修改登记");
                     slot.resolved.clear();
                     slot.resolved = system.prepare(&mut *_world)?;
                     // SAFETY: RC 独占根运行权；前一系统已完整返回，无活参数或后台任务。
                     // prepare 刷新完整声明，run_prepared 自持声明借用直到会话收束。
-                    let tick = unsafe { _world.next_system_tick()? };
-                    unsafe { system.run_prepared(&mut *_world, tick)? };
+                    let result = unsafe {
+                        _world
+                            .next_system_tick()
+                            .and_then(|tick| system.run_prepared(&mut *_world, tick))
+                    };
+                    if let Err(error) = result {
+                        _world.stop_in_run().expect("执行器必须持有根运行权");
+                        return Err(error);
+                    }
                 }
             }
             Ok(())
@@ -170,4 +186,10 @@ impl Executor {
             ))
         }
     }
+}
+
+#[cfg(feature = "rc")]
+fn fail_plan(world: &mut pi_ecs_core::world::World, message: &'static str) -> EcsError {
+    world.stop_in_run().expect("执行器必须持有根运行权");
+    pi_ecs_core::error::classified_error(pi_ecs_core::error::ErrorKind::InvalidState, message)
 }

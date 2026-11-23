@@ -37,22 +37,32 @@ mod registration_tests {
         world.finish_registration().unwrap();
         foreign.finish_registration().unwrap();
         let archetype = crate::entity::ArchetypeId {
-            table: 0,
-            variant: 0,
+            table: crate::entity::TableId(0),
+            variant: crate::entity::VariantId(0),
         };
         let storage = world.storage.as_mut().unwrap();
-        let row = storage.table_mut(0).unwrap().claim_row().unwrap();
+        let row = storage
+            .table_mut(crate::entity::TableId(0))
+            .unwrap()
+            .claim_row()
+            .unwrap();
         let live = world
             .entities
             .borrow_mut()
             .allocate(
                 crate::entity::AllocationDomain(0),
-                crate::entity::EntityLocation::from_parts(0, 0, row.index(), 0, 0),
+                crate::entity::EntityLocation::from_parts(
+                    0,
+                    0,
+                    row.index(),
+                    crate::entity::TableId(0),
+                    crate::entity::VariantId(0),
+                ),
             )
             .unwrap();
         storage.append_member(archetype, live, row).unwrap();
         storage
-            .table_mut(0)
+            .table_mut(crate::entity::TableId(0))
             .unwrap()
             .publish_row(row, live)
             .unwrap();
@@ -754,7 +764,7 @@ impl<Q: QueryData, F: QueryFilter> QueryState<Q, F> {
             filter_state,
             bound_world: Some(world.identity),
             cache: crate::query::WorldQueryCache {
-                first_table: 0,
+                first_table: crate::entity::TableId(0),
                 tables: Box::new([]),
             },
         })
@@ -776,7 +786,7 @@ impl<Q: QueryData, F: QueryFilter> QueryState<Q, F> {
         }
         state.host_access = None;
         state.cache = crate::query::WorldQueryCache {
-            first_table: 0,
+            first_table: crate::entity::TableId(0),
             tables: Box::new([]),
         };
         state.tracking_unregistered = true;
@@ -1020,11 +1030,11 @@ impl<Q: QueryData, F: QueryFilter> QueryState<Q, F> {
                 .rposition(|table| !matches!(table, QueryTable::Excluded))
                 .unwrap();
             (
-                u16::try_from(first).expect("已登记 Table 编号"),
+                crate::entity::TableId(u16::try_from(first).expect("已登记 Table 编号")),
                 tables.drain(first..=last).collect(),
             )
         } else {
-            (0, Box::new([]) as Box<[_]>)
+            (crate::entity::TableId(0), Box::new([]) as Box<[_]>)
         };
         self.cache = WorldQueryCache {
             first_table,
@@ -1072,10 +1082,9 @@ impl<Q: QueryData, F: QueryFilter> QueryState<Q, F> {
             .locate(entity)
             .ok_or_else(|| missing_entity(entity))?;
         let archetype = location.archetype();
-        let Some(table) = archetype
-            .table
-            .checked_sub(state.cache.first_table)
-            .and_then(|offset| state.cache.tables.get(usize::from(offset)))
+        let Some(table) = usize::from(archetype.table)
+            .checked_sub(usize::from(state.cache.first_table))
+            .and_then(|offset| state.cache.tables.get(offset))
         else {
             return Ok(None);
         };

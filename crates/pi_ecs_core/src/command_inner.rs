@@ -127,3 +127,11 @@ impl World {
         }
     }
 }
+#[cfg(feature = "rc")]
+impl crate::world::World {
+    pub(super) fn command_queue_status_inner<C: Send + 'static>(
+        &self,
+    ) -> Result<super::CommandQueueStatus, crate::error::EcsError> {
+        self.commands.queue_status::<C>()
+    }
+}

@@ -15,12 +15,22 @@ mod tests {
         fn publish(world: &mut World) -> Entity {
             world.finish_registration().unwrap();
             let storage = world.storage.as_mut().unwrap();
-            let row = storage.table_mut(0).unwrap().claim_row().unwrap();
+            let row = storage
+                .table_mut(crate::entity::TableId(0))
+                .unwrap()
+                .claim_row()
+                .unwrap();
             let id = crate::entity::ArchetypeId {
-                table: 0,
-                variant: 0,
+                table: crate::entity::TableId(0),
+                variant: crate::entity::VariantId(0),
             };
-            let location = EntityLocation::from_parts(0, 0, row.index(), 0, 0);
+            let location = EntityLocation::from_parts(
+                0,
+                0,
+                row.index(),
+                crate::entity::TableId(0),
+                crate::entity::VariantId(0),
+            );
             let entity = world
                 .entities
                 .get_mut()
@@ -28,7 +38,7 @@ mod tests {
                 .unwrap();
             storage.append_member(id, entity, row).unwrap();
             storage
-                .table_mut(0)
+                .table_mut(crate::entity::TableId(0))
                 .unwrap()
                 .publish_row(row, entity)
                 .unwrap();

@@ -7,6 +7,177 @@ use pi_ecs_core::{
     change_detection::{ChangeTick, ChangeWindow},
     error::EcsError,
 };
+use std::any::{Any, TypeId};
+
+/// 本次调用的输入模式；引用仅借上游拥有值，不借 World。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SystemInputKind {
+    /// 无外部输入；普通函数的默认模式。
+    Unit,
+    /// 转移一份对应类型的拥有值。
+    Owned(
+        /// 输入负载类型。
+        TypeId,
+    ),
+    /// 只读借用对应类型的拥有值，寿命限于本次调用。
+    Shared(
+        /// 被借用的负载类型，不是引用类型。
+        TypeId,
+    ),
+}
+
+/// 登记时可读取的函数端口；按类型匹配，不按函数地址匹配。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SystemPorts {
+    /// 输入的类型与所有权模式。
+    pub input: SystemInputKind,
+    /// 非单位输出的负载类型；允许本次没有输出。
+    pub output: Option<TypeId>,
+    /// 此适配器是否必须走数据流入口，即使输入和输出都是单位类型。
+    pub requires_flow: bool,
+}
+
+/// 执行器持有的单次输入；不保存于 System 长期状态。
+pub enum SystemInput<'call> {
+    /// 普通入口或阶段/队列单位入口。
+    Unit,
+    /// 本次尝试拥有负载。
+    Owned(
+        /// 来自宿主或唯一上游输出的拥有值。
+        Box<dyn Any>,
+    ),
+    /// 本次只读借用上游负载。
+    Shared(
+        /// 调度工作区保活的负载；调用完成前不得移走。
+        &'call dyn Any,
+    ),
+}
+
+/// 输入端口的静态描述与当次借用映射。
+pub trait InputPort: private::SealedInputPort {
+    /// 当次传给函数的值；只读模式的引用仅借上游输出。
+    type Item<'call>;
+
+    /// 公开给组图的输入模式。
+    fn kind() -> SystemInputKind;
+
+    /// # 用途
+    /// 兑现已按 kind 预校验的 input；不访问 World。模式或类型不一致属于内部协议错误并 panic。
+    fn bind(input: SystemInput<'_>) -> Self::Item<'_>;
+}
+
+/// 无值输入的普通入口。
+pub struct UnitInput;
+/// 拥有型输入端口描述，类型参数 T 是负载。
+pub struct OwnedInput<T>(
+    /// 只标记静态类型，不保留一份 T。
+    std::marker::PhantomData<fn(T) -> T>,
+);
+/// 只读输入端口描述，类型参数 T 是上游负载。
+pub struct SharedInput<T>(
+    /// 只标记静态类型，不保留一份 T。
+    std::marker::PhantomData<fn(T) -> T>,
+);
+
+impl private::SealedInputPort for UnitInput {}
+impl<T> private::SealedInputPort for OwnedInput<T> {}
+impl<T> private::SealedInputPort for SharedInput<T> {}
+
+impl InputPort for UnitInput {
+    type Item<'call> = ();
+    /// # 用途
+    /// 普通入口不参与类型连线。
+    fn kind() -> SystemInputKind {
+        Self::kind_inner()
+    }
+    /// # 用途
+    /// 只接受单位输入。
+    fn bind(input: SystemInput<'_>) {
+        Self::bind_inner(input)
+    }
+}
+
+impl<T: 'static> InputPort for OwnedInput<T> {
+    type Item<'call> = T;
+    /// # 用途
+    /// 声明唯一拥有型负载类型。
+    fn kind() -> SystemInputKind {
+        Self::kind_inner()
+    }
+    /// # 用途
+    /// 校验后移交一份拥有值，不复制或展开批次。
+    fn bind(input: SystemInput<'_>) -> T {
+        Self::bind_inner(input)
+    }
+}
+
+impl<T: 'static> InputPort for SharedInput<T> {
+    type Item<'call> = &'call T;
+    /// # 用途
+    /// 声明只读借用的负载类型。
+    fn kind() -> SystemInputKind {
+        Self::kind_inner()
+    }
+    /// # 用途
+    /// 校验上游只读值并限制引用在本次调用内。
+    fn bind(input: SystemInput<'_>) -> &T {
+        Self::bind_inner(input)
+    }
+}
+
+/// 带端口的普通函数适配器；构建结果仍是原来的 FunctionSystem。
+pub struct PortFunction<F, I, O> {
+    /// 实际用户函数，可持有普通拥有型捕获。
+    pub(crate) function: F,
+    /// 静态输入描述与输出负载，不保存任何当次值。
+    pub(crate) signature: std::marker::PhantomData<fn(I) -> O>,
+}
+
+impl<F, I, O> PortFunction<F, I, O> {
+    /// # 用途
+    /// 用 I 描述调用输入、O 描述拥有输出；函数返回 None 时不触发后继，整批输入/输出均是单值。
+    pub fn new(function: F) -> Self {
+        Self::new_inner(function)
+    }
+}
+
+/// 带端口函数的参数推导标记，P 为完整参数类型。
+pub struct PortSignature<P>(
+    /// 只用于类型推导，不保留 P 的实例。
+    std::marker::PhantomData<fn() -> P>,
+);
+
+impl<F, I, O, P> SystemFunction<PortSignature<P>> for PortFunction<F, I, O>
+where
+    I: InputPort,
+    O: 'static,
+    P: SystemParam,
+    F: for<'a> FnMut(I::Item<'a>, P::Item<'a>) -> Option<O>,
+{
+    type Param = P;
+
+    /// # 用途
+    /// 旧的单位调用入口不接受带端口适配器；登记在普通无数据流的 Stage 时须提前拒绝。
+    fn call<'run>(&mut self, item: P::Item<'run>) {
+        Self::reject_legacy_call_inner(item)
+    }
+
+    /// # 用途
+    /// 返回输入模式和非单位输出负载；单位值不参与按类型匹配。
+    fn ports(&self) -> SystemPorts {
+        Self::ports_inner()
+    }
+
+    /// # 用途
+    /// 校验输入并调用函数；输出为一份拥有值，None 表示本次没有交付。
+    fn call_with_ports<'run>(
+        &mut self,
+        input: SystemInput<'run>,
+        item: P::Item<'run>,
+    ) -> Option<Box<dyn Any>> {
+        self.call_with_ports_inner::<P>(input, item)
+    }
+}
 /// 所属 Stage 内稳定系统身份，不使用函数地址作为身份；跨 Stage 定位需同时带阶段身份。
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub struct SystemId(
@@ -60,9 +231,76 @@ pub trait SystemFunction<Marker> {
     type Param: SystemParam;
     /// item 是本次参数元组；正常返回 ()，不在首版混入业务 Result 适配。
     fn call<'run>(&mut self, item: <Self::Param as SystemParam>::Item<'run>);
+    /// # 用途
+    /// 构建时仅调用一次并冻结结果；普通函数默认无输入、无输出。
+    /// 自定义适配必须按当次冻结声明解释输入和输出；违反约定可导致本次停止，不扩大安全访问权限。
+    fn ports(&self) -> SystemPorts {
+        SystemPorts::unit()
+    }
+    /// # 用途
+    /// 执行一次已绑定参数的调用。普通适配用原 call；带端口适配覆盖此入口。
+    /// input 已在取参前按固定端口预校验；不得再返回可恢复输入拒绝。
+    /// None 不触发后继；Some(value) 是一份完整的拥有型输出，Vec 不逐项拆分。
+    fn call_with_ports<'run>(
+        &mut self,
+        input: SystemInput<'run>,
+        item: <Self::Param as SystemParam>::Item<'run>,
+    ) -> Option<Box<dyn Any>> {
+        SystemPorts::call_unit::<Self, Marker>(self, input, item)
+    }
+}
+impl SystemPorts {
+    /// # 用途
+    /// 返回普通单位输入、无输出的函数签名。
+    pub fn unit() -> Self {
+        Self::unit_inner()
+    }
+    /// # 用途
+    /// 默认适配器只接受单位输入；成功调用原函数且不产生数据流输出。
+    fn call_unit<'run, F: SystemFunction<M> + ?Sized, M>(
+        function: &mut F,
+        input: SystemInput<'run>,
+        item: <F::Param as SystemParam>::Item<'run>,
+    ) -> Option<Box<dyn Any>> {
+        Self::call_unit_inner::<F, M>(function, input, item)
+    }
 }
 /// 调度持有的系统接口，首版只允许框架适配实现。
 pub trait System: private::Sealed {
+    /// # 用途
+    /// 接管前确认配置尚未消费，不持有旧 World 的参数责任。
+    fn is_uninitialized(&self) -> bool;
+    /// # 用途
+    /// 返回登记时固定的输入输出模式；不访问 World 或系统长期参数状态。
+    fn ports(&self) -> SystemPorts;
+    /// # 用途
+    /// 在唯一根运行中执行已准备系统；成功完成普通系统参数及其作用域后交出拥有型输出。
+    /// 输入协议须在参数借用前校验；失败无输出，不推进 last_run，不补运行。
+    /// # Safety
+    /// 持有同源最新准备、刚分配的 this_run 和唯一串行执行权，无其他活参数借用。
+    #[cfg(feature = "rc")]
+    unsafe fn run_with_input(
+        &mut self,
+        world: &mut pi_ecs_core::world::World,
+        this_run: ChangeTick,
+        input: SystemInput<'_>,
+    ) -> Result<Option<Box<dyn Any>>, EcsError>;
+    /// # 用途
+    /// 在冻结且同源的 world 中从已初始化参数生成用于计划分析的声明树；不要求 prepare 成功。
+    /// 不绑定值、检查必需资源实例是否存在或改变运行缓存；错误使候选计划不可用，不改变已有运行授权。
+    #[cfg(feature = "rc")]
+    fn planning_declaration(
+        &self,
+        world: pi_ecs_core::world::WorldRef<'_>,
+    ) -> Result<pi_ecs_core::access::AccessTree, EcsError>;
+    /// # 用途
+    /// 将已初始化同源状态的声明按 logical 展开，保留真实参数的匹配和范围，不要求 prepare 成功。
+    /// 调用者先以 planning_declaration 校验来源并从同一 World 构建 logical；不产生运行授权。
+    #[cfg(feature = "rc")]
+    fn planning_ordering_access(
+        &self,
+        logical: &pi_ecs_core::access::OrderingArchetypes,
+    ) -> Result<Vec<pi_ecs_core::access::OrderingAccess>, EcsError>;
     /// # 用途
     /// 先成功 prepare，再对 logical 共享逻辑全集展开排序权限，不能仅看已发布命中。
     /// 包含潜在目标，并单独展开成员读取 entities；物理搬移不能冒充保留组件业务值写入。
@@ -149,6 +387,8 @@ pub(crate) enum FunctionSystemState<P: SystemParam> {
 }
 /// 函数及参数长期状态；不保存本次 Query/Reader、组件引用或授权。
 pub struct FunctionSystem<F, P: SystemParam, Marker = P> {
+    /// 构造时冻结的唯一端口声明，用于组图、Stage 门禁与取参前检查。
+    pub(crate) ports: SystemPorts,
     /// 最近全部参数同步成功的 (布局替换代次, World 原型总量)，None 为首次，失败不推进。
     /// 启动前直接比较 World；与 Stage 排序快照职责独立，匹配同步不推进 last_run。
     pub(crate) matched_revision: Option<(u64, usize)>,
@@ -171,6 +411,53 @@ impl<F, P: SystemParam, Marker> private::Sealed for FunctionSystem<F, P, Marker>
 impl<F: SystemFunction<Marker, Param = P>, P: SystemParam, Marker> System
     for FunctionSystem<F, P, Marker>
 {
+    /// # 用途
+    /// 获取函数固定的登记端口。
+    fn ports(&self) -> SystemPorts {
+        self.ports
+    }
+    /// # 用途
+    /// 检查本实例是否可被新作用域接管。
+    fn is_uninitialized(&self) -> bool {
+        self.is_uninitialized_inner()
+    }
+
+    /// # 用途
+    /// 复用参数生命周期执行带输入的普通函数，结束授权之后才交付输出。
+    /// # Safety
+    /// 调用者持同源有效准备与唯一串行运行权。
+    #[cfg(feature = "rc")]
+    unsafe fn run_with_input(
+        &mut self,
+        world: &mut pi_ecs_core::world::World,
+        this_run: ChangeTick,
+        input: SystemInput<'_>,
+    ) -> Result<Option<Box<dyn Any>>, EcsError> {
+        /* 设计已确认：先以固定端口校验擦除输入（Owned 检查 payload 而非 Box 自身的 TypeId），拒绝不调用 begin/fetch/finish。
+        再以普通系统会话执行 begin → fetch → call_with_ports → finish；输入借用与参数借用只在调用内相交。
+        system_scope 正常完成后才校验输出类型、推进 last_run、交付整批；错误不发布输出。 */
+        self.run_with_input_inner(world, this_run, input)
+    }
+    /// # 用途
+    /// 从同源初始化状态取得计划声明，不绑定运行数据。
+    #[cfg(feature = "rc")]
+    fn planning_declaration(
+        &self,
+        world: pi_ecs_core::world::WorldRef<'_>,
+    ) -> Result<pi_ecs_core::access::AccessTree, EcsError> {
+        self.planning_declaration_inner(world)
+    }
+
+    /// # 用途
+    /// 在同源逻辑全集展开已初始化系统的静态排序访问。
+    #[cfg(feature = "rc")]
+    fn planning_ordering_access(
+        &self,
+        logical: &pi_ecs_core::access::OrderingArchetypes,
+    ) -> Result<Vec<pi_ecs_core::access::OrderingAccess>, EcsError> {
+        self.planning_ordering_access_inner(logical)
+    }
+
     #[cfg(feature = "rc")]
     /// # 用途
     /// 在根 Running 内执行已准备系统；会话成功后才推进上次运行观察点。
@@ -261,6 +548,8 @@ impl<F: SystemFunction<Marker, Param = P>, P: SystemParam, Marker> System
     }
 }
 pub(crate) mod private {
+    /// 只允许内建单位、拥有和只读端口定义绑定模式。
+    pub trait SealedInputPort {}
     /// # 用途
     /// 框架封闭适配边界，避免外部绕过参数声明与运行授权协议。
     pub trait Sealed {}

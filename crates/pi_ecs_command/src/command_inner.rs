@@ -73,11 +73,13 @@ impl CommandHub {
                 next_command: 1,
                 next_ready: 0,
                 occupied: false,
+                last_receiver_claim: 0,
             }),
         });
         self.endpoint.queues.insert(
             TypeId::of::<C>(),
             QueueEntry {
+                receiver_claimed: |typed| typed_queue::<C>(typed).state.borrow().occupied,
                 typed: Box::new(queue),
                 advance: advance_queue::<C>,
                 close: close_queue::<C>,
@@ -113,14 +115,20 @@ impl CommandHub {
         epoch: WorldEpoch,
     ) -> Result<CommandReceiver<C>, EcsError> {
         let queue = self.queue::<C>(epoch)?;
-        {
+        let claim = {
             let mut state = queue.state.borrow_mut();
             if state.occupied {
                 return Err(classified_error(ErrorKind::AlreadyExists, "消费资格已领取"));
             }
+            let claim = state.last_receiver_claim.checked_add(1).ok_or_else(|| {
+                classified_error(ErrorKind::ResourceExhausted, "命令消费资格编号耗尽")
+            })?;
+            state.last_receiver_claim = claim;
             state.occupied = true;
-        }
+            claim
+        };
         Ok(CommandReceiver {
+            claim,
             queue,
             epoch,
             marker: PhantomData,
@@ -418,5 +426,37 @@ impl<C: Send + 'static> CommandSender<C> {
 impl CommandHub {
     pub(super) fn drop_inner(&mut self) {
         todo!("编号：T16，尚未实现， 关闭截点及唯一 payload 清理的自动兜底")
+    }
+}
+#[cfg(feature = "rc")]
+impl super::CommandHub {
+    pub(super) fn queue_status_inner<C: Send + 'static>(
+        &self,
+    ) -> Result<super::CommandQueueStatus, pi_ecs_types::error::EcsError> {
+        let queue = self.queue::<C>(self.endpoint.control.epoch)?;
+        let state = queue
+            .state
+            .try_borrow()
+            .map_err(|_| classified_error(ErrorKind::InvalidState, "命令队列状态正在被独占借用"))?;
+        Ok(super::CommandQueueStatus {
+            ready: !state.ready.is_empty(),
+            receiver_claim: state.occupied.then_some(state.last_receiver_claim),
+        })
+    }
+}
+#[cfg(feature = "rc")]
+impl<C: Send + 'static> super::CommandReceiver<C> {
+    pub(super) fn view_inner(&mut self) -> super::CommandRead<'_, C> {
+        super::CommandRead { receiver: self }
+    }
+}
+
+#[cfg(feature = "rc")]
+impl super::CommandHub {
+    pub(super) fn has_receiver_claims_inner(&self) -> bool {
+        self.endpoint
+            .queues
+            .values()
+            .any(|entry| (entry.receiver_claimed)(entry.typed.as_ref()))
     }
 }

@@ -128,9 +128,7 @@ fn producers_keep_independent_slots_and_rebind_after_removal() {
     schedule.run(&mut world).unwrap();
     assert!(drops.lock().unwrap().is_empty());
     schedule
-        .stage_mut(stage_id)
-        .unwrap()
-        .unregister_system(removed, &mut world)
+        .unregister_system(stage_id, removed, &mut world)
         .unwrap();
     assert_eq!(*drops.lock().unwrap(), [1]);
     schedule.run(&mut world).unwrap();
@@ -209,9 +207,7 @@ fn failed_nested_registration_cleans_only_its_own_slots() {
     };
     assert_eq!(slots(&mut world), [(1, 0)]);
     schedule
-        .stage_mut(stage_id)
-        .unwrap()
-        .unregister_system(fail_id, &mut world)
+        .unregister_system(stage_id, fail_id, &mut world)
         .unwrap();
     schedule.run(&mut world).unwrap();
     assert_eq!(slots(&mut world), [(1, 1)]);

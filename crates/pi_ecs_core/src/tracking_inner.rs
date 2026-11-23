@@ -15,6 +15,37 @@ mod rc_tracking_tests {
         type Access = PlainAccess;
     }
 
+    #[test]
+    fn rc_tracking_exhaustion_stops_a_running_world_and_keeps_the_diagnostic() {
+        let mut world = World::new().unwrap();
+        let component = world
+            .register_component::<First>(StoragePolicy::SparseOnly)
+            .unwrap();
+        world.finish_registration().unwrap();
+        let _ = world.tracking.queries.insert(
+            vec![ComponentTickDemand {
+                component,
+                added: true,
+                changed: false,
+            }]
+            .into_boxed_slice(),
+        );
+        world.change_tick = u64::MAX;
+        let result = world.schedule_scope(World::apply_tracking);
+        assert!(world.is_stopped());
+        assert_eq!(world.read_change_tick().get(), u64::MAX);
+        assert!(
+            !world
+                .registry
+                .component(component)
+                .unwrap()
+                .tracking
+                .added_tick
+        );
+        assert!(format!("{:?}", result.unwrap_err()).contains("追踪维护时钟耗尽"));
+        world.close().unwrap();
+    }
+
     // Seam: World::apply_tracking；耗尽及物理准备错误不能发布需求或推进时间。
     #[test]
     fn rc_tracking_failure_atomicity_and_lifecycle_gates() {
@@ -227,6 +258,9 @@ impl crate::world::World {
             }
             let next = if enabling {
                 self.change_tick.checked_add(1).ok_or_else(|| {
+                    if matches!(previous, AccessMode::Running) {
+                        self.access.mode.set(AccessMode::Stopped);
+                    }
                     pi_ecs_types::error::classified_error(
                         pi_ecs_types::error::ErrorKind::ResourceExhausted,
                         "追踪维护时钟耗尽",
@@ -253,7 +287,9 @@ impl crate::world::World {
         }));
         match result {
             Ok(result) => {
-                self.access.mode.set(previous);
+                if !self.is_stopped() {
+                    self.access.mode.set(previous);
+                }
                 result
             }
             Err(payload) => {

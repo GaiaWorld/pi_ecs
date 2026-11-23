@@ -104,7 +104,7 @@ mod configuration_tests {
             .add_stage(Stage::new(StageId(3), executor))
             .unwrap();
         assert!(schedule.stage_mut(StageId(0)).is_err());
-        let stage = schedule.stage_mut(StageId(3)).unwrap();
+        let mut stage = schedule.stage_mut(StageId(3)).unwrap();
         assert_eq!(
             stage
                 .add_system(SystemBuilder::new(|| {}).build(SystemId(7)).unwrap())
@@ -123,13 +123,17 @@ mod configuration_tests {
 }
 
 impl crate::schedule::Schedule {
+    pub(super) fn configuration_inner(&mut self) -> crate::schedule::ScheduleConfig<'_> {
+        crate::schedule::ScheduleConfig { schedule: self }
+    }
     pub(super) fn stage_mut_inner(
         &mut self,
         _id: crate::stage::StageId,
-    ) -> Result<&mut crate::stage::Stage, pi_ecs_core::error::EcsError> {
+    ) -> Result<crate::schedule::StageConfig<'_>, pi_ecs_core::error::EcsError> {
         self.stages
             .iter_mut()
             .find(|stage| stage.id == _id)
+            .map(|stage| crate::schedule::StageConfig { stage })
             .ok_or_else(|| {
                 pi_ecs_core::error::classified_error(
                     pi_ecs_core::error::ErrorKind::NotFound,
@@ -167,21 +171,52 @@ impl Schedule {
     }
 }
 impl Schedule {
+    pub(super) fn validate_install_inner(&self) -> Result<(), EcsError> {
+        self.validate_configuration()?;
+        for stage in &self.stages {
+            stage.validate_install()?;
+        }
+        Ok(())
+    }
+    #[cfg(feature = "rc")]
+    pub(super) fn unregister_system_inner(
+        &mut self,
+        stage: crate::stage::StageId,
+        id: crate::system::SystemId,
+        world: &mut pi_ecs_core::world::World,
+    ) -> Result<(), EcsError> {
+        self.stage_mut_inner(stage)?
+            .stage
+            .unregister_system(id, world)
+    }
     pub(crate) fn add_stage_inner(
         schedule: &mut Schedule,
         stage: crate::stage::Stage,
-    ) -> Result<(), EcsError> {
+    ) -> Result<(), crate::stage::InstallError<crate::stage::Stage>> {
+        use crate::stage::InstallError;
+        if let Err(error) = stage.validate_install() {
+            return Err(InstallError {
+                value: stage,
+                error,
+            });
+        }
         if schedule.stages.iter().any(|value| value.id == stage.id) {
-            return Err(pi_ecs_core::error::classified_error(
-                pi_ecs_core::error::ErrorKind::AlreadyExists,
-                "阶段身份重复",
-            ));
+            return Err(InstallError {
+                value: stage,
+                error: pi_ecs_core::error::classified_error(
+                    pi_ecs_core::error::ErrorKind::AlreadyExists,
+                    "阶段身份重复",
+                ),
+            });
         }
         if stage.executor.0 >= schedule.executors.len() {
-            return Err(pi_ecs_core::error::classified_error(
-                pi_ecs_core::error::ErrorKind::NotFound,
-                "阶段引用了不存在的执行器",
-            ));
+            return Err(InstallError {
+                value: stage,
+                error: pi_ecs_core::error::classified_error(
+                    pi_ecs_core::error::ErrorKind::NotFound,
+                    "阶段引用了不存在的执行器",
+                ),
+            });
         }
         schedule.stages.push(stage);
         Ok(())
@@ -208,6 +243,101 @@ impl Schedule {
             Ok(())
         })
     }
+}
+
+#[cfg(all(test, feature = "rc"))]
+#[test]
+fn rc_schedule_runs_ordinary_system_with_an_empty_entry_flow() {
+    use crate::{
+        executor::{ExecutionMode, Executor},
+        inter_frame::SystemFlow,
+        stage::{Stage, StageId},
+        system::SystemId,
+        system_builder::SystemBuilder,
+    };
+    use std::{cell::Cell, rc::Rc};
+
+    let mut world = pi_ecs_core::world::World::new().unwrap();
+    world.finish_registration().unwrap();
+    let mut schedule = Schedule::new();
+    let executor = schedule
+        .add_executor(Executor::new(ExecutionMode::Serial).unwrap())
+        .unwrap();
+    let mut stage = Stage::new(StageId(0), executor);
+    assert!(stage.set_entry_flow(SystemFlow::new()).is_ok());
+    let calls = Rc::new(Cell::new(0));
+    let observed = Rc::clone(&calls);
+    stage
+        .add_system(
+            SystemBuilder::new(move || observed.set(observed.get() + 1))
+                .build(SystemId(0))
+                .unwrap(),
+        )
+        .unwrap();
+    schedule.add_stage(stage).unwrap();
+
+    schedule.run(&mut world).unwrap();
+    schedule.run(&mut world).unwrap();
+    assert_eq!(calls.get(), 2);
+    assert!(!world.is_stopped());
+    schedule.unregister(&mut world).unwrap();
+    let observed = Rc::clone(&calls);
+    schedule
+        .stage_mut(StageId(0))
+        .unwrap()
+        .add_system(
+            SystemBuilder::new(move || observed.set(observed.get() + 10))
+                .build(SystemId(1))
+                .unwrap(),
+        )
+        .unwrap();
+    schedule.run(&mut world).unwrap();
+    assert_eq!(calls.get(), 12);
+    assert!(!world.is_stopped());
+    schedule.unregister(&mut world).unwrap();
+    world.close().unwrap();
+}
+
+#[cfg(all(test, feature = "rc"))]
+#[test]
+fn rc_schedule_stops_on_invalid_published_slot_and_keeps_original_diagnostic() {
+    use crate::{
+        executor::{ExecutionMode, Executor},
+        stage::{Stage, StageId},
+        system::SystemId,
+        system_builder::SystemBuilder,
+    };
+    use std::{cell::Cell, rc::Rc};
+
+    let mut world = pi_ecs_core::world::World::new().unwrap();
+    world.finish_registration().unwrap();
+    let mut schedule = Schedule::new();
+    let executor = schedule
+        .add_executor(Executor::new(ExecutionMode::Serial).unwrap())
+        .unwrap();
+    let calls = Rc::new(Cell::new(0));
+    for index in 0..2 {
+        let mut stage = Stage::new(StageId(index), executor);
+        let calls = calls.clone();
+        stage
+            .add_system(
+                SystemBuilder::new(move || calls.set(calls.get() + 1))
+                    .build(SystemId(0))
+                    .unwrap(),
+            )
+            .unwrap();
+        schedule.add_stage(stage).unwrap();
+    }
+    schedule.run(&mut world).unwrap();
+    assert_eq!(calls.get(), 2);
+    // 注入已发布而非候选计划故障；布局不变，阶段复用此计划。
+    schedule.stages[0].ordering.as_mut().unwrap().waves[0].systems = Box::new([0, usize::MAX]);
+    let error = schedule.run(&mut world).unwrap_err();
+    assert!(format!("{error:?}").contains("执行计划包含无效系统槽"));
+    assert!(world.is_stopped());
+    assert_eq!(calls.get(), 2);
+    schedule.unregister(&mut world).unwrap();
+    world.close().unwrap();
 }
 #[cfg(not(feature = "rc"))]
 impl Schedule {
@@ -262,5 +392,27 @@ impl crate::schedule::Schedule {
             stage.validate_configuration()?;
         }
         Ok(())
+    }
+}
+#[cfg(feature = "rc")]
+impl Schedule {
+    pub(super) fn run_stages_inner(
+        &mut self,
+        _world: &mut pi_ecs_core::world::World,
+        _stages: &[crate::stage::StageId],
+    ) -> Result<(), EcsError> {
+        self.validate_configuration()?;
+        let indices = _stages.iter().map(|id| {
+            self.stages.iter().position(|stage| stage.id == *id).ok_or_else(|| {
+                pi_ecs_core::error::classified_error(pi_ecs_core::error::ErrorKind::NotFound, "阶段序列包含未登记身份")
+            })
+        }).collect::<Result<Vec<_>, _>>()?;
+        _world.schedule_scope(|world| {
+            for index in indices {
+                let stage = &mut self.stages[index];
+                stage.run(&mut *world, &mut self.executors[stage.executor.0])?;
+            }
+            Ok(())
+        })
     }
 }

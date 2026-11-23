@@ -7,6 +7,67 @@ mod rc_parameter_notice_tests {
         world::World,
     };
     struct Missing;
+    #[test]
+    fn producer_clock_exhaustion_stops_after_registration_rollback() {
+        let mut world = World::new().unwrap();
+        world.register_multi_resource::<u32>().unwrap();
+        world.finish_registration().unwrap();
+        world.change_tick = u64::MAX - 1;
+        let error = world
+            .schedule_scope(|world| {
+                world.parameter_registration_scope(|mut registration| {
+                    let installed = registration.register_producer(1u32)?;
+                    let failure = registration
+                        .register_producer(2u32)
+                        .err()
+                        .expect("第二笔登记应耗尽");
+                    registration.unregister_producer::<u32>(installed)?;
+                    Err::<(), _>(failure)
+                })
+            })
+            .unwrap_err();
+        assert!(world.is_stopped());
+        assert!(format!("{error:?}").contains("变化时钟耗尽"));
+        world.close().unwrap();
+    }
+    #[test]
+    fn rollback_version_exhaustion_does_not_skip_reader_or_replace_clock_error() {
+        let mut world = World::new().unwrap();
+        let component = world
+            .register_component::<Value>(StoragePolicy::SparseOnly)
+            .unwrap();
+        let resource = world.register_multi_resource::<u32>().unwrap();
+        world.register_multi_resource::<u64>().unwrap();
+        world.finish_registration().unwrap();
+        world.change_tick = u64::MAX - 1;
+        world.multi_resources.entries[resource.0 as usize]
+            .downcast_mut::<crate::resource::MultiResourceCore<u32>>()
+            .unwrap()
+            .structure_version = u64::MAX - 1;
+        let error = world
+            .schedule_scope(|world| {
+                world.parameter_registration_scope(|mut registration| {
+                    let producer = registration.register_producer(1u32)?;
+                    let reader = registration.subscribe_notice(component, NoticeKind::Changed)?;
+                    let first = registration
+                        .register_producer(2u64)
+                        .err()
+                        .expect("第二类生产者应耗尽时钟");
+                    assert!(format!("{first:?}").contains("变化时钟耗尽"));
+                    let rollback = registration
+                        .unregister_producer::<u32>(producer)
+                        .unwrap_err();
+                    assert!(format!("{rollback:?}").contains("生产者结构版本耗尽"));
+                    registration.unsubscribe_notice(reader)?;
+                    Err::<(), _>(rollback)
+                })
+            })
+            .unwrap_err();
+        assert!(world.is_stopped());
+        assert!(world.notifications.subscriptions.iter().next().is_none());
+        assert!(format!("{error:?}").contains("变化时钟耗尽"));
+        world.close().unwrap();
+    }
     impl Component for Missing {
         type Access = PlainAccess;
     }
@@ -15,6 +76,42 @@ mod rc_parameter_notice_tests {
         type Access = PlainAccess;
     }
     // Seam: Running 初始化从已登记 Hub 领取资格，失败和 Drop 不清空 payload。
+    #[test]
+    fn rc_restricted_receiver_claim_matches_live_queue_without_consuming() {
+        use crate::command::CommandCapacity;
+        use std::any::TypeId;
+        let mut world = World::new().unwrap();
+        world
+            .register_command::<u32>(CommandCapacity::Unbounded)
+            .unwrap();
+        world
+            .register_command::<u64>(CommandCapacity::Unbounded)
+            .unwrap();
+        world.finish_registration().unwrap();
+        assert!(world.command_sender::<u32>().unwrap().send(7).is_ok());
+        let (claim, mut receiver) = world
+            .schedule_scope(|world| {
+                world.parameter_registration_scope(|mut scope| {
+                    scope.restrict_receivers(Some(TypeId::of::<u32>()))?;
+                    assert!(scope.restrict_receivers(None).is_err());
+                    assert!(scope.command_receiver::<u64>().is_err());
+                    let receiver = scope.command_receiver::<u32>()?;
+                    assert!(scope.command_receiver::<u32>().is_err());
+                    Ok((scope.receiver_claim().unwrap(), receiver))
+                })
+            })
+            .unwrap();
+        let status = world.command_queue_status::<u32>().unwrap();
+        assert!(status.ready);
+        assert_eq!(status.receiver_claim, Some(claim));
+        assert_eq!(receiver.read().unwrap().next(), Some(7));
+        drop(receiver);
+        let replacement = world.command_receiver::<u32>().unwrap();
+        assert_ne!(replacement.claim_id(), claim);
+        drop(replacement);
+        world.close().unwrap();
+    }
+
     #[test]
     fn rc_parameter_command_unique_receiver_and_rollback() {
         use crate::command::CommandCapacity;
@@ -198,7 +295,18 @@ impl ParameterRegistration<'_> {
         if !matches!(self.mode, RegistrationMode::Initialize) {
             return Err(registration_error("清偿能力不能领取命令消费资格"));
         }
-        self.world.commands.receiver::<C>(self.world.epoch)
+        use super::ReceiverRegistration;
+        if let Some(policy) = &self.receiver_policy {
+            if !matches!(policy, ReceiverRegistration::Bound { command, claim: None } if *command == std::any::TypeId::of::<C>())
+            {
+                return Err(registration_error("本系统未获准领取此命令消费资格"));
+            }
+        }
+        let receiver = self.world.commands.receiver::<C>(self.world.epoch)?;
+        if let Some(ReceiverRegistration::Bound { claim, .. }) = &mut self.receiver_policy {
+            *claim = Some(receiver.claim_id());
+        }
+        Ok(receiver)
     }
     pub(super) fn world_id_inner(&self) -> u64 {
         self.world.identity
@@ -235,7 +343,7 @@ impl ParameterRegistration<'_> {
                 .copied()
         }
         #[cfg(not(feature = "rc"))]
-        todo!("编号：T66，尚未实现， 非 RC 多例类型解析")
+        todo!("编号：T58，尚未实现， 非 RC 多例类型解析")
     }
     #[cfg(feature = "rc")]
     pub(super) fn query_state_inner<Q: QueryData, F: QueryFilter>(
@@ -396,12 +504,10 @@ impl ParameterRegistration<'_> {
                 "生产者结构版本耗尽",
             )
         })?;
-        let tick = self.world.change_tick.checked_add(1).ok_or_else(|| {
-            pi_ecs_types::error::classified_error(
-                pi_ecs_types::error::ErrorKind::ResourceExhausted,
-                "变化时钟耗尽",
-            )
-        })?;
+        let tick =
+            self.world.change_tick.checked_add(1).ok_or_else(|| {
+                record_fault(self.fatal, super::RegistrationFault::ClockExhausted)
+            })?;
         let tick_value = crate::change_detection::ChangeTick::new(
             std::num::NonZeroU64::new(tick).expect("非零时钟"),
         );
@@ -477,16 +583,14 @@ impl ParameterRegistration<'_> {
             std::ptr::NonNull::new(core.ticks.get_mut().as_mut_ptr()).expect("Vec 根非空");
         if let Some(version) = version {
             core.structure_version = version;
-        } else {
-            self.world
-                .access
-                .mode
-                .set(crate::world::AccessMode::Stopped);
         }
         // 槽和映射已撤销责任，析构在 core 的独占借用结束后执行；外层作用域负责 panic 标停。
         drop(removed);
         if version.is_none() {
-            return Err(registration_error("生产者结构版本耗尽，已停止"));
+            return Err(record_fault(
+                self.fatal,
+                super::RegistrationFault::StructureVersionExhausted,
+            ));
         }
         Ok(())
     }
@@ -498,14 +602,28 @@ impl World {
         initialize: impl for<'a> FnOnce(ParameterRegistration<'a>) -> Result<R, EcsError>,
     ) -> Result<R, EcsError> {
         check_scope(self, true)?;
+        let fatal = std::cell::Cell::new(None);
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             initialize(ParameterRegistration {
                 world: self,
                 mode: RegistrationMode::Initialize,
+                receiver_policy: None,
+                fatal: &fatal,
             })
         }));
         match result {
-            Ok(result) => result,
+            Ok(result) => {
+                if let Some(fault) = fatal.get() {
+                    self.access.mode.set(crate::world::AccessMode::Stopped);
+                    return match fault {
+                        super::RegistrationFault::ClockExhausted => Err(fault_error(fault)),
+                        super::RegistrationFault::StructureVersionExhausted => {
+                            result.and_then(|_| Err(fault_error(fault)))
+                        }
+                    };
+                }
+                result
+            }
             Err(payload) => {
                 self.access.mode.set(crate::world::AccessMode::Stopped);
                 std::panic::resume_unwind(payload)
@@ -517,18 +635,76 @@ impl World {
         unregister: impl for<'a> FnOnce(ParameterRegistration<'a>) -> Result<R, EcsError>,
     ) -> Result<R, EcsError> {
         check_scope(self, false)?;
+        let fatal = std::cell::Cell::new(None);
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             unregister(ParameterRegistration {
                 world: self,
                 mode: RegistrationMode::Unregister,
+                receiver_policy: None,
+                fatal: &fatal,
             })
         }));
         match result {
-            Ok(result) => result,
+            Ok(result) => {
+                if let Some(fault) = fatal.get() {
+                    self.access.mode.set(crate::world::AccessMode::Stopped);
+                    return result.and_then(|_| Err(fault_error(fault)));
+                }
+                result
+            }
             Err(payload) => {
                 self.access.mode.set(crate::world::AccessMode::Stopped);
                 std::panic::resume_unwind(payload)
             }
+        }
+    }
+}
+#[cfg(feature = "rc")]
+fn fault_error(fault: super::RegistrationFault) -> EcsError {
+    let message = match fault {
+        super::RegistrationFault::ClockExhausted => "变化时钟耗尽",
+        super::RegistrationFault::StructureVersionExhausted => "生产者结构版本耗尽",
+    };
+    pi_ecs_types::error::classified_error(
+        pi_ecs_types::error::ErrorKind::ResourceExhausted,
+        message,
+    )
+}
+
+#[cfg(feature = "rc")]
+fn record_fault(
+    fatal: &std::cell::Cell<Option<super::RegistrationFault>>,
+    fault: super::RegistrationFault,
+) -> EcsError {
+    if fatal.get().is_none() {
+        fatal.set(Some(fault));
+    }
+    fault_error(fault)
+}
+#[cfg(feature = "rc")]
+impl ParameterRegistration<'_> {
+    pub(super) fn restrict_receivers_inner(
+        &mut self,
+        command: Option<std::any::TypeId>,
+    ) -> Result<(), EcsError> {
+        use super::ReceiverRegistration;
+        if !matches!(self.mode, RegistrationMode::Initialize) || self.receiver_policy.is_some() {
+            return Err(registration_error("命令消费登记限制不可重设"));
+        }
+        self.receiver_policy = Some(match command {
+            Some(command) => ReceiverRegistration::Bound {
+                command,
+                claim: None,
+            },
+            None => ReceiverRegistration::Denied,
+        });
+        Ok(())
+    }
+
+    pub(super) fn receiver_claim_inner(&self) -> Option<u64> {
+        match &self.receiver_policy {
+            Some(super::ReceiverRegistration::Bound { claim, .. }) => *claim,
+            _ => None,
         }
     }
 }

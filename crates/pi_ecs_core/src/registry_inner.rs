@@ -187,8 +187,8 @@ fn error(kind: pi_ecs_types::error::ErrorKind, message: &str) -> EcsError {
 impl TypeRegistry {
     pub(crate) fn new_inner() -> TypeRegistry {
         let empty_id = ArchetypeId {
-            table: 0,
-            variant: 0,
+            table: crate::entity::TableId(0),
+            variant: crate::entity::VariantId(0),
         };
         let empty = TableLayout::new(empty_id, Box::new([])).expect("empty table layout is valid");
         let mut table_ids = HashMap::new();
@@ -288,15 +288,15 @@ impl TypeRegistry {
         if let Some(id) = registry.table_ids.get(&canonical) {
             return Ok(*id);
         }
-        if registry.tables.len() > u16::MAX as usize {
+        if registry.tables.len() >= usize::from(u16::MAX) {
             return Err(error(
                 pi_ecs_types::error::ErrorKind::ResourceExhausted,
                 "Table 数量超出 16 位编号容量",
             ));
         }
         let id = ArchetypeId {
-            table: registry.tables.len() as u16,
-            variant: 0,
+            table: crate::entity::TableId(registry.tables.len() as u16),
+            variant: crate::entity::VariantId(0),
         };
         let layout = TableLayout::new(id, canonical.clone())?;
         registry.tables.push(layout);
@@ -319,7 +319,7 @@ impl TypeRegistry {
                 "分区数量超出允许范围",
             ));
         }
-        if registry.tables.len() > u16::MAX as usize + 1 {
+        if registry.tables.len() > usize::from(u16::MAX) {
             return Err(error(
                 pi_ecs_types::error::ErrorKind::ResourceExhausted,
                 "Table 数量超出 16 位编号容量",
@@ -408,18 +408,21 @@ impl TypeRegistry {
                 "注册表尚未冻结",
             ));
         }
-        if base.variant != 0 {
+        if base.variant.0 != 0 {
             return Err(error(
                 pi_ecs_types::error::ErrorKind::InvalidInput,
                 "register_archetype_on 的 base 必须是 variant=0",
             ));
         }
-        let table = registry.tables.get(base.table as usize).ok_or_else(|| {
-            error(
-                pi_ecs_types::error::ErrorKind::NotFound,
-                "register_archetype_on 的 base Table 未登记",
-            )
-        })?;
+        let table = registry
+            .tables
+            .get(usize::from(base.table))
+            .ok_or_else(|| {
+                error(
+                    pi_ecs_types::error::ErrorKind::NotFound,
+                    "register_archetype_on 的 base Table 未登记",
+                )
+            })?;
         let canonical = normalize(registry, components)?;
         if !table
             .columns()
@@ -478,7 +481,7 @@ fn build_plan(
         .iter()
         .filter(|archetype| archetype.table == base_id)
         .count();
-    if variant > u16::MAX as usize {
+    if variant >= usize::from(u16::MAX) {
         return Err(error(
             pi_ecs_types::error::ErrorKind::ResourceExhausted,
             "原型变体数量超出 16 位编号容量",
@@ -486,7 +489,7 @@ fn build_plan(
     }
     let id = ArchetypeId {
         table: base_id.table,
-        variant: variant as u16,
+        variant: crate::entity::VariantId(variant as u16),
     };
     let mut mapped = Vec::with_capacity(canonical.len());
     let mut sparse = Vec::new();
@@ -542,10 +545,10 @@ impl TypeRegistry {
 
 impl TypeRegistry {
     pub(crate) fn table_inner(registry: &TypeRegistry, id: ArchetypeId) -> Option<&TableLayout> {
-        if id.variant != 0 {
+        if id.variant.0 != 0 {
             return None;
         }
-        registry.tables.get(id.table as usize)
+        registry.tables.get(usize::from(id.table))
     }
 }
 

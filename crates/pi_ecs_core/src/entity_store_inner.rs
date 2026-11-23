@@ -18,7 +18,13 @@ mod rc_identity_tests {
     use super::*;
 
     fn location(partition: u32) -> EntityLocation {
-        EntityLocation::from_parts(partition, 7, 11, 2, 3)
+        EntityLocation::from_parts(
+            partition,
+            7,
+            11,
+            crate::entity::TableId(2),
+            crate::entity::VariantId(3),
+        )
     }
 
     #[test]

@@ -290,8 +290,8 @@ mod shutdown_lifecycle_batch {
                 .unwrap();
             world.finish_registration().unwrap();
             let empty = ArchetypeId {
-                table: 0,
-                variant: 0,
+                table: crate::entity::TableId(0),
+                variant: crate::entity::VariantId(0),
             };
             let a = install(&mut world, empty);
             let b = install(&mut world, empty);
@@ -486,8 +486,8 @@ mod shutdown_lifecycle_batch {
             let entity = install(
                 &mut world,
                 ArchetypeId {
-                    table: 0,
-                    variant: 0,
+                    table: crate::entity::TableId(0),
+                    variant: crate::entity::VariantId(0),
                 },
             );
             sparse(&mut world, id, entity, Zst);
@@ -581,8 +581,8 @@ mod shutdown_lifecycle_batch {
                 let entity = install(
                     &mut world,
                     ArchetypeId {
-                        table: 0,
-                        variant: 0,
+                        table: crate::entity::TableId(0),
+                        variant: crate::entity::VariantId(0),
                     },
                 );
                 if case == "removed" {
@@ -772,7 +772,8 @@ unsafe fn release_whole_state(world: &mut crate::world::World) {
     // 每个投影只借相应字段；回调可以短借身份和节点，不与存储/流借用重叠。
     let table_count = unsafe { &(*root).registry }.tables.len();
     for table_id in 0..table_count {
-        let table_id = u16::try_from(table_id).expect("关闭 Table 编号损坏");
+        let table_id =
+            crate::entity::TableId(u16::try_from(table_id).expect("关闭 Table 编号损坏"));
         let rows = match unsafe { &(*root).storage }.as_ref() {
             Some(storage) => storage.published_rows(table_id).expect("关闭 Table 缺失"),
             None => break,
@@ -795,7 +796,7 @@ unsafe fn release_whole_state(world: &mut crate::world::World) {
             );
             assert_eq!(location.table_row(), index, "关闭行身份位置错配");
             // 退休前复制完整列责任游标；仅 Live 完整行有逐列责任。
-            let columns: Vec<_> = unsafe { &(*root).registry }.tables[table_id as usize]
+            let columns: Vec<_> = unsafe { &(*root).registry }.tables[usize::from(table_id)]
                 .columns()
                 .to_vec();
             let mut values = Vec::with_capacity(columns.len());

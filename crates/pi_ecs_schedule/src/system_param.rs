@@ -15,6 +15,8 @@ pub struct ParamRegistration<'a> {
 /// 排序声明在绑定生命周期内固定：完整 Q/F、读写、通知、固定增删、资源及生产者身份不得动态改变。
 /// 变更须注销旧实例并登记新实例；恢复重绑通过布局代次失效，新原型只改变匹配结果。
 /// 初始化/注销责任、Pending 提交、失败停止和线程约束须保持框架协议；普通组合优先使用派生。
+/// 从登记领取的 CommandReceiver 必须由本参数 State 独占持有，供本实例的 Item 使用；不可泄漏、移入全局或转交其他实例。
+/// 在组合失败或注销时归还同一资格；此规则也约束公开的 access 入口及其调用者。
 pub unsafe trait SystemParam {
     /// 每参数位置独立的拥有型初始化配置；组合配置与参数元组同形，不按类型合并。
     /// 普通 Query/Res 使用无额外配置，Local/多例提供初值及恢复能力；不得伪造 State 工厂。
@@ -55,6 +57,7 @@ pub unsafe trait SystemParam {
     ) -> Result<crate::param_composition::ParamAccess, EcsError>;
     /// # 用途
     /// state 为已初始化且属于 world 的参数状态；返回完整声明树，不从 ResolvedAccess 反推。
+    /// 只读取长期登记与冻结元数据；不依赖 prepare 写入的运行绑定，也不检查业务资源实例是否存在。
     /// 与 prepare 的结构/位置一致，包含原始范围、资源、通知和固定增删；无访问参数返回空 Together。
     /// 元组为 Together，NamedParam 保持底层 P 的原树形，ParamSet 为 Exclusive；错误不产生授权，不改变业务值。
     fn declaration(
@@ -62,7 +65,7 @@ pub unsafe trait SystemParam {
         world: WorldRef<'_>,
     ) -> Result<pi_ecs_core::access::AccessTree, EcsError>;
     /// # 用途
-    /// state 为成功准备的状态，logical 为同一排序构建的潜在原型全集。
+    /// state 为已初始化状态，logical 为同一排序构建的潜在原型全集；不读取 prepare 的运行绑定。
     /// 用真实 Q/F 结构匹配逻辑组合（含 OR/Option），不能仅用简化 AccessTree.scope 反推。
     /// Alter 目标完整闭包在外层生成；本方法不创建原型、不改运行匹配缓存、不生成授权。
     /// 组合按原参数位置拼接，对外含 ParamSet 全部权限；错误不交付半结果。

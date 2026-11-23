@@ -207,6 +207,60 @@ mod lifecycle_tests {
             assert_ne!(previous, usize::MAX, "用户函数失败");
         }
     }
+    #[test]
+    fn invalid_port_input_does_not_begin_fetch_or_finish_parameters() {
+        use crate::{
+            system::{OwnedInput, PortFunction, PortSignature, System, SystemInput},
+            system_builder::SystemBuilder,
+        };
+        use std::{cell::RefCell, rc::Rc};
+        struct Probe;
+        // SAFETY: the probe only appends to a test-owned log and never accesses World values.
+        unsafe impl SystemParam for Probe {
+            type Config = Rc<RefCell<Vec<&'static str>>>;
+            type State = Self::Config;
+            type Pending = ();
+            type Item<'a> = ();
+            fn initialize(config: Self::Config, _: &mut ParamRegistration<'_>) -> Result<Self::State, EcsError> { Ok(config) }
+            fn prepare(_: &mut Self::State, _: &mut World) -> Result<ParamAccess, EcsError> { Ok(ParamAccess::Together(Vec::new())) }
+            fn declaration(_: &Self::State, _: &mut World) -> Result<pi_ecs_core::access::AccessTree, EcsError> { Ok(pi_ecs_core::access::AccessTree::Together(Vec::new())) }
+            fn ordering_access(_: &Self::State, _: &pi_ecs_core::access::OrderingArchetypes) -> Result<Vec<pi_ecs_core::access::OrderingAccess>, EcsError> { Ok(Vec::new()) }
+            fn begin(state: &mut Self::State) { state.borrow_mut().push("begin"); }
+            unsafe fn fetch<'a>(state: &'a mut Self::State, _: &'a mut (), _: SystemRunContext<'a>) { state.borrow_mut().push("fetch"); }
+            fn finish(state: &mut Self::State, _: (), _: &SystemRunContext<'_>) { state.borrow_mut().push("finish"); }
+            fn unregister(_: Self::State, _: &mut ParamRegistration<'_>) -> Result<(), EcsError> { Ok(()) }
+        }
+        let mut world = World::new().unwrap();
+        world.finish_registration().unwrap();
+        let log = Rc::new(RefCell::new(Vec::new()));
+        let captured = log.clone();
+        let mut system = SystemBuilder::<_, PortSignature<Probe>>::with_config(
+            PortFunction::<_, OwnedInput<u32>, u32>::new(move |input, ()| {
+                captured.borrow_mut().push("call");
+                Some(input + 1)
+            }),
+            log.clone(),
+        ).build(SystemId(0)).unwrap();
+        world.schedule_scope(|world| {
+            world.parameter_registration_scope(|access| system.initialize(&mut ParamRegistration::new(access)))?;
+            system.prepare(world)?;
+            // SAFETY: the root is unique and each call uses the current prepared layout.
+            unsafe {
+                let tick = world.next_system_tick()?;
+                assert!(system.run_with_input(world, tick, SystemInput::Owned(Box::new(5u64))).is_err());
+                assert!(log.borrow().is_empty());
+                assert!(system.last_run.is_none());
+                let tick = world.next_system_tick()?;
+                let output = system.run_with_input(world, tick, SystemInput::Owned(Box::new(5u32)))?.unwrap();
+                assert_eq!(output.downcast_ref::<u32>(), Some(&6));
+            }
+            assert_eq!(&*log.borrow(), &["begin", "fetch", "call", "finish"]);
+            Ok(())
+        }).unwrap();
+        world.parameter_unregistration_scope(|access| system.unregister(&mut ParamRegistration::new(access))).unwrap();
+        world.close().unwrap();
+    }
+
     // Seam: 真实 System::prepare，异源拒绝不破坏同源准备，注销仍清偿生产者。
     #[test]
     fn rc_system_prepare_preserves_identity_and_refreshes_revision() {
@@ -218,6 +272,7 @@ mod lifecycle_tests {
         other.finish_registration().unwrap();
         let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let mut system = FunctionSystem {
+            ports: crate::system::SystemPorts::unit(),
             matched_revision: None,
             prepared_access: None,
             signature: std::marker::PhantomData::<fn()>,
@@ -301,11 +356,11 @@ mod lifecycle_tests {
     }
     #[test]
     fn schedule_unregister_releases_registered_producers_before_world_close() {
-        use crate::system::System;
         let mut world = World::new().unwrap();
         world.register_multi_resource::<u32>().unwrap();
         world.finish_registration().unwrap();
-        let mut system = FunctionSystem {
+        let system = FunctionSystem {
+            ports: crate::system::SystemPorts::unit(),
             matched_revision: None,
             prepared_access: None,
             signature: std::marker::PhantomData::<fn()>,
@@ -314,13 +369,6 @@ mod lifecycle_tests {
             state: FunctionSystemState::Uninitialized(crate::system_builder::ParamConfig::new(19)),
             last_run: None,
         };
-        world
-            .schedule_scope(|world| {
-                world.parameter_registration_scope(|access| {
-                    system.initialize(&mut ParamRegistration::new(access))
-                })
-            })
-            .unwrap();
         let mut stage =
             crate::stage::Stage::new(crate::stage::StageId(1), crate::executor::ExecutorId(0));
         stage.add_system(system).unwrap();
@@ -331,12 +379,11 @@ mod lifecycle_tests {
             )
             .unwrap();
         schedule.add_stage(stage).unwrap();
+        schedule.run(&mut world).unwrap();
         let mut other = World::new().unwrap();
         other.finish_registration().unwrap();
         assert!(schedule
-            .stage_mut(crate::stage::StageId(1))
-            .unwrap()
-            .unregister_system(SystemId(2), &mut other)
+            .unregister_system(crate::stage::StageId(1), SystemId(2), &mut other)
             .is_err());
         assert!(schedule.unregister(&mut other).is_err());
         assert_eq!(
@@ -362,6 +409,7 @@ mod lifecycle_tests {
         let mut other = World::new().unwrap();
         other.finish_registration().unwrap();
         let mut system = FunctionSystem {
+            ports: crate::system::SystemPorts::unit(),
             matched_revision: None,
             prepared_access: None,
             signature: std::marker::PhantomData::<fn()>,
@@ -417,11 +465,30 @@ mod lifecycle_tests {
 impl<F: crate::system::SystemFunction<M, Param = P>, P: crate::system_param::SystemParam, M>
     crate::system::FunctionSystem<F, P, M>
 {
-    pub(super) fn run_prepared_inner(
+    pub(super) fn run_with_input_inner(
         &mut self,
         _world: &mut pi_ecs_core::world::World,
         _this_run: pi_ecs_core::change_detection::ChangeTick,
-    ) -> Result<(), pi_ecs_core::error::EcsError> {
+        _input: crate::system::SystemInput<'_>,
+    ) -> Result<Option<Box<dyn std::any::Any>>, EcsError> {
+        use crate::system::{SystemInput, SystemInputKind};
+        let actual = match &_input {
+            SystemInput::Unit => SystemInputKind::Unit,
+            SystemInput::Owned(value) => SystemInputKind::Owned(value.as_ref().type_id()),
+            SystemInput::Shared(value) => SystemInputKind::Shared((*value).type_id()),
+        };
+        if actual != self.ports.input {
+            return Err(system_error("系统输入模式或负载类型不匹配"));
+        }
+        self.run_in_scope(_world, _this_run, Some(_input))
+    }
+
+    fn run_in_scope(
+        &mut self,
+        world: &mut pi_ecs_core::world::World,
+        this_run: pi_ecs_core::change_detection::ChangeTick,
+        input: Option<crate::system::SystemInput<'_>>,
+    ) -> Result<Option<Box<dyn std::any::Any>>, EcsError> {
         let FunctionSystemState::Initialized {
             world_identity,
             state,
@@ -430,7 +497,7 @@ impl<F: crate::system::SystemFunction<M, Param = P>, P: crate::system_param::Sys
         else {
             return Err(system_error("系统没有有效准备"));
         };
-        let cell = pi_ecs_core::unsafe_world_cell::UnsafeWorldCell::from_ref(_world);
+        let cell = pi_ecs_core::unsafe_world_cell::UnsafeWorldCell::from_ref(world);
         if *world_identity != cell.id() {
             return Err(system_error("系统来自其他 World"));
         }
@@ -444,18 +511,31 @@ impl<F: crate::system::SystemFunction<M, Param = P>, P: crate::system_param::Sys
             .ok_or_else(|| system_error("系统缺少完整声明"))?;
         let window = pi_ecs_core::change_detection::ChangeWindow {
             last_run: self.last_run,
-            this_run: _this_run,
+            this_run,
         };
         let function = &mut self.function;
         // SAFETY: 调用方持唯一串行运行权；完整声明保活至参数及 Pending 清理结束。
-        unsafe {
-            _world.system_scope(declaration, version, |access| {
+        let output = unsafe {
+            world.system_scope(declaration, version, |access| {
                 let context = SystemRunContext::new(access, window).expect("系统上下文无效");
-                execute_parameter::<F, P, M>(function, state, context);
-            })?;
+                execute_parameter::<F, P, M>(function, state, context, input)
+            })?
+        };
+        if let Some(value) = &output {
+            if self.ports.output != Some(value.as_ref().type_id()) {
+                return Err(system_error("系统输出负载类型与冻结端口不匹配"));
+            }
         }
-        self.last_run = Some(_this_run);
-        Ok(())
+        self.last_run = Some(this_run);
+        Ok(output)
+    }
+
+    pub(super) fn run_prepared_inner(
+        &mut self,
+        world: &mut pi_ecs_core::world::World,
+        this_run: pi_ecs_core::change_detection::ChangeTick,
+    ) -> Result<(), EcsError> {
+        self.run_in_scope(world, this_run, None).map(drop)
     }
 }
 impl<'w> crate::system::SystemRunContext<'w> {
@@ -498,19 +578,117 @@ use crate::{
     system_param::{ParamRegistration, SystemParam},
 };
 use pi_ecs_core::{access::ResolvedAccess, error::EcsError};
+impl crate::system::UnitInput {
+    pub(super) fn kind_inner() -> crate::system::SystemInputKind {
+        crate::system::SystemInputKind::Unit
+    }
+    pub(super) fn bind_inner(input: crate::system::SystemInput<'_>) {
+        assert!(matches!(input, crate::system::SystemInput::Unit), "需要单位输入");
+    }
+}
+impl<T: 'static> crate::system::OwnedInput<T> {
+    pub(super) fn kind_inner() -> crate::system::SystemInputKind {
+        crate::system::SystemInputKind::Owned(std::any::TypeId::of::<T>())
+    }
+    pub(super) fn bind_inner(input: crate::system::SystemInput<'_>) -> T {
+        let crate::system::SystemInput::Owned(value) = input else {
+            panic!("需要拥有型输入");
+        };
+        *value.downcast::<T>().expect("拥有型输入负载类型不匹配")
+    }
+}
+impl<T: 'static> crate::system::SharedInput<T> {
+    pub(super) fn kind_inner() -> crate::system::SystemInputKind {
+        crate::system::SystemInputKind::Shared(std::any::TypeId::of::<T>())
+    }
+    pub(super) fn bind_inner(input: crate::system::SystemInput<'_>) -> &T {
+        let crate::system::SystemInput::Shared(value) = input else {
+            panic!("需要只读输入");
+        };
+        value.downcast_ref::<T>().expect("只读输入负载类型不匹配")
+    }
+}
+impl<F, I, O> crate::system::PortFunction<F, I, O> {
+    pub(super) fn new_inner(function: F) -> Self {
+        Self {
+            function,
+            signature: std::marker::PhantomData,
+        }
+    }
+
+    pub(super) fn reject_legacy_call_inner<T>(_item: T) -> ! {
+        panic!("带端口的函数须由数据流执行器启动")
+    }
+
+    pub(super) fn ports_inner() -> crate::system::SystemPorts
+    where
+        I: crate::system::InputPort,
+        O: 'static,
+    {
+        let output = std::any::TypeId::of::<O>();
+        crate::system::SystemPorts {
+            input: I::kind(),
+            output: (output != std::any::TypeId::of::<()>()).then_some(output),
+            requires_flow: true,
+        }
+    }
+
+    pub(super) fn call_with_ports_inner<'run, P: SystemParam>(
+        &mut self,
+        _input: crate::system::SystemInput<'run>,
+        _item: P::Item<'run>,
+    ) -> Option<Box<dyn std::any::Any>>
+    where
+        I: crate::system::InputPort,
+        O: 'static,
+        F: for<'a> FnMut(I::Item<'a>, P::Item<'a>) -> Option<O>,
+    {
+        let output = (self.function)(I::bind(_input), _item);
+        if std::any::TypeId::of::<O>() == std::any::TypeId::of::<()>() {
+            return None;
+        }
+        output.map(|value| Box::new(value) as Box<dyn std::any::Any>)
+    }
+}
+impl crate::system::SystemPorts {
+    pub(super) fn unit_inner() -> Self {
+        Self {
+            input: crate::system::SystemInputKind::Unit,
+            output: None,
+            requires_flow: false,
+        }
+    }
+
+    pub(super) fn call_unit_inner<'run, F: SystemFunction<M> + ?Sized, M>(
+        _function: &mut F,
+        _input: crate::system::SystemInput<'run>,
+        _item: <F::Param as SystemParam>::Item<'run>,
+    ) -> Option<Box<dyn std::any::Any>> {
+        <crate::system::UnitInput as crate::system::InputPort>::bind(_input);
+        _function.call(_item);
+        None
+    }
+}
 fn execute_parameter<F: SystemFunction<M, Param = P>, P: SystemParam, M>(
     function: &mut F,
     state: &mut P::State,
     context: SystemRunContext<'_>,
-) {
+    input: Option<crate::system::SystemInput<'_>>,
+) -> Option<Box<dyn std::any::Any>> {
     let mut pending = P::begin(state);
     // SAFETY: context 仅含非拥有的授权描述与 Copy 窗口；复制不另开会话。
     // 原描述只用于结果全部结束后的 finish，不重复 fetch，不与子结果同时兑现。
     // 两份描述均被外层同一系统会话保活，不复制声明树、World 或业务值。
     let fetch_context = unsafe { std::ptr::read(&context) };
     let item = unsafe { P::fetch(state, &mut pending, fetch_context) };
-    function.call(item);
+    let output = if let Some(input) = input {
+        function.call_with_ports(input, item)
+    } else {
+        function.call(item);
+        None
+    };
     P::finish(state, pending, &context);
+    output
 }
 #[derive(Debug)]
 struct ForeignUnregistration;
@@ -535,6 +713,46 @@ fn system_error(message: &'static str) -> EcsError {
 impl<F, P: SystemParam, Marker> FunctionSystem<F, P, Marker> {
     pub(crate) fn id_inner(system: &FunctionSystem<F, P, Marker>) -> SystemId {
         system.id
+    }
+}
+
+fn leaves<'a>(
+    tree: &'a pi_ecs_core::access::AccessTree,
+    output: &mut Vec<&'a pi_ecs_core::access::AccessDeclaration>,
+) {
+    use pi_ecs_core::access::AccessTree;
+    match tree {
+        AccessTree::Leaf(leaf) => output.push(leaf),
+        AccessTree::Together(items) | AccessTree::Exclusive(items) => {
+            for item in items {
+                leaves(item, output);
+            }
+        }
+    }
+}
+fn validate_declaration(tree: &pi_ecs_core::access::AccessTree) -> Result<(), EcsError> {
+    use pi_ecs_core::access::AccessTree;
+    match tree {
+        AccessTree::Leaf(_) => Ok(()),
+        AccessTree::Together(items) | AccessTree::Exclusive(items) => {
+            for item in items {
+                validate_declaration(item)?;
+            }
+            if matches!(tree, AccessTree::Together(_)) {
+                for (index, item) in items.iter().enumerate() {
+                    let mut left = Vec::new();
+                    leaves(item, &mut left);
+                    for other in &items[index + 1..] {
+                        let mut right = Vec::new();
+                        leaves(other, &mut right);
+                        if left.iter().any(|a| right.iter().any(|b| a.conflicts(b))) {
+                            return Err(system_error("同时使用的参数访问冲突"));
+                        }
+                    }
+                }
+            }
+            Ok(())
+        }
     }
 }
 
@@ -565,45 +783,6 @@ impl<F: SystemFunction<Marker, Param = P>, P: SystemParam, Marker> FunctionSyste
         let declaration = P::declaration(state, &mut *world)?;
         #[cfg(not(feature = "rc"))]
         let declaration = P::declaration(state, world)?;
-        fn leaves<'a>(
-            tree: &'a pi_ecs_core::access::AccessTree,
-            output: &mut Vec<&'a pi_ecs_core::access::AccessDeclaration>,
-        ) {
-            use pi_ecs_core::access::AccessTree;
-            match tree {
-                AccessTree::Leaf(leaf) => output.push(leaf),
-                AccessTree::Together(items) | AccessTree::Exclusive(items) => {
-                    for item in items {
-                        leaves(item, output);
-                    }
-                }
-            }
-        }
-        fn validate(tree: &pi_ecs_core::access::AccessTree) -> Result<(), EcsError> {
-            use pi_ecs_core::access::AccessTree;
-            match tree {
-                AccessTree::Leaf(_) => Ok(()),
-                AccessTree::Together(items) | AccessTree::Exclusive(items) => {
-                    for item in items {
-                        validate(item)?;
-                    }
-                    if matches!(tree, AccessTree::Together(_)) {
-                        for (index, item) in items.iter().enumerate() {
-                            let mut left = Vec::new();
-                            leaves(item, &mut left);
-                            for other in &items[index + 1..] {
-                                let mut right = Vec::new();
-                                leaves(other, &mut right);
-                                if left.iter().any(|a| right.iter().any(|b| a.conflicts(b))) {
-                                    return Err(system_error("同时使用的参数访问冲突"));
-                                }
-                            }
-                        }
-                    }
-                    Ok(())
-                }
-            }
-        }
         fn flatten(access: ParamAccess, output: &mut Vec<ResolvedAccess>) {
             match access {
                 ParamAccess::Leaf(items) => output.extend(items),
@@ -614,7 +793,7 @@ impl<F: SystemFunction<Marker, Param = P>, P: SystemParam, Marker> FunctionSyste
                 }
             }
         }
-        validate(&declaration)?;
+        validate_declaration(&declaration)?;
         let mut resolved = Vec::new();
         flatten(access, &mut resolved);
         system.matched_revision = Some(
@@ -652,7 +831,7 @@ impl<F: SystemFunction<Marker, Param = P>, P: SystemParam, Marker> FunctionSyste
                 this_run: context.window.this_run,
             },
         };
-        execute_parameter::<F, P, Marker>(&mut system.function, state, context);
+        execute_parameter::<F, P, Marker>(&mut system.function, state, context, None);
     }
 }
 
@@ -677,6 +856,36 @@ impl<F: SystemFunction<Marker, Param = P>, P: SystemParam, Marker> FunctionSyste
 }
 
 impl<F, P: crate::system_param::SystemParam, M> FunctionSystem<F, P, M> {
+    pub(super) fn is_uninitialized_inner(&self) -> bool {
+        matches!(self.state, FunctionSystemState::Uninitialized(_))
+    }
+    #[cfg(feature = "rc")]
+    pub(super) fn planning_declaration_inner(
+        &self,
+        _world: pi_ecs_core::world::WorldRef<'_>,
+    ) -> Result<pi_ecs_core::access::AccessTree, EcsError> {
+        let FunctionSystemState::Initialized { world_identity, state, .. } = &self.state else {
+            return Err(system_error("系统尚未初始化或已注销"));
+        };
+        if *world_identity != pi_ecs_core::unsafe_world_cell::UnsafeWorldCell::from_ref(_world).id() {
+            return Err(system_error("系统来自其他 World"));
+        }
+        let declaration = P::declaration(state, _world)?;
+        validate_declaration(&declaration)?;
+        Ok(declaration)
+    }
+
+    #[cfg(feature = "rc")]
+    pub(super) fn planning_ordering_access_inner(
+        &self,
+        _logical: &pi_ecs_core::access::OrderingArchetypes,
+    ) -> Result<Vec<pi_ecs_core::access::OrderingAccess>, EcsError> {
+        let FunctionSystemState::Initialized { state, .. } = &self.state else {
+            return Err(system_error("系统尚未初始化或已注销"));
+        };
+        P::ordering_access(state, _logical)
+    }
+
     pub(super) fn access_tree_inner(&self) -> Result<&pi_ecs_core::access::AccessTree, EcsError> {
         if !matches!(
             self.state,

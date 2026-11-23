@@ -65,7 +65,7 @@ impl<'w, const N: usize, T> crate::owned_entity::WeakEntitiesMut<'_, 'w, N, T> {
         #[cfg(not(feature = "rc"))]
         {
             let _ = (_value, _index, _target);
-            todo!("编号：T61，尚未实现， 非 RC 弱数组替换延期")
+            todo!("编号：T53，尚未实现， 非 RC 弱数组替换延期")
         }
     }
 }
@@ -171,7 +171,7 @@ impl<'w, const N: usize, T> crate::owned_entity::WeakEntitiesRef<'_, 'w, N, T> {
         #[cfg(not(feature = "rc"))]
         {
             let _ = entity;
-            todo!("编号：T62，尚未实现， 非 RC 弱数组升级延期")
+            todo!("编号：T54，尚未实现， 非 RC 弱数组升级延期")
         }
     }
 }
@@ -233,7 +233,7 @@ impl<'w> OwnedEntity<'w> {
         #[cfg(not(feature = "rc"))]
         {
             let _ = value;
-            todo!("编号：T63，尚未实现， 非 RC OwnedEntity 释放后端延期")
+            todo!("编号：T55，尚未实现， 非 RC OwnedEntity 释放后端延期")
         }
     }
 }
@@ -272,7 +272,7 @@ impl<'w> OwnedEntity<'w> {
         #[cfg(not(feature = "rc"))]
         {
             let _ = value;
-            todo!("编号：T64，尚未实现， 非 RC OwnedEntity 增持后端延期")
+            todo!("编号：T56，尚未实现， 非 RC OwnedEntity 增持后端延期")
         }
     }
 }
@@ -347,7 +347,13 @@ mod owned_entity_batch {
                 .borrow_mut()
                 .allocate(
                     AllocationDomain(0),
-                    EntityLocation::from_parts(0, 0, 0, 0, 0),
+                    EntityLocation::from_parts(
+                        0,
+                        0,
+                        0,
+                        crate::entity::TableId(0),
+                        crate::entity::VariantId(0),
+                    ),
                 )
                 .unwrap();
             OwnedEntity {
@@ -1170,7 +1176,7 @@ impl<'w, const N: usize, T> crate::owned_entity::StrongEntitiesMut<'_, 'w, N, T>
         #[cfg(not(feature = "rc"))]
         {
             let _ = (_target, _index, _value);
-            todo!("编号：T65，尚未实现， 非 RC 数组替换延期")
+            todo!("编号：T57，尚未实现， 非 RC 数组替换延期")
         }
     }
 }

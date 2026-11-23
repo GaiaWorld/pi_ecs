@@ -2,6 +2,8 @@
 mod empty_param;
 pub mod executor;
 pub mod function_adapter;
+#[cfg(feature = "rc")]
+pub mod inter_frame;
 pub mod local;
 pub mod notification_reader;
 pub mod param_composition;

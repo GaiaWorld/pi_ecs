@@ -22,5 +22,5 @@ pub(crate) fn derive_system_param(input: TokenStream) -> TokenStream {
 }
 // 验收包含嵌套、元组字段、Local 配置、Reader 独立游标、Alter finish、ParamSet、别名拒绝、泛型/where、
 // 注销首成员报错后仍清理后续字段、初始化部分失败的完整清偿、错误生命周期和 Item 等式诊断；
-// 命令字段覆盖 &CommandSender<C>/&mut CommandReceiver<C>：结果借用不移出 Receiver，失败清理归还唯一资格。
+// 命令字段覆盖 &CommandSender<C>/CommandRead<C>：消费视图不暴露拥有句柄，失败清理归还唯一资格。
 // 宏未注册、展开与编译验收尚未执行。

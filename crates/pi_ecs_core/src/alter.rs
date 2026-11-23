@@ -128,7 +128,7 @@ pub struct QueryAlterState<
     /// 表顺序和每表变体顺序均须满足目标先于源，不能为了排序改动按 TableId 索引的 query.cache.tables。
     /// 全部可合并且无回流才记录 Some；不能证明则整次回退原型，不引入混合目标或尾界。
     /// 每次重建 iteration_order 都须重新证明并生成本字段，禁止沿用先前快照的表顺序。
-    pub(crate) table_order: Option<Box<[u16]>>,
+    pub(crate) table_order: Option<Box<[crate::entity::TableId]>>,
 }
 #[cfg(feature = "rc")]
 impl<Q: crate::query::QueryData, F: crate::query::QueryFilter> QueryAlterState<Q, F> {

@@ -5,6 +5,20 @@
 mod stage_inner;
 use crate::executor::{Executor, ExecutorId};
 use crate::system::System;
+/// 按值接管被拒绝；原对象及其清偿责任仍归调用者。
+pub struct InstallError<T> {
+    /// 拒绝诊断。
+    pub error: EcsError,
+    /// 未被接管的原值。
+    pub value: T,
+}
+impl<T> std::fmt::Debug for InstallError<T> {
+    /// # 用途
+    /// 显示诊断，不要求原值实现 Debug。
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Self::fmt_install_error(self, f)
+    }
+}
 use pi_ecs_core::{
     access::ResolvedAccess,
     error::EcsError,
@@ -16,6 +30,14 @@ pub struct StageId(
     /// 本调度局部编号。
     pub u32,
 );
+/// 安装拒绝时归还原图，已绑定的图仍可在原 World 上清偿。
+#[cfg(feature = "rc")]
+pub struct StageFlowInstallError {
+    /// 安装拒绝的原因。
+    pub error: EcsError,
+    /// 未被阶段接管的原图及登记责任。
+    pub flow: crate::inter_frame::SystemFlow,
+}
 /// 一组系统、先后依赖及访问关系；Schedule 顺序执行，阶段之间不重叠。
 pub struct Stage {
     /// 所属调度内唯一标识。
@@ -24,6 +46,9 @@ pub struct Stage {
     pub(crate) executor: ExecutorId,
     /// 系统槽按登记顺序排列；下标即执行计划中的系统序号，运行期不重排或移除。
     pub(crate) systems: Vec<StageSystem>,
+    /// 本阶段专用数据流：每次进入先派发，不与其他阶段或帧间图匹配。
+    #[cfg(feature = "rc")]
+    pub(crate) entry_flow: Option<crate::inter_frame::SystemFlow>,
     /// 排序缓存所属 (World 身份, 布局替换代次, 已发布原型总量)，与系统匹配扫描进度职责不同。
     /// 首次/登记变化/注销时 None；仅潜在权限展开及排序全部成功才更新，运行中不推进。
     pub(crate) ordering_snapshot: Option<(u64, u64, usize)>,
@@ -71,6 +96,16 @@ pub(crate) struct PreparedStage<'s> {
 }
 impl Stage {
     /// # 用途
+    /// 在组装期安装一个阶段入口图；已有图时拒绝，不替换实例或清偿已发布状态。
+    /// 入口图不得绑定帧间就绪队列；单位根可以从应用定时器取本次到期整批。
+    #[cfg(feature = "rc")]
+    pub fn set_entry_flow(
+        &mut self,
+        flow: crate::inter_frame::SystemFlow,
+    ) -> Result<(), StageFlowInstallError> {
+        self.set_entry_flow_inner(flow)
+    }
+    /// # 用途
     /// 只读检查组装身份/索引：系统历史身份唯一、活动对象 id 与槽身份一致，空槽不参与派发。
     /// 不访问 World，不 initialize/prepare、消费初值或构图；返回首个错误，不修改对象。
     /// 不保证参数组件/资源存在、别名合法或具有快照能力，这些由各自生命周期入口验证。
@@ -95,6 +130,8 @@ impl Stage {
     }
     /// # 用途
     /// RC 静止点注销全部系统，按登记顺序清偿；world 是原绑定 World，Idle/Stopped 且无活参数。
+    /// 先通过 SystemFlow::close 清偿入口图，仅在图达到 Closed 时解除关联。图的清偿作用域负责展开标停。
+    /// 图返回正常诊断时也继续注销普通系统，按清偿顺序返回首个诊断。
     /// 各系统正常返回 Err 仍继续其余注销并返回首个诊断；已消费系统不重复注销，清空排序缓存。
     /// 内部故障/panic 停止，不假装完成；不关闭 World、不维护实体、不运行系统。
     #[cfg(feature = "rc")]
@@ -107,6 +144,7 @@ impl Stage {
         Self::new_inner(id, executor)
     }
     /// system 按登记顺序追加到本阶段，返回稳定槽位下标，不初始化或访问 World。
+    /// 只接收未初始化的实例；拒绝返回 InstallError，原实例及其清偿责任不转移。
     /// 编译期门槛随构建模式统一：非 rc 要求 S: Send，rc 单线程不要求。
     /// 是否实际并行由阶段准备基于真实原型与 Alter 目标计算的计划决定，不在此登记。
     /// 系统身份曾在本阶段使用（包括已注销）即返回错误且不加入；只追加，不复用空槽或热替换。
@@ -116,8 +154,13 @@ impl Stage {
     pub fn add_system<S: StageSystemBound + 'static>(
         &mut self,
         system: S,
-    ) -> Result<usize, EcsError> {
-        Self::add_system_inner(self, Box::new(system))
+    ) -> Result<usize, InstallError<S>> {
+        Self::add_system_inner(self, system)
+    }
+    /// # 用途
+    /// 接管前检查没有已消费配置的活动系统、也没有绑定的入口图。
+    pub(crate) fn validate_install(&self) -> Result<(), EcsError> {
+        self.validate_install_inner()
     }
     /// # 用途
     /// world 不得同时由另一 Schedule 运行或被宿主结构修改；上一阶段已完全收束。
@@ -160,6 +203,7 @@ impl Stage {
         executor: &mut Executor,
     ) -> Result<(), EcsError> {
         /* 设计已确认：
+        若有 entry_flow，在父根 Running 中先完成它的一次入口执行，再做下述普通系统准备和运行；错误走阶段失败出口。
         上一阶段已结束，按活动槽顺序 initialize；首错终止，本轮不运行系统，不回滚之前成功登记。
         全部初始化成功形成登记屏障，汇总追踪需求，再按活动槽 prepare；任何错误不生成 PreparedStage。
         后续启动前刷新只 prepare，不初始化/增删登记；不复用跨屏障的运行视图、业务引用或授权。

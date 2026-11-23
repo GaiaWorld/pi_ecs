@@ -65,7 +65,13 @@ mod component_release_batch {
                     .borrow_mut()
                     .allocate(
                         crate::entity::AllocationDomain(0),
-                        crate::entity::EntityLocation::from_parts(0, 0, 0, 0, 0),
+                        crate::entity::EntityLocation::from_parts(
+                            0,
+                            0,
+                            0,
+                            crate::entity::TableId(0),
+                            crate::entity::VariantId(0),
+                        ),
                     )
                     .unwrap();
             let owned = crate::owned_entity::OwnedEntity {
@@ -159,7 +165,13 @@ mod component_release_batch {
                 .borrow_mut()
                 .allocate(
                     crate::entity::AllocationDomain(0),
-                    crate::entity::EntityLocation::from_parts(0, 0, 0, 0, 0),
+                    crate::entity::EntityLocation::from_parts(
+                        0,
+                        0,
+                        0,
+                        crate::entity::TableId(0),
+                        crate::entity::VariantId(0),
+                    ),
                 )
                 .unwrap();
             let owner = OwnedEntity {
@@ -266,7 +278,13 @@ mod component_release_batch {
                 .borrow_mut()
                 .allocate(
                     crate::entity::AllocationDomain(0),
-                    crate::entity::EntityLocation::from_parts(0, 0, 0, 0, 0),
+                    crate::entity::EntityLocation::from_parts(
+                        0,
+                        0,
+                        0,
+                        crate::entity::TableId(0),
+                        crate::entity::VariantId(0),
+                    ),
                 )
                 .unwrap();
             world
@@ -336,7 +354,13 @@ mod component_release_batch {
                 .borrow_mut()
                 .allocate(
                     crate::entity::AllocationDomain(0),
-                    crate::entity::EntityLocation::from_parts(0, 0, 0, 0, 0),
+                    crate::entity::EntityLocation::from_parts(
+                        0,
+                        0,
+                        0,
+                        crate::entity::TableId(0),
+                        crate::entity::VariantId(0),
+                    ),
                 )
                 .unwrap();
             let mut last = ManuallyDrop::new(StrongEntities::<1, ContainerPurpose> {
@@ -383,7 +407,13 @@ mod component_release_batch {
                             .borrow_mut()
                             .allocate(
                                 crate::entity::AllocationDomain(0),
-                                crate::entity::EntityLocation::from_parts(0, 0, 0, 0, 0),
+                                crate::entity::EntityLocation::from_parts(
+                                    0,
+                                    0,
+                                    0,
+                                    crate::entity::TableId(0),
+                                    crate::entity::VariantId(0),
+                                ),
                             )
                             .unwrap();
                     let owned = crate::owned_entity::OwnedEntity {
@@ -1063,7 +1093,7 @@ impl StrongAccess {
         #[cfg(not(feature = "rc"))]
         {
             let _ = (_value, _world, _mode);
-            todo!("编号：T17，尚未实现， 非 RC 强数组策略释放延期")
+            todo!("编号：T8，尚未实现， 非 RC 强数组策略释放延期")
         }
     }
 }
@@ -1134,7 +1164,7 @@ impl WeakAccess {
         #[cfg(not(feature = "rc"))]
         {
             let _ = (_value, _world, _mode);
-            todo!("编号：T18，尚未实现， 非 RC 弱数组策略释放延期")
+            todo!("编号：T9，尚未实现， 非 RC 弱数组策略释放延期")
         }
     }
 }

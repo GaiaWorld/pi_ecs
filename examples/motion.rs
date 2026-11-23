@@ -49,8 +49,8 @@ fn read_motion(query: Query<'_, Motion>) {
 struct Frame;
 
 fn main() -> Result<(), EcsError> {
-    let mut app = App::new(World::new()?);
-    let world = app.world_mut()?;
+    let mut app = App::new(World::new()?).map_err(|rejected| rejected.error)?;
+    let mut world = app.world_mut()?;
     let position = world.register_component::<Position>(StoragePolicy::TableEligible)?;
     world.register_component::<Velocity>(StoragePolicy::SparseOnly)?;
     world.register_table(&[position])?;
@@ -59,13 +59,22 @@ fn main() -> Result<(), EcsError> {
     let executor = schedule.add_executor(Executor::new(ExecutionMode::Serial)?)?;
     let mut stage = Stage::new(StageId(0), executor);
     // Register the reader first to demonstrate the inferred Spawn -> reader edge.
-    stage.add_system(SystemBuilder::new(read_motion).build(SystemId(0))?)?;
-    stage.add_system(SystemBuilder::new(seed_stationary).build(SystemId(1))?)?;
-    stage.add_system(SystemBuilder::new(seed_moving).build(SystemId(2))?)?;
-    schedule.add_stage(stage)?;
+    stage
+        .add_system(SystemBuilder::new(read_motion).build(SystemId(0))?)
+        .map_err(|rejected| rejected.error)?;
+    stage
+        .add_system(SystemBuilder::new(seed_stationary).build(SystemId(1))?)
+        .map_err(|rejected| rejected.error)?;
+    stage
+        .add_system(SystemBuilder::new(seed_moving).build(SystemId(2))?)
+        .map_err(|rejected| rejected.error)?;
+    schedule
+        .add_stage(stage)
+        .map_err(|rejected| rejected.error)?;
 
     let frame = ScheduleLabel::of::<Frame>();
-    app.add_schedule(frame, schedule)?;
+    app.add_schedule(frame, schedule)
+        .map_err(|rejected| rejected.error)?;
     app.finish()?;
     app.run(frame)?;
     app.close()

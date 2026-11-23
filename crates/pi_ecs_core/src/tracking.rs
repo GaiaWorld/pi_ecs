@@ -35,6 +35,7 @@ impl World {
     /// RC 静止点应用全部查询 tick 并集与真实通知订阅并集；Stage 在全部初始化完成后调用。
     /// Idle 或根 Running 的阶段准备点、无参数/批次借用；Stopped/关闭/业务执行中拒绝。
     /// 仅首次启用/重启活值 tick 时分配本轮维护 tick，并初始化对应现存值槽；耗尽在修改前拒绝。
+    /// 根 Running 的维护时钟耗尽单向停止并返回原始诊断；独立 Idle 维护拒绝仍保留 Idle。
     /// 已启用项不重置；减少需求只停更新，不影响其他登记，不补通知或清历史通知。
     /// Reader 不强制启用活值 tick；通知流及旧值回收沿 Notifications 原协议，不在此执行析构。
     /// 物理转换统一调用 WorldStorage::apply_tracking，传当前需求差异及同一维护 tick；

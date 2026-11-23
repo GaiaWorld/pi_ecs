@@ -815,7 +815,7 @@ fn command_world(expected: u64, actual: u64) -> Result<(), EcsError> {
 
 #[cfg(feature = "rc")]
 macro_rules! command_impl {
-    ($parameter:ty, $state:ident, $handle:ident, $get:ident, $($mutable:tt)?) => {
+    ($parameter:ty, $state:ident, $handle:ident, $get:ident, $binding:ident) => {
         impl<C: Send + 'static> ParamImpl for $parameter {
             fn initialize_inner(_: (), registration: &mut ParamRegistration<'_>) -> Result<Self::State, EcsError> {
                 let access = registration.access();
@@ -836,7 +836,7 @@ macro_rules! command_impl {
             unit_pending!();
             unsafe fn fetch_inner<'r>(state: &'r mut Self::State, _: &'r mut (), context: SystemRunContext<'r>) -> Self::Item<'r> {
                 command_world(state.world_identity, context.access.world_cell().id()).expect("invalid command parameter source");
-                &$($mutable)? state.$handle
+                command_impl!(@bind state.$handle, $binding)
             }
             fn unregister_inner(state: Self::State, registration: &mut ParamRegistration<'_>) -> Result<(), EcsError> {
                 let result = command_world(state.world_identity, registration.access().world_id());
@@ -845,6 +845,8 @@ macro_rules! command_impl {
             }
         }
     };
+    (@bind $handle:expr, sender) => { &$handle };
+    (@bind $handle:expr, receiver) => { $handle.view() };
 }
 
 #[cfg(feature = "rc")]
@@ -853,14 +855,15 @@ command_impl!(
     CommandSenderParamState,
     sender,
     command_sender,
+    sender
 );
 #[cfg(feature = "rc")]
 command_impl!(
-    &mut CommandReceiver<C>,
+    CommandRead<'_, C>,
     CommandReceiverParamState,
     receiver,
     command_receiver,
-    mut
+    receiver
 );
 
 #[cfg(feature = "rc")]

@@ -6,7 +6,7 @@ impl super::GameRecovery {
         _world: &World,
         _schedule: &Schedule,
     ) -> Result<GameSnapshot, EcsError> {
-        todo!("编号：T97，尚未实现， ：核心数据捕获接口与运行状态范围")
+        todo!("编号：T99，尚未实现， ：核心数据捕获接口与运行状态范围")
     }
 }
 impl super::GameRecovery {
@@ -15,6 +15,6 @@ impl super::GameRecovery {
         _schedule: &mut Schedule,
         _snapshot: &GameSnapshot,
     ) -> Result<(), EcsError> {
-        todo!("编号：T98，尚未实现， ：核心准备安装接口、停止态与重建协议")
+        todo!("编号：T100，尚未实现， ：核心准备安装接口、停止态与重建协议")
     }
 }

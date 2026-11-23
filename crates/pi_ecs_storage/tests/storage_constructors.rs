@@ -5,14 +5,48 @@ use pi_ecs_storage::storage::WorldStorage;
 use pi_ecs_storage::table::{Table, TableLayout};
 use pi_ecs_types::component::ComponentId;
 use pi_ecs_types::entity::ArchetypeId;
+use pi_ecs_types::entity::{TableId, VariantId};
+use pi_null::Null;
 use std::alloc::Layout;
+
+#[test]
+fn storage_does_not_install_null_identifiers() {
+    let base = ArchetypeId {
+        table: TableId(0),
+        variant: VariantId(0),
+    };
+    assert!(TableLayout::new(
+        ArchetypeId {
+            table: TableId::null(),
+            ..base
+        },
+        Box::new([])
+    )
+    .is_err());
+    let layout = TableLayout::new(base, Box::new([])).unwrap();
+    let table = Table::new(&layout, Box::new([])).unwrap();
+    let mut storage = WorldStorage::new(Box::new([table]), Box::new([])).unwrap();
+    assert!(storage
+        .prepare_archetype(ArchetypeId {
+            variant: VariantId::null(),
+            ..base
+        })
+        .is_err());
+    assert!(storage.published_rows(TableId::null()).is_err());
+    storage
+        .prepare_archetype(ArchetypeId {
+            variant: VariantId(1),
+            ..base
+        })
+        .unwrap();
+}
 
 #[test]
 fn empty_global_storage_constructs() {
     let layout = TableLayout::new(
         ArchetypeId {
-            table: 0,
-            variant: 0,
+            table: pi_ecs_types::entity::TableId(0),
+            variant: pi_ecs_types::entity::VariantId(0),
         },
         vec![ComponentId(0), ComponentId(1)].into_boxed_slice(),
     )
@@ -29,14 +63,14 @@ fn empty_global_storage_constructs() {
     let mut storage = WorldStorage::new(vec![table].into_boxed_slice(), sparse).unwrap();
     storage
         .prepare_archetype(ArchetypeId {
-            table: 0,
-            variant: 0,
+            table: pi_ecs_types::entity::TableId(0),
+            variant: pi_ecs_types::entity::VariantId(0),
         })
         .unwrap();
     storage
         .prepare_archetype(ArchetypeId {
-            table: 0,
-            variant: 1,
+            table: pi_ecs_types::entity::TableId(0),
+            variant: pi_ecs_types::entity::VariantId(1),
         })
         .unwrap();
 }
@@ -45,8 +79,8 @@ fn empty_global_storage_constructs() {
 fn layout_rejects_unsorted_columns() {
     assert!(TableLayout::new(
         ArchetypeId {
-            table: 0,
-            variant: 0,
+            table: pi_ecs_types::entity::TableId(0),
+            variant: pi_ecs_types::entity::VariantId(0),
         },
         vec![ComponentId(1), ComponentId(0)].into_boxed_slice(),
     )
@@ -57,8 +91,8 @@ fn layout_rejects_unsorted_columns() {
 fn table_rejects_column_layout_mismatch() {
     let layout = TableLayout::new(
         ArchetypeId {
-            table: 0,
-            variant: 0,
+            table: pi_ecs_types::entity::TableId(0),
+            variant: pi_ecs_types::entity::VariantId(0),
         },
         vec![ComponentId(0)].into_boxed_slice(),
     )

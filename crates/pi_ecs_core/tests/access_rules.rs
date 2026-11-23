@@ -37,7 +37,10 @@ fn value(component: u32, mode: AccessMode, variants: &[u16]) -> ResolvedValueAcc
         mode,
         archetypes: variants
             .iter()
-            .map(|&variant| ArchetypeId { table: 0, variant })
+            .map(|&variant| ArchetypeId {
+                table: pi_ecs_types::entity::TableId(0),
+                variant: pi_ecs_types::entity::VariantId(variant),
+            })
             .collect(),
     }
 }

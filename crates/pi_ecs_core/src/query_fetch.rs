@@ -152,7 +152,7 @@ impl FetchBinding<'_> {
     /// 地址从存储后端的稳定根导出，普通运行不重复调用。
     pub fn column_address(
         &self,
-        table: u16,
+        table: crate::entity::TableId,
         column: pi_ecs_storage::table::ColumnId,
     ) -> Result<std::ptr::NonNull<pi_ecs_storage::column::Column>, EcsError> {
         self.column_address_inner(table, column)
@@ -175,7 +175,7 @@ pub enum FetchScope {
     /// 任意当前/未来合法变体均适用；逐实体仅校验 Table 归属，不匹配 variant。
     Table {
         /// 冻结的物理 Table 编号。
-        table: u16,
+        table: crate::entity::TableId,
     },
     /// 只适用于一个已匹配原型。
     Archetype {

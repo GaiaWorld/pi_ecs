@@ -154,7 +154,7 @@ impl<T: Send + Sync + Clone + 'static> crate::resource_param::MultiResConfig<T> 
     pub(crate) fn multiresconfig_clone(
         _config: crate::resource_param::MultiResConfig<T>,
     ) -> Result<crate::resource_param::MultiResConfig<T>, EcsError> {
-        todo!("编号：T99，尚未实现， 初值与恢复策略配置")
+        todo!("编号：T103，尚未实现， 初值与恢复策略配置")
     }
 }
 impl<T: Send + Sync + 'static> crate::resource_param::MultiResConfig<T> {
@@ -163,7 +163,7 @@ impl<T: Send + Sync + 'static> crate::resource_param::MultiResConfig<T> {
         _capture: pi_ecs_core::snapshot_rules::SnapshotCapture<T, S>,
         _restore: pi_ecs_core::snapshot_rules::SnapshotRestore<T, S>,
     ) -> Result<crate::resource_param::MultiResConfig<T>, EcsError> {
-        todo!("编号：T100，尚未实现， 初值与恢复策略配置")
+        todo!("编号：T104，尚未实现， 初值与恢复策略配置")
     }
 }
 impl<T: Send + Sync + 'static> crate::resource_param::MultiResConfig<T> {
@@ -171,14 +171,14 @@ impl<T: Send + Sync + 'static> crate::resource_param::MultiResConfig<T> {
         _config: crate::resource_param::MultiResConfig<T>,
         _reset: pi_ecs_core::snapshot_rules::DerivedInitial<T>,
     ) -> Result<crate::resource_param::MultiResConfig<T>, EcsError> {
-        todo!("编号：T101，尚未实现， 初值与恢复策略配置")
+        todo!("编号：T105，尚未实现， 初值与恢复策略配置")
     }
 }
 impl<T: Send + Sync + 'static> crate::resource_param::MultiResConfig<T> {
     pub(crate) fn multiresconfig_preserve(
         _config: crate::resource_param::MultiResConfig<T>,
     ) -> Result<crate::resource_param::MultiResConfig<T>, EcsError> {
-        todo!("编号：T102，尚未实现， 初值与恢复策略配置")
+        todo!("编号：T106，尚未实现， 初值与恢复策略配置")
     }
 }
 
@@ -200,7 +200,7 @@ impl<T: Send + Clone + 'static> crate::local::LocalConfig<T> {
     pub(crate) fn localconfig_clone(
         _config: crate::local::LocalConfig<T>,
     ) -> Result<crate::local::LocalConfig<T>, EcsError> {
-        todo!("编号：T103，尚未实现， 初值与恢复策略配置")
+        todo!("编号：T107，尚未实现， 初值与恢复策略配置")
     }
 }
 impl<T: Send + 'static> crate::local::LocalConfig<T> {
@@ -209,7 +209,7 @@ impl<T: Send + 'static> crate::local::LocalConfig<T> {
         _capture: pi_ecs_core::snapshot_rules::SnapshotCapture<T, S>,
         _restore: pi_ecs_core::snapshot_rules::SnapshotRestore<T, S>,
     ) -> Result<crate::local::LocalConfig<T>, EcsError> {
-        todo!("编号：T104，尚未实现， 初值与恢复策略配置")
+        todo!("编号：T108，尚未实现， 初值与恢复策略配置")
     }
 }
 impl<T: Send + 'static> crate::local::LocalConfig<T> {
@@ -217,14 +217,14 @@ impl<T: Send + 'static> crate::local::LocalConfig<T> {
         _config: crate::local::LocalConfig<T>,
         _reset: pi_ecs_core::snapshot_rules::DerivedInitial<T>,
     ) -> Result<crate::local::LocalConfig<T>, EcsError> {
-        todo!("编号：T105，尚未实现， 初值与恢复策略配置")
+        todo!("编号：T109，尚未实现， 初值与恢复策略配置")
     }
 }
 impl<T: Send + 'static> crate::local::LocalConfig<T> {
     pub(crate) fn localconfig_preserve(
         _config: crate::local::LocalConfig<T>,
     ) -> Result<crate::local::LocalConfig<T>, EcsError> {
-        todo!("编号：T106，尚未实现， 初值与恢复策略配置")
+        todo!("编号：T110，尚未实现， 初值与恢复策略配置")
     }
 }
 
@@ -265,6 +265,7 @@ impl<F: SystemFunction<M>, M> SystemBuilder<F, M> {
         _id: SystemId,
     ) -> Result<FunctionSystem<F, F::Param, M>, EcsError> {
         Ok(FunctionSystem {
+            ports: self.function.ports(),
             matched_revision: None,
             prepared_access: None,
             signature: std::marker::PhantomData,

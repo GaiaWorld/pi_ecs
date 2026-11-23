@@ -45,8 +45,14 @@ fn typed_filter_binding_keeps_sparse_membership_variant_specific() {
     };
     let state = With::<Tagged>::init_state(&world).unwrap();
     assert!(matches!(
-        <With<Tagged> as FilterParts>::bind(&state, FetchScope::Table { table: 0 }, &binding)
-            .unwrap(),
+        <With<Tagged> as FilterParts>::bind(
+            &state,
+            FetchScope::Table {
+                table: crate::entity::TableId(0)
+            },
+            &binding
+        )
+        .unwrap(),
         NeedsVariants
     ));
     assert!(matches!(
@@ -134,7 +140,13 @@ fn bind_leaf(
         And(_) | Or(_) => unreachable!("组合过滤不使用叶子绑定"),
     };
     let (archetype_id, uniform) = match scope {
-        FetchScope::Table { table } => (crate::entity::ArchetypeId { table, variant: 0 }, true),
+        FetchScope::Table { table } => (
+            crate::entity::ArchetypeId {
+                table,
+                variant: crate::entity::VariantId(0),
+            },
+            true,
+        ),
         FetchScope::Archetype { archetype } => (archetype, false),
     };
     let archetype = binding

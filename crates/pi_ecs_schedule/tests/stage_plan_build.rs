@@ -8,7 +8,10 @@ use pi_ecs_core::entity::ArchetypeId;
 use pi_ecs_schedule::stage_plan::StagePlan;
 
 fn arch(variant: u16) -> ArchetypeId {
-    ArchetypeId { table: 0, variant }
+    ArchetypeId {
+        table: pi_ecs_core::entity::TableId(0),
+        variant: pi_ecs_core::entity::VariantId(variant),
+    }
 }
 
 fn access(

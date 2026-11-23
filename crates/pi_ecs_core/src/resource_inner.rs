@@ -883,7 +883,7 @@ impl World {
             Ok(id)
         }
         #[cfg(not(feature = "rc"))]
-        todo!("编号：T67，尚未实现， 非 RC 资源存储与授权接线")
+        todo!("编号：T59，尚未实现， 非 RC 资源存储与授权接线")
     }
 }
 #[cfg(feature = "rc")]
@@ -948,7 +948,7 @@ impl World {
         _world: &World,
         _value: T,
     ) -> Result<Option<T>, EcsError> {
-        todo!("编号：T68，尚未实现， 非 rc 资源插入")
+        todo!("编号：T60，尚未实现， 非 rc 资源插入")
     }
 }
 #[cfg(feature = "rc")]
@@ -980,7 +980,7 @@ impl World {
     pub(crate) fn remove_resource_inner<T: Send + Sync + 'static>(
         _world: &World,
     ) -> Result<Option<T>, EcsError> {
-        todo!("编号：T69，尚未实现， 非 rc 资源移出")
+        todo!("编号：T61，尚未实现， 非 rc 资源移出")
     }
 }
 impl crate::world::WorldPin<'_> {
@@ -1000,7 +1000,7 @@ impl crate::world::WorldPin<'_> {
             Some(unsafe { &*value.value.get() })
         }
         #[cfg(not(feature = "rc"))]
-        todo!("编号：T70，尚未实现， 非 RC 授权资源读取")
+        todo!("编号：T62，尚未实现， 非 RC 授权资源读取")
     }
 }
 impl crate::world::WorldWrite<'_> {
@@ -1021,7 +1021,7 @@ impl crate::world::WorldWrite<'_> {
             Some(unsafe { &*value.value.get() })
         }
         #[cfg(not(feature = "rc"))]
-        todo!("编号：T71，尚未实现， 非 RC 授权资源读取")
+        todo!("编号：T63，尚未实现， 非 RC 授权资源读取")
     }
 }
 impl crate::world::WorldWrite<'_> {
@@ -1051,7 +1051,7 @@ impl crate::world::WorldWrite<'_> {
             })
         }
         #[cfg(not(feature = "rc"))]
-        todo!("编号：T72，尚未实现， 非 RC 授权资源写入")
+        todo!("编号：T64，尚未实现， 非 RC 授权资源写入")
     }
 }
 impl crate::world::WorldPin<'_> {
@@ -1063,7 +1063,7 @@ impl crate::world::WorldPin<'_> {
             multi_read::<T>(_access.world)
         }
         #[cfg(not(feature = "rc"))]
-        todo!("编号：T73，尚未实现， 非 RC 授权多例视图")
+        todo!("编号：T65，尚未实现， 非 RC 授权多例视图")
     }
 }
 impl crate::world::WorldWrite<'_> {
@@ -1076,7 +1076,7 @@ impl crate::world::WorldWrite<'_> {
             multi_read::<T>(&*_access.world)
         }
         #[cfg(not(feature = "rc"))]
-        todo!("编号：T74，尚未实现， 非 RC 授权多例视图")
+        todo!("编号：T66，尚未实现， 非 RC 授权多例视图")
     }
 }
 impl<T> crate::resource::MultiResourceRead<'_, T> {

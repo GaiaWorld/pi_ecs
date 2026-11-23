@@ -66,7 +66,13 @@ fn component_bind(
     values: bool,
 ) -> Result<FetchStateResult<ComponentQueryFetchState>, EcsError> {
     let (archetype, uniform) = match scope {
-        FetchScope::Table { table } => (crate::entity::ArchetypeId { table, variant: 0 }, true),
+        FetchScope::Table { table } => (
+            crate::entity::ArchetypeId {
+                table,
+                variant: crate::entity::VariantId(0),
+            },
+            true,
+        ),
         FetchScope::Archetype { archetype } => (archetype, false),
     };
     let archetype = binding
@@ -613,7 +619,9 @@ mod rc_metadata_tests {
                 unsafe {
                     world.system_scope(&tree, version, |access| {
                         let fetch = access.fetch_access()?;
-                        let scope = FetchScope::Table { table: 0 };
+                        let scope = FetchScope::Table {
+                            table: crate::entity::TableId(0),
+                        };
                         let prepared = <<&Archetype as QueryData>::Fetch<'_> as QueryFetch<
                             '_,
                             &Archetype,
@@ -622,7 +630,10 @@ mod rc_metadata_tests {
                         drop(fetch);
                         assert_eq!(prepared.scope, scope);
                         assert_eq!(prepared.access.world.id(), access.world_cell().id());
-                        assert_eq!(prepared.archetypes.unwrap()[0].id().table, 0);
+                        assert_eq!(
+                            prepared.archetypes.unwrap()[0].id().table,
+                            crate::entity::TableId(0)
+                        );
                         let target = FetchEntity { entity, location };
                         let result = <&Archetype as MetadataResult>::fetch(&prepared, &target);
                         drop(prepared);

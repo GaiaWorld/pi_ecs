@@ -9,14 +9,14 @@ impl SnapshotRegistry {
     pub(crate) fn save_component_copy_inner<T: Copy + 'static>(
         _registry: &mut SnapshotRegistry,
     ) -> Result<(), EcsError> {
-        todo!("编号：T75，尚未实现， ：类型擦除、配置冻结及副本准备清理")
+        todo!("编号：T67，尚未实现， ：类型擦除、配置冻结及副本准备清理")
     }
 }
 impl SnapshotRegistry {
     pub(crate) fn save_component_clone_inner<T: Clone + 'static>(
         _registry: &mut SnapshotRegistry,
     ) -> Result<(), EcsError> {
-        todo!("编号：T76，尚未实现， ：类型擦除、配置冻结及副本准备清理")
+        todo!("编号：T68，尚未实现， ：类型擦除、配置冻结及副本准备清理")
     }
 }
 impl SnapshotRegistry {
@@ -25,21 +25,21 @@ impl SnapshotRegistry {
         _capture: SnapshotCapture<T, S>,
         _restore: SnapshotRestore<T, S>,
     ) -> Result<(), EcsError> {
-        todo!("编号：T77，尚未实现， ：类型擦除、配置冻结及副本准备清理")
+        todo!("编号：T69，尚未实现， ：类型擦除、配置冻结及副本准备清理")
     }
 }
 impl SnapshotRegistry {
     pub(crate) fn save_resource_copy_inner<T: Copy + 'static>(
         _registry: &mut SnapshotRegistry,
     ) -> Result<(), EcsError> {
-        todo!("编号：T78，尚未实现， ：类型擦除、配置冻结及副本准备清理")
+        todo!("编号：T70，尚未实现， ：类型擦除、配置冻结及副本准备清理")
     }
 }
 impl SnapshotRegistry {
     pub(crate) fn save_resource_clone_inner<T: Clone + 'static>(
         _registry: &mut SnapshotRegistry,
     ) -> Result<(), EcsError> {
-        todo!("编号：T79，尚未实现， ：类型擦除、配置冻结及副本准备清理")
+        todo!("编号：T71，尚未实现， ：类型擦除、配置冻结及副本准备清理")
     }
 }
 impl SnapshotRegistry {
@@ -48,13 +48,13 @@ impl SnapshotRegistry {
         _capture: SnapshotCapture<T, S>,
         _restore: SnapshotRestore<T, S>,
     ) -> Result<(), EcsError> {
-        todo!("编号：T80，尚未实现， ：类型擦除、配置冻结及副本准备清理")
+        todo!("编号：T72，尚未实现， ：类型擦除、配置冻结及副本准备清理")
     }
 }
 
 impl SnapshotRegistry {
     pub(crate) fn new_inner() -> SnapshotRegistry {
-        todo!("编号：T81，尚未实现， ：登记表示、冻结及冲突协议尚未确定")
+        todo!("编号：T73，尚未实现， ：登记表示、冻结及冲突协议尚未确定")
     }
 }
 impl SnapshotRegistry {
@@ -62,7 +62,7 @@ impl SnapshotRegistry {
         _registry: &mut SnapshotRegistry,
         _copy: SnapshotCopy<T>,
     ) -> Result<(), EcsError> {
-        todo!("编号：T82，尚未实现， ：登记表示、冻结及冲突协议尚未确定")
+        todo!("编号：T74，尚未实现， ：登记表示、冻结及冲突协议尚未确定")
     }
 }
 impl SnapshotRegistry {
@@ -70,6 +70,6 @@ impl SnapshotRegistry {
         _registry: &mut SnapshotRegistry,
         _initial: DerivedInitial<T>,
     ) -> Result<(), EcsError> {
-        todo!("编号：T83，尚未实现， ：登记表示、冻结及冲突协议尚未确定")
+        todo!("编号：T75，尚未实现， ：登记表示、冻结及冲突协议尚未确定")
     }
 }

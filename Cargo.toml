@@ -20,6 +20,7 @@ pi_ecs_app = { path = "crates/pi_ecs_app" }
 pi_ecs_partition = { path = "crates/pi_ecs_partition" }
 pi_ecs_macros = { path = "crates/pi_ecs_macros" }
 pi_key = "0.4"
+pi_null = "0.2"
 pi_slotmap = "0.5"
 pi_slot = "2.2"
 pi_slot_deque = "0.5"

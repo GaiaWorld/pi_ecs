@@ -5,6 +5,12 @@ use crate::{error::EcsError, world::World};
 pub use pi_ecs_command::command::*;
 impl World {
     /// # 用途
+    /// 从原 CommandHub 查询 C 的队列状态，供静止点或根运行的无活参数边界使用。
+    #[cfg(feature = "rc")]
+    pub fn command_queue_status<C: Send + 'static>(&self) -> Result<CommandQueueStatus, EcsError> {
+        self.command_queue_status_inner::<C>()
+    }
+    /// # 用途
     /// Idle 阶段前按 capacity 登记单消费者队列，不要求 C:Clone/Sync。
     /// 同容量重复幂等，不同容量拒绝且保持原登记；关闭或运行中拒绝。
     /// 广播流是独立消费模式，不能把一个拥有型队列注册多个执行者。

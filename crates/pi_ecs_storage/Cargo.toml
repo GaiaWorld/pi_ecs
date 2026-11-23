@@ -9,6 +9,7 @@ default = []
 rc = ["pi_ecs_types/rc", "pi_arr/rc"]
 
 [dependencies]
+pi_null.workspace = true
 pi_ecs_types.workspace = true
 pi_arr.workspace = true
 pi_buckets.workspace = true

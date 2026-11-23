@@ -1358,7 +1358,7 @@ impl World {
             Ok(crate::world::WorldPin { world: _world })
         }
         #[cfg(not(feature = "rc"))]
-        todo!("编号：T86，尚未实现， 非 RC 多读授权申请")
+        todo!("编号：T78，尚未实现， 非 RC 多读授权申请")
     }
 }
 impl<'w> crate::world::WorldPin<'w> {
@@ -1400,7 +1400,7 @@ impl<'w> crate::world::WorldPin<'w> {
             }
         }
         #[cfg(not(feature = "rc"))]
-        todo!("编号：T87，尚未实现， 非 RC 读授权释放")
+        todo!("编号：T79，尚未实现， 非 RC 读授权释放")
     }
 }
 impl World {
@@ -1440,7 +1440,7 @@ impl World {
             })
         }
         #[cfg(not(feature = "rc"))]
-        todo!("编号：T88，尚未实现， 非 RC 宿主独占组件授权")
+        todo!("编号：T80，尚未实现， 非 RC 宿主独占组件授权")
     }
 }
 impl<'w> crate::world::WorldWrite<'w> {
@@ -1463,7 +1463,7 @@ impl<'w> crate::world::WorldWrite<'w> {
             }
         }
         #[cfg(not(feature = "rc"))]
-        todo!("编号：T89，尚未实现， 非 RC 写授权释放")
+        todo!("编号：T81，尚未实现， 非 RC 写授权释放")
     }
 }
 impl World {
@@ -1494,7 +1494,7 @@ impl<'w> crate::world::WorldWrite<'w> {
         _access: &'a crate::world::WorldWrite<'w>,
         _entity: Entity,
     ) -> Option<crate::component::ComponentRead<'a, 'w, C>> {
-        todo!("编号：T90，尚未实现， 授权共享读取")
+        todo!("编号：T82，尚未实现， 授权共享读取")
     }
 }
 #[cfg(feature = "rc")]
@@ -1517,7 +1517,7 @@ impl<'w> crate::world::WorldWrite<'w> {
         _access: &'a mut crate::world::WorldWrite<'w>,
         _entity: Entity,
     ) -> Option<crate::component::ComponentWrite<'a, 'w, C>> {
-        todo!("编号：T91，尚未实现， 授权写读取")
+        todo!("编号：T83，尚未实现， 授权写读取")
     }
 }
 #[cfg(feature = "rc")]
@@ -1608,7 +1608,7 @@ impl<'w> crate::world::WorldWrite<'w> {
         _access: &'a mut crate::world::WorldWrite<'w>,
         _entity: Entity,
     ) -> Result<Q::Item<'a, 'w>, EcsError> {
-        todo!("编号：T92，尚未实现， 目标原型组合及别名验证")
+        todo!("编号：T84，尚未实现， 目标原型组合及别名验证")
     }
 }
 impl World {
@@ -1819,6 +1819,20 @@ use crate::{
     world::{World, WorldRef},
 };
 impl World {
+    pub(super) fn validate_building_inner(&self) -> Result<(), EcsError> {
+        #[cfg(feature = "rc")]
+        host_idle(self)?;
+        #[cfg(feature = "rc")]
+        if self.commands.has_receiver_claims() {
+            return Err(crate::error::classified_error(crate::error::ErrorKind::InvalidState, "World 仍有外部命令消费资格"));
+        }
+        if self.registry.frozen || self.storage.is_some()
+            || self.notifications.subscriptions.iter().next().is_some()
+            || self.tracking.queries.iter().next().is_some() {
+            return Err(crate::error::classified_error(crate::error::ErrorKind::InvalidState, "只接受未冻结且无外部登记责任的 World"));
+        }
+        Ok(())
+    }
     pub(crate) fn register_component_inner<T: crate::component::Component>(
         world: &mut World,
         storage: StoragePolicy,
@@ -2193,7 +2207,7 @@ impl World {
 #[cfg(not(feature = "rc"))]
 impl World {
     pub(crate) fn reclaim_notifications_inner(_world: &mut World) -> Result<(), EcsError> {
-        todo!("编号：T93，尚未实现， 非 rc 通知旧值回收尚未实现")
+        todo!("编号：T85，尚未实现， 非 rc 通知旧值回收尚未实现")
     }
 }
 impl World {
@@ -2410,7 +2424,13 @@ mod build_tests {
             .get_mut()
             .allocate(
                 crate::entity::AllocationDomain(0),
-                EntityLocation::from_parts(0, 0, row.index(), archetype.table, 0),
+                EntityLocation::from_parts(
+                    0,
+                    0,
+                    row.index(),
+                    archetype.table,
+                    crate::entity::VariantId(0),
+                ),
             )
             .unwrap();
         table.publish_row(row, entity).unwrap();
@@ -2452,6 +2472,25 @@ mod build_tests {
 
     #[cfg(feature = "rc")]
     #[test]
+    fn rc_schedule_scope_preserves_the_original_error_after_stop() {
+        let mut world = World::new().unwrap();
+        world.finish_registration().unwrap();
+        let error = world
+            .schedule_scope::<()>(|world| {
+                world.stop_in_run()?;
+                Err(crate::error::classified_error(
+                    crate::error::ErrorKind::ResourceExhausted,
+                    "original stage diagnostic",
+                ))
+            })
+            .unwrap_err();
+        assert!(format!("{error:?}").contains("original stage diagnostic"));
+        assert!(world.is_stopped());
+        world.close().unwrap();
+    }
+
+    #[cfg(feature = "rc")]
+    #[test]
     fn rc_host_scopes_release_authority_and_stop_on_unwind() {
         let mut world = World::new().unwrap();
         assert!(world.entity_scope(|_| Ok(())).is_err());
@@ -2484,15 +2523,25 @@ mod build_tests {
         let mut world = World::with_partitions::<2>().unwrap();
         world.finish_registration().unwrap();
         let archetype = ArchetypeId {
-            table: 0,
-            variant: 0,
+            table: crate::entity::TableId(0),
+            variant: crate::entity::VariantId(0),
         };
         // Populate the empty Table using its existing physical publication seam.
         let mut publish = || {
             let storage = world.storage.as_mut().unwrap();
-            let row = storage.table_mut(0).unwrap().claim_row().unwrap();
+            let row = storage
+                .table_mut(crate::entity::TableId(0))
+                .unwrap()
+                .claim_row()
+                .unwrap();
             let member = storage.member_len(archetype).unwrap();
-            let location = EntityLocation::from_parts(0, member, row.index(), 0, 0);
+            let location = EntityLocation::from_parts(
+                0,
+                member,
+                row.index(),
+                crate::entity::TableId(0),
+                crate::entity::VariantId(0),
+            );
             let entity = world
                 .entities
                 .get_mut()
@@ -2503,7 +2552,7 @@ mod build_tests {
                 member
             );
             storage
-                .table_mut(0)
+                .table_mut(crate::entity::TableId(0))
                 .unwrap()
                 .publish_row(row, entity)
                 .unwrap();
@@ -2559,7 +2608,7 @@ mod build_tests {
             .unwrap();
         assert_eq!(world.archetypes().unwrap().len(), count);
         let id = world.register_archetype_on(base, &[tag, position]).unwrap();
-        assert_eq!(id.variant, 1);
+        assert_eq!(id.variant, crate::entity::VariantId(1));
         assert_eq!(world.archetype(id).unwrap().table(), base);
         assert_eq!(world.register_archetype(&[position, tag]).unwrap(), id);
         assert_eq!(world.archetypes().unwrap().len(), count + 1);
@@ -3247,7 +3296,7 @@ mod build_tests {
         assert!(plan.is_new);
         let variant = registry.commit_archetype(plan);
         assert_eq!(variant.table, table.table);
-        assert!(variant.variant > 0);
+        assert!(variant.variant.0 > 0);
         assert!(registry.archetype(variant).is_some());
 
         assert!(registry

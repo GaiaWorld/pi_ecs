@@ -33,24 +33,34 @@ mod compile_checks {
     ) {
     }
     fn build(stage: &mut Stage) -> Result<(), EcsError> {
-        stage.add_system(SystemBuilder::new(no_args).build(SystemId(100))?)?;
-        stage.add_system(SystemBuilder::new(resource).build(SystemId(101))?)?;
-        stage.add_system(
-            SystemBuilder::with_config(locals, (LocalConfig::new(1), LocalConfig::new(2)))
-                .build(SystemId(102))?,
-        )?;
-        stage.add_system(
-            SystemBuilder::with_config(
-                configured,
-                (LocalConfig::new(0), MultiResConfig::new(0), ()),
+        stage
+            .add_system(SystemBuilder::new(no_args).build(SystemId(100))?)
+            .map_err(|rejected| rejected.error)?;
+        stage
+            .add_system(SystemBuilder::new(resource).build(SystemId(101))?)
+            .map_err(|rejected| rejected.error)?;
+        stage
+            .add_system(
+                SystemBuilder::with_config(locals, (LocalConfig::new(1), LocalConfig::new(2)))
+                    .build(SystemId(102))?,
             )
-            .build(SystemId(103))?,
-        )?;
+            .map_err(|rejected| rejected.error)?;
+        stage
+            .add_system(
+                SystemBuilder::with_config(
+                    configured,
+                    (LocalConfig::new(0), MultiResConfig::new(0), ()),
+                )
+                .build(SystemId(103))?,
+            )
+            .map_err(|rejected| rejected.error)?;
         let value = std::rc::Rc::new(std::cell::Cell::new(0));
         let closure = move |_counter: Local<'_, u32>| {
             value.set(value.get() + 1);
         };
-        stage.add_system(SystemBuilder::new(closure).build(SystemId(104))?)?;
+        stage
+            .add_system(SystemBuilder::new(closure).build(SystemId(104))?)
+            .map_err(|rejected| rejected.error)?;
         Ok(())
     }
 }

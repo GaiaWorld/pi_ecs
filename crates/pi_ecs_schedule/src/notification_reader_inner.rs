@@ -65,7 +65,7 @@ impl<T: pi_ecs_core::component::Component> crate::notification_reader::RemovedRe
     pub(crate) fn removed_clear_inner(
         _reader: &mut crate::notification_reader::RemovedReader<'_, T>,
     ) -> Result<(), EcsError> {
-        todo!("编号：T95，尚未实现， 非 rc RemovedReader clear 尚未实现")
+        todo!("编号：T97，尚未实现， 非 rc RemovedReader clear 尚未实现")
     }
 }
 
@@ -97,7 +97,7 @@ impl<T: pi_ecs_core::component::Component> crate::notification_reader::RemovedRe
     pub(crate) fn removed_read_inner<'a>(
         _reader: &'a mut crate::notification_reader::RemovedReader<'_, T>,
     ) -> Result<RemovedBatch<'a, T>, EcsError> {
-        todo!("编号：T96，尚未实现， 非 rc RemovedReader 读取尚未实现")
+        todo!("编号：T98，尚未实现， 非 rc RemovedReader 读取尚未实现")
     }
 }
 

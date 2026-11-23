@@ -24,6 +24,20 @@ pub(crate) enum OrderingRelation {
 }
 impl StagePlan {
     /// # 用途
+    /// earlier/later 按登记顺序传入，权限来自同一 logical 全集。复用 relation 的写先读及排斥判据。
+    /// 两个方向均有真实写先读依赖时返回 Err，由帧间编译器补报系统对；包括两个结构写系统的双向依赖。
+    /// 单向依赖优先；只有排斥、写写或两个无方向的结构写才按登记顺序。无依赖且无排斥则不加边。
+    /// 不修改普通 Stage 的排序策略，不做全图排序或成环回退。
+    #[cfg(feature = "rc")]
+    pub(crate) fn strict_relation(
+        logical: &OrderingArchetypes,
+        earlier: &[pi_ecs_core::access::OrderingAccess],
+        later: &[pi_ecs_core::access::OrderingAccess],
+    ) -> Result<OrderingRelation, pi_ecs_core::error::EcsError> {
+        Self::strict_relation_inner(logical, earlier, later)
+    }
+
+    /// # 用途
     /// earlier/later 是同一逻辑全集上两系统的全部参数权限，按系统登记先后传入。
     /// 跨系统对 ParamSet 取全部成员权限；按实际重叠范围判方向，不按组件编号全局合并。
     /// 组件、唯一资源、多例同槽/读全体按写先读，两个写者按登记顺序。
@@ -76,7 +90,7 @@ impl StagePlan {
     /// 本公开低层入口仅排序给定的已发布范围，不能用于含未创建 Alter 目标的正式阶段；
     /// 正式 Stage 使用 ordering_archetypes/relation/build_ordering，不通过本入口重建运行中顺序。
     /// 必须按重叠范围判定值/tick、资源及多例写先读方向；物理排斥不冒充业务写方向。
-    /// 当前旧实现已暂停，现有验收仅编译，不能把该接口存在称为排序行为可用。
+    /// 作为给定已发布范围的低层排序入口，不接管帧间或阶段入口的数据流计划。
     /// 空权限不表示已注销：无参活动系统仍须执行。存在空槽时由 Stage 按活动槽构造输入并将结果显式映射回稳定槽位。
     /// 同一系统内部视为已校验；本方法只计算系统之间的顺序，不重新校验参数别名。
     /// 冲突用 ResolvedAccess::conflicts 判定：值访问需同组件、含写且原型集合相交；

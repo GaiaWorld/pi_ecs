@@ -3,6 +3,10 @@
 mod app_inner;
 use crate::plugin::Plugin;
 use pi_ecs_core::{error::EcsError, world::World};
+#[cfg(feature = "rc")]
+use pi_ecs_schedule::inter_frame::{
+    FrameBudget, InterFrameTarget, QueuePriority, ReadyRun, SystemFlow,
+};
 use pi_ecs_schedule::schedule::Schedule;
 #[cfg(not(feature = "rc"))]
 use pi_share::Share;
@@ -88,6 +92,9 @@ pub struct App {
     pub(crate) world: Share<World>,
     /// 命名调度；Schedule 当前直接拥有 Stage/Executor，App 不另存重复阶段表。
     pub(crate) schedules: Vec<(ScheduleLabel, Schedule)>,
+    /// App 所有的帧间图；复用唯一 World，关闭时先清偿图再关闭 World。
+    #[cfg(feature = "rc")]
+    pub(crate) inter_frame: SystemFlow,
     /// 按成功安装顺序保留插件配置；业务运行数据归资源、组件或 Local。
     pub(crate) plugins: Vec<InstalledPlugin>,
     /// 类型安装状态；Installing 阻止自递归/循环安装，Installed 在对象移出期间仍可供依赖检查。
@@ -98,7 +105,122 @@ pub struct App {
     // 后备 App 快照恢复与比较细节暂缓，不据此迁移当前 Schedule/Stage 所有权。
     // 单 World 门禁控制 Running/Maintaining 排他；内部状态可变性与具体授权接线待闭合。
 }
+/// 仅登记类型、表、队列和初始资源；不允许冻结、运行、注销或替换 World。
+pub struct WorldConfig<'a> {
+    /// 原 World 仍由 App 持有。
+    pub(crate) world: &'a mut World,
+}
+impl WorldConfig<'_> {
+    /// # 用途
+    /// 按 storage 策略登记组件 T。
+    pub fn register_component<T: pi_ecs_core::component::Component>(
+        &mut self,
+        storage: pi_ecs_core::component::StoragePolicy,
+    ) -> Result<pi_ecs_core::component::ComponentId, EcsError> {
+        self.world.register_component::<T>(storage)
+    }
+    /// # 用途
+    /// 为指定组件登记表，不冻结布局。
+    pub fn register_table(
+        &mut self,
+        components: &[pi_ecs_core::component::ComponentId],
+    ) -> Result<pi_ecs_core::entity::ArchetypeId, EcsError> {
+        self.world.register_table(components)
+    }
+    /// # 用途
+    /// 登记唯一资源类型。
+    pub fn register_resource<T: Send + Sync + 'static>(
+        &mut self,
+    ) -> Result<pi_ecs_core::resource::ResourceId, EcsError> {
+        self.world.register_resource::<T>()
+    }
+    /// # 用途
+    /// 登记空多例资源集合，不领取生产者资格。
+    #[cfg(feature = "rc")]
+    pub fn register_multi_resource<T: Send + Sync + 'static>(
+        &mut self,
+    ) -> Result<pi_ecs_core::resource::ResourceId, EcsError> {
+        self.world.register_multi_resource::<T>()
+    }
+    /// # 用途
+    /// T 须已登记；插入或替换 value，成功返回旧值（首次返回 None）。
+    /// 普通拒绝保留原资源和时钟；所传 value 依原资源接口消费，不返回给调用者。
+    pub fn insert_resource<T: Send + Sync + 'static>(
+        &mut self,
+        value: T,
+    ) -> Result<Option<T>, EcsError> {
+        self.world.insert_resource(value)
+    }
+    /// # 用途
+    /// 登记命令队列与容量，不领取消费资格。
+    pub fn register_command<C: Send + 'static>(
+        &mut self,
+        capacity: pi_ecs_core::command::CommandCapacity,
+    ) -> Result<(), EcsError> {
+        self.world.register_command::<C>(capacity)
+    }
+}
 impl App {
+    /// # 用途
+    /// 仅 Building/Finishing 配置帧间入口、消费者及通知；返回借用不开放 World。
+    #[cfg(feature = "rc")]
+    pub fn inter_frame_mut(
+        &mut self,
+    ) -> Result<pi_ecs_schedule::inter_frame::FlowConfig<'_>, EcsError> {
+        self.inter_frame_mut_inner()
+    }
+
+    /// # 用途
+    /// Ready/Idle 时立即从 target 启动一轮，App 内部借用所属 World；异源目标拒绝。
+    /// 本次 input 可是一整批拥有值；同线程不允许重入，忙碌不转为隐式入队。
+    #[cfg(feature = "rc")]
+    pub fn dispatch<I: 'static>(
+        &mut self,
+        target: &InterFrameTarget<I>,
+        input: I,
+    ) -> Result<(), EcsError> {
+        self.dispatch_inner(target, input)
+    }
+
+    /// # 用途
+    /// 将 command 投入 World 已有类型化队列，不执行系统。拒绝时交还原值。
+    /// 帧推期间产生的拥有型 RPC 完成消息经宿主交付；不要求在帧推调用栈里重借 App。
+    #[cfg(feature = "rc")]
+    pub fn post<C: Send + 'static>(
+        &mut self,
+        command: C,
+    ) -> Result<(), pi_ecs_core::command::CommandSendError<C>> {
+        self.post_inner(command)
+    }
+
+    /// # 用途
+    /// 组装期或 Ready/Idle 为已绑定的 C 修改五级优先级，未设置默认中。
+    #[cfg(feature = "rc")]
+    pub fn set_queue_priority<C: Send + 'static>(
+        &mut self,
+        priority: QueuePriority,
+    ) -> Result<(), EcsError> {
+        self.set_queue_priority_inner::<C>(priority)
+    }
+
+    /// # 用途
+    /// Ready/Idle 的帧间入口；budget 已到或进入让行窗则不消费消息，否则最多选一个入口跑完。
+    /// 宿主负责采样时钟、驱动帧推及再次调用；本方法不抢占已启动轮次。
+    #[cfg(feature = "rc")]
+    pub fn run_next_ready(&mut self, budget: FrameBudget) -> Result<ReadyRun, EcsError> {
+        self.run_next_ready_inner(budget)
+    }
+
+    /// # 用途
+    /// 在 App 自有 World 上显式运行 label 的阶段序列；允许重复同一阶段，按 run 的状态协议收束。
+    #[cfg(feature = "rc")]
+    pub fn run_stages(
+        &mut self,
+        label: ScheduleLabel,
+        stages: &[pi_ecs_schedule::stage::StageId],
+    ) -> Result<(), EcsError> {
+        self.run_stages_inner(label, stages)
+    }
     /// # 用途
     /// RC 宿主仅 Ready/World Idle 下补齐或替换已登记 T，返回旧值所有权；不登记新类型。
     /// label/调度无关；错误不自动运行系统，状态/类型前置拒绝不改资源，value 按普通拥有值释放。
@@ -114,6 +236,7 @@ impl App {
     /// # 用途
     /// RC 宿主在 Ready 且 World Idle 时向 label/stage 登记 system；不重新开放类型/Table/插件配置。
     /// 标签/阶段/状态前置拒绝不改登记，身份冲突由 Stage::add_system 检查；消费 system，不初始化。
+    /// 只接收未初始化实例；拒绝时返回原 system 及错误。
     /// 成功返回稳定槽位并使阶段排序失效，下一次准备初始化；新参数只能使用已有冻结登记。
     /// 初始化失败遵守 System::initialize 失败协议，不撤销已成功登记，不自动重建实例。
     #[cfg(feature = "rc")]
@@ -122,7 +245,7 @@ impl App {
         label: ScheduleLabel,
         stage: pi_ecs_schedule::stage::StageId,
         system: S,
-    ) -> Result<usize, EcsError> {
+    ) -> Result<usize, pi_ecs_schedule::stage::InstallError<S>> {
         self.add_system_inner(label, stage, system)
     }
     /// # 用途
@@ -142,6 +265,7 @@ impl App {
     /// # 用途
     /// RC 在 World Idle/Stopped 且无活参数时关闭；Closed 幂等，Running/维护/Closing 前置拒绝。
     /// 先进入 Closing，按调度/阶段/系统登记顺序注销所有参数，释放 Local/生产者/订阅。
+    /// 同源帧间图与阶段入口图也须在 World 仍存活时清偿；功能接通后沿用首错继续协议。
     /// 正常注销诊断继续收齐其他系统，清空调度及插件配置后调用 World::close；保留首个诊断返回。
     /// 注销过程中 World 元数据和存储必须存活；不运行系统、命令、flush 或 settle。
     /// 完成后进入 Closed；内部故障或析构 panic 标记 Failed/Stopped，不重试已消费状态。
@@ -152,7 +276,9 @@ impl App {
     /// # 用途
     /// 接管 world，进入 Building；RC 直接保存其所有权，非 RC 沿用 Share 稳定分配。
     /// 不安装插件或运行系统；构建后不提供提取/替换 World 的入口。
-    pub fn new(world: World) -> Self {
+    /// 仅接管开放、未冻结且无外部订阅、查询登记或活命令接收者的 World；拒绝归还原 World 及诊断。
+    /// 已取得的命令发送端不阻止接管。
+    pub fn new(world: World) -> Result<Self, pi_ecs_schedule::stage::InstallError<World>> {
         Self::new_inner(world)
     }
     /// plugin 为配置对象，具体类型唯一；仅 Building，立即 build，可安装子插件。
@@ -170,16 +296,20 @@ impl App {
         Self::require_plugin_inner::<P>(self)
     }
     /// 仅构建/finish 登记 label 对应 schedule；不自动接入运行流程。
+    /// 只接管无活登记责任的调度；拒绝时返回原 schedule 供调用者在原 World 上清偿。
     /// 标签重复/状态错误返回错误，不替换现行调度。
     pub fn add_schedule(
         &mut self,
         label: ScheduleLabel,
         schedule: Schedule,
-    ) -> Result<(), EcsError> {
+    ) -> Result<(), pi_ecs_schedule::stage::InstallError<Schedule>> {
         Self::add_schedule_inner(self, label, schedule)
     }
     /// label 必须存在；仅构建/finish 返回配置借用，缺失或其他状态报错且不改状态。
-    pub fn schedule_mut(&mut self, label: ScheduleLabel) -> Result<&mut Schedule, EcsError> {
+    pub fn schedule_mut(
+        &mut self,
+        label: ScheduleLabel,
+    ) -> Result<pi_ecs_schedule::schedule::ScheduleConfig<'_>, EcsError> {
         Self::schedule_mut_inner(self, label)
     }
     /// 返回共享 world，不额外授予写权限，不绕过正常参数及运行门禁。
@@ -187,10 +317,8 @@ impl App {
         Self::world_inner(self)
     }
     /// # 用途
-    /// 仅构建/finish 返回独占配置访问；RC 从自身所有权短借，非 RC 另需 Share 唯一性。
-    /// 仅内部绑定尚未发布时允许；Share 唯一不等于无内部绑定，禁止移动/替换已发布 World。
-    /// 不作为 Ready 的恢复入口；RC 无需共享所有权检查，但仍校验运行门禁和内部绑定发布状态。
-    pub fn world_mut(&mut self) -> Result<&mut World, EcsError> {
+    /// 仅构建/finish 提供受限配置操作；World 只由 App::finish 冻结。
+    pub fn world_mut(&mut self) -> Result<WorldConfig<'_>, EcsError> {
         Self::world_mut_inner(self)
     }
     /// 仅 Ready 且 World 静止，内部取得维护排他权，不与运行/维护重叠，不隐式等待。

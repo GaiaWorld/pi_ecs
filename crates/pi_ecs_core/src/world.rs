@@ -713,6 +713,11 @@ impl World {
     pub fn finish_registration(&mut self) -> Result<(), EcsError> {
         Self::finish_registration_inner(self)
     }
+    /// # 用途
+    /// 检查 World 是否开放、未冻结，且没有外部订阅、查询登记或活命令接收者；不改变所有权或状态。
+    pub fn validate_building(&self) -> Result<(), EcsError> {
+        self.validate_building_inner()
+    }
 
     /// 冻结后显式声明完整 components 集合；复用相同集合，基础原型与 Table 同号。
     /// 动态原型仅追加声明，不新增 Table；选最大覆盖的子集 Table，同分选先登记者。

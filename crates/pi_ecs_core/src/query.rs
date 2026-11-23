@@ -241,7 +241,7 @@ pub(crate) struct QueryArchetype<Q: QueryData, F: QueryFilter> {
 pub(crate) struct WorldQueryCache<Q: QueryData, F: QueryFilter> {
     /// 潜在相关 Table 的最小编号；tables 为空时规范为零，没有可访问上界。
     /// 冻结布局下首次确定，不以当前非空或已有匹配变体裁剪未来候选。
-    pub(crate) first_table: u16,
+    pub(crate) first_table: crate::entity::TableId,
     /// 连续 Table 区间，tables[i] 对应 first_table + i。
     /// 非空时最大编号为 usize::from(first_table) + tables.len() - 1，计算不得在 u16 上溢出。
     /// 区间内空洞用 QueryTable::Excluded；区间外直接拒绝，不使用无符号回绕索引。
@@ -501,7 +501,7 @@ pub(crate) enum QueryTable<Q: QueryData, F: QueryFilter> {
         /// 本 Table 匹配的紧凑变体计划；完整新条目成功后才追加 map 并发布。
         entries: Vec<(
             // 真实变体编号，用于成员遍历；不重复保存可由外层计算的 TableId。
-            u16,
+            crate::entity::VariantId,
             // 本变体的数据与过滤获取状态，不再持有计划包装。
             QueryArchetype<Q, F>,
         )>,

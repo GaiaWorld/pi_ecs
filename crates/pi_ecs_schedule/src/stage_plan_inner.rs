@@ -1,10 +1,46 @@
 //! 阶段计划配对芯；冲突图与排序复用 pi_graph，不自行实现邻接或 Kahn。
 impl StagePlan {
+    #[cfg(feature = "rc")]
+    pub(super) fn strict_relation_inner(
+        _logical: &pi_ecs_core::access::OrderingArchetypes,
+        _earlier: &[pi_ecs_core::access::OrderingAccess],
+        _later: &[pi_ecs_core::access::OrderingAccess],
+    ) -> Result<super::OrderingRelation, pi_ecs_core::error::EcsError> {
+        let (forward, backward, excludes, _) = Self::relation_flags(_logical, _earlier, _later);
+        match (forward, backward, excludes) {
+            (true, true, _) => Err(pi_ecs_core::error::classified_error(
+                pi_ecs_core::error::ErrorKind::InvalidState,
+                "帧间系统存在双向访问依赖",
+            )),
+            (true, false, _) | (false, false, true) => Ok(super::OrderingRelation::EarlierFirst),
+            (false, true, _) => Ok(super::OrderingRelation::LaterFirst),
+            (false, false, false) => Ok(super::OrderingRelation::Independent),
+        }
+    }
+
     pub(super) fn relation_inner(
         logical: &pi_ecs_core::access::OrderingArchetypes,
         _earlier: &[pi_ecs_core::access::OrderingAccess],
         _later: &[pi_ecs_core::access::OrderingAccess],
     ) -> super::OrderingRelation {
+        let (forward, backward, excludes, both_structural) =
+            Self::relation_flags(logical, _earlier, _later);
+        if both_structural || forward {
+            super::OrderingRelation::EarlierFirst
+        } else if backward {
+            super::OrderingRelation::LaterFirst
+        } else if excludes {
+            super::OrderingRelation::EarlierFirst
+        } else {
+            super::OrderingRelation::Independent
+        }
+    }
+
+    fn relation_flags(
+        logical: &pi_ecs_core::access::OrderingArchetypes,
+        _earlier: &[pi_ecs_core::access::OrderingAccess],
+        _later: &[pi_ecs_core::access::OrderingAccess],
+    ) -> (bool, bool, bool, bool) {
         use pi_ecs_core::access::{
             AccessMode, MultiResourceAccess, OrderingAccess, StructuralAccess,
         };
@@ -160,29 +196,16 @@ impl StagePlan {
         };
         let both_structural =
             _earlier.iter().any(writes_structure) && _later.iter().any(writes_structure);
-        if both_structural {
-            return super::OrderingRelation::EarlierFirst;
-        }
         let forward = _earlier
             .iter()
             .any(|a| _later.iter().any(|b| precedes(a, b)));
         let backward = _later
             .iter()
             .any(|b| _earlier.iter().any(|a| precedes(b, a)));
-        if forward {
-            super::OrderingRelation::EarlierFirst
-        } else if backward {
-            super::OrderingRelation::LaterFirst
-        } else if _earlier.iter().any(writes_structure)
+        let excludes = _earlier.iter().any(writes_structure)
             || _later.iter().any(writes_structure)
-            || _earlier
-                .iter()
-                .any(|a| _later.iter().any(|b| excludes(a, b)))
-        {
-            super::OrderingRelation::EarlierFirst
-        } else {
-            super::OrderingRelation::Independent
-        }
+            || _earlier.iter().any(|a| _later.iter().any(|b| excludes(a, b)));
+        (forward, backward, excludes, both_structural)
     }
 }
 #[cfg(test)]
@@ -205,12 +228,12 @@ mod relation_tests {
             structure: None,
         };
         let a = ArchetypeId {
-            table: 0,
-            variant: 0,
+            table: pi_ecs_core::entity::TableId(0),
+            variant: pi_ecs_core::entity::VariantId(0),
         };
         let b = ArchetypeId {
-            table: 0,
-            variant: 1,
+            table: pi_ecs_core::entity::TableId(0),
+            variant: pi_ecs_core::entity::VariantId(1),
         };
         let mut reader = make();
         reader.tick_reads = vec![ResolvedValueAccess {
@@ -650,7 +673,7 @@ impl StagePlan {
         let mut known = BTreeSet::new();
         let mut combinations: Vec<Box<[ComponentId]>> = Vec::new();
         for archetype in world.archetypes()? {
-            counts[archetype.table().table as usize] += 1;
+            counts[usize::from(archetype.table().table)] += 1;
             let components: Box<[_]> = archetype
                 .components()
                 .iter()
@@ -775,12 +798,12 @@ impl StagePlan {
             if columns.iter().all(|id| target.binary_search(id).is_ok())
                 && best.is_none_or(|(_, size)| columns.len() > size)
             {
-                best = Some((table.id().table as usize, columns.len()));
+                best = Some((usize::from(table.id().table), columns.len()));
             }
         }
         let (table, _) = best
             .ok_or_else(|| classified_error(ErrorKind::NotFound, "结构写潜在目标缺少基础 Table"))?;
-        if counts[table] > u16::MAX as usize {
+        if counts[table] >= usize::from(u16::MAX) {
             return Err(classified_error(
                 ErrorKind::ResourceExhausted,
                 "结构写潜在目标超过 Table 变体容量",

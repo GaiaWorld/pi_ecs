@@ -44,13 +44,30 @@ pub struct EntityCategory(
     /// 类别编号；首版唯一合法值为 0，其他值暂不产生实体键。
     pub u32,
 );
+/// World 内的 Table 编号；u16::MAX 保留为空。
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct TableId(
+    /// # 用途
+    /// Table 原始编号；u16::MAX 为 Null，不参与索引。
+    pub u16,
+);
+/// Table 内的变体编号；0 是基础原型，u16::MAX 保留为空。
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct VariantId(
+    /// # 用途
+    /// 原型原始编号；u16::MAX 为 Null，0 是基础原型。
+    pub u16,
+);
+
 /// 本 World 的二维原型身份，恢复后不能直接复用旧布局计划。
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub struct ArchetypeId {
     /// World 内 Table 编号，16 位。
-    pub table: u16,
+    pub table: TableId,
     /// Table 内变体编号，0 为基础原型，16 位。
-    pub variant: u16,
+    pub variant: VariantId,
 }
 /// 三个 u32；高 12 位段保存当前分区与原型成员行，不编码出生分区。
 #[repr(C)]
@@ -77,7 +94,7 @@ impl ArchetypeRow {
 }
 impl EntityLocation {
     /// # 用途
-    /// 规范空位置，三个字均为 u32::MAX；仅保留这一完整组合，不单独占用分区/原型/行编号。
+    /// 规范空位置，三个字均为 u32::MAX。Table 和变体各自保留空编号。
     /// 不能用于索引存储，读取分区/行/原型前必须排除 Null；全零仍是合法位置。
     pub const NULL: Self = Self {
         partition_and_archetype_row: u32::MAX,
@@ -90,13 +107,13 @@ impl EntityLocation {
         self.is_null_inner()
     }
     /// 由已校验的当前分区、成员行、Table 行与原型编号构造位置。
-    /// 越界或全部字段组成规范 NULL 时直接 panic；空位置只能用 NULL。
+    /// 越界或任一 ID 为空时直接 panic；空位置只能用 NULL。
     pub fn from_parts(
         partition: u32,
         archetype_row: u32,
         table_row: u32,
-        table: u16,
-        variant: u16,
+        table: TableId,
+        variant: VariantId,
     ) -> Self {
         Self::from_parts_inner(partition, archetype_row, table_row, table, variant)
     }

@@ -58,7 +58,27 @@ pub struct CommandHub {
     /// Hub 唯一拥有目录；RC 句柄只保活 control 与类型化队列，不保活此目录。
     pub(crate) endpoint: CommandEndpoint,
 }
+/// 同一时刻的队列选择元数据，不授予消费资格。
+pub struct CommandQueueStatus {
+    /// 当前是否有可消费的就绪消息；仅定时未到期项不算就绪。
+    pub ready: bool,
+    /// 当前有效消费资格编号；同一队列内不复用，None 表示无人领取。
+    pub receiver_claim: Option<u64>,
+}
 impl CommandHub {
+    /// # 用途
+    /// 检查任一类型化队列是否仍有有效 Receiver；不消费消息、不检查 Sender 数量。
+    #[cfg(feature = "rc")]
+    pub fn has_receiver_claims(&self) -> bool {
+        self.has_receiver_claims_inner()
+    }
+    /// # 用途
+    /// 只读查询已登记 C 的就绪和资格；未登记、关闭或动态借用冲突返回错误。
+    /// 不读取 payload、不推进定时器，也不创建 sender/receiver。
+    #[cfg(feature = "rc")]
+    pub fn queue_status<C: Send + 'static>(&self) -> Result<CommandQueueStatus, EcsError> {
+        self.queue_status_inner::<C>()
+    }
     /// # 用途
     /// 建立关闭截点并丢弃已接收的就绪/延迟 payload，不调用命令处理器。
     /// 截点后外部 Sender 即使保活队列也拒绝提交并返回原 payload，Receiver 不再消费。
@@ -150,6 +170,9 @@ impl<C: Send + 'static> CommandSender<C> {
 }
 /// 唯一消费资格，不 Clone；注销只交还资格，不自动清空队列。
 pub struct CommandReceiver<C: Send + 'static> {
+    /// 本队列中永不复用的此次消费资格编号。
+    #[cfg(feature = "rc")]
+    pub(crate) claim: u64,
     /// RC 唯一消费资格所在的类型化队列，不保活 Hub 目录或 World。
     #[cfg(feature = "rc")]
     pub(crate) queue: Share<CommandQueue<C>>,
@@ -162,10 +185,36 @@ pub struct CommandReceiver<C: Send + 'static> {
     pub(crate) marker: PhantomData<fn() -> C>,
 }
 impl<C: Send + 'static> CommandReceiver<C> {
+    /// # 用途
+    /// 创建只可消费的短借视图，不交出可替换的拥有句柄。
+    #[cfg(feature = "rc")]
+    pub fn view(&mut self) -> CommandRead<'_, C> {
+        self.view_inner()
+    }
+    /// # 用途
+    /// 返回当前句柄拥有的消费资格编号；仅在同源队列和代次内比较。
+    #[cfg(feature = "rc")]
+    pub fn claim_id(&self) -> u64 {
+        self.claim
+    }
     /// 固定当前可见上界；借用 self 排除第二个并发批次，不跨用户代码持队列借用。
     /// next 取得 C 即出队，无业务 ack；早停/drop 保留未返回项，新显现项留给下批。
     pub fn read(&mut self) -> Result<CommandBatch<'_, C>, EcsError> {
         self.read_inner()
+    }
+}
+/// 系统参数使用的短借消费能力；不公开拥有句柄或 DerefMut。
+#[cfg(feature = "rc")]
+pub struct CommandRead<'a, C: Send + 'static> {
+    /// 只在本次参数借用内保活，不能由调用者替换。
+    pub(crate) receiver: &'a mut CommandReceiver<C>,
+}
+#[cfg(feature = "rc")]
+impl<C: Send + 'static> CommandRead<'_, C> {
+    /// # 用途
+    /// 固定本批可见上界并消费；批次结束前不能再次读取。
+    pub fn read(&mut self) -> Result<CommandBatch<'_, C>, EcsError> {
+        self.receiver.read()
     }
 }
 /// 一次有限的拥有型消费迭代，不读取/修改 World 组件。
@@ -227,6 +276,8 @@ pub(crate) struct CommandControl {
 /// RC 目录中的一个类型化队列及只处理索引/清理的擦除操作；不逐命令 Box<dyn Any>。
 #[cfg(feature = "rc")]
 pub(crate) struct QueueEntry {
+    /// 用已登记类型读取本队列唯一消费资格的占用状态。
+    pub(crate) receiver_claimed: fn(&dyn std::any::Any) -> bool,
     /// 唯一保存 Share<CommandQueue<C>>，创建句柄时校验真实 C 后克隆该 Share。
     pub(crate) typed: Box<dyn std::any::Any>,
     /// 对 typed 执行已登记类型的到期索引迁移，不调用用户代码，不复制 payload。
@@ -264,6 +315,8 @@ pub(crate) struct CommandQueueState<C> {
     pub(crate) next_ready: u64,
     /// 一个 Receiver 独占资格，Drop 归还，不清空 pending；forget 只泄漏资格。
     pub(crate) occupied: bool,
+    /// 最近发行的接收编号；释放不倒退，耗尽拒绝新领取。
+    pub(crate) last_receiver_claim: u64,
 }
 /// # 用途
 /// 唯一拥有 C 的未消费命令；到期只清 timer_key 并追加 ready，不再次接收或申请名额。

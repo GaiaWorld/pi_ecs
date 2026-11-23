@@ -70,7 +70,7 @@ pub mod prelude {
     pub use pi_ecs_core::{
         alter::QueryAlter,
         bundle::{Bundle, ComponentValue, SystemBundle},
-        entity::{Entity, PartitionId},
+        entity::{Entity, PartitionId, TableId, VariantId},
         entity_scope::EntityScope,
         error::EcsError,
         owned_entity::OwnedEntity,

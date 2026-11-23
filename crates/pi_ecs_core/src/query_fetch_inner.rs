@@ -136,7 +136,7 @@ impl World {
 impl super::FetchBinding<'_> {
     pub(super) fn column_address_inner(
         &self,
-        _table: u16,
+        _table: crate::entity::TableId,
         _column: pi_ecs_storage::table::ColumnId,
     ) -> Result<std::ptr::NonNull<pi_ecs_storage::column::Column>, crate::error::EcsError> {
         #[cfg(feature = "rc")]

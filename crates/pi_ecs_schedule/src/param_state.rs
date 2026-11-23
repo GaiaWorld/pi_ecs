@@ -17,24 +17,26 @@ pub struct CommandSenderParamState<C: Send + 'static> {
 /// 每个命令接收参数位置唯一拥有消费资格；不按每次执行重新领取。
 /// 命令参数结果是借用，不把 Receiver 所有权交给系统函数。
 /// ```no_run
-/// use pi_ecs_core::command::{CommandReceiver, CommandSender};
+/// use pi_ecs_core::command::{CommandRead, CommandSender};
 /// use pi_ecs_schedule::system_param::SystemParam;
-/// fn receiver_item<'r>(item: <&'static mut CommandReceiver<u32> as SystemParam>::Item<'r>) -> &'r mut CommandReceiver<u32> { item }
+/// fn receiver_item<'r>(item: <CommandRead<'static, u32> as SystemParam>::Item<'r>) -> CommandRead<'r, u32> { item }
 /// fn sender_item<'r>(item: <&'static CommandSender<u32> as SystemParam>::Item<'r>) -> &'r CommandSender<u32> { item }
 /// ```
 /// 批次存活时不能再次读取同一个 Receiver，即使队列内部采用短借。
 /// ```compile_fail,E0499
-/// use pi_ecs_core::command::CommandReceiver;
-/// fn overlapping(receiver: &mut CommandReceiver<u32>) {
+/// use pi_ecs_core::command::CommandRead;
+/// fn overlapping(mut receiver: CommandRead<'_, u32>) {
 ///     let mut first = receiver.read().unwrap();
 ///     let second = receiver.read().unwrap();
 ///     let _ = first.next();
 /// }
 /// ```
 /// 系统不能把借用的消费资格移出长期 State。
-/// ```compile_fail,E0507
+/// ```compile_fail,E0616
 /// use pi_ecs_core::command::CommandReceiver;
-/// fn take(receiver: &mut CommandReceiver<u32>) -> CommandReceiver<u32> { *receiver }
+/// fn take(view: pi_ecs_core::command::CommandRead<'_, u32>, foreign: CommandReceiver<u32>) {
+///     let _ = std::mem::replace(view.receiver, foreign);
+/// }
 /// ```
 #[cfg(feature = "rc")]
 pub struct CommandReceiverParamState<C: Send + 'static> {

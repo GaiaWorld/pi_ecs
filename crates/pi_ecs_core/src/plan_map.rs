@@ -19,7 +19,11 @@ impl ArchetypePlanMap {
     }
     /// 返回 (table, variant) 的合法 plan 下标；未知、未扫描及已扫描不合法均 None。
     /// 扫描进度由 AlterCache.tables 单源维护，不用 get 的 None 推断是否扫描。
-    pub(crate) fn get(&self, table: u16, variant: u16) -> Option<u16> {
+    pub(crate) fn get(
+        &self,
+        table: crate::entity::TableId,
+        variant: crate::entity::VariantId,
+    ) -> Option<u16> {
         Self::get_inner(self, table, variant)
     }
     /// 写入/追加 (table, variant)；Some(plan) 必须小于 u16::MAX，None 编码为不合法源哨兵。
@@ -27,8 +31,8 @@ impl ArchetypePlanMap {
     /// 在临时区完成容量校验/压缩后发布；普通 Err 原映射不变，不能因废弃段占用误拒可表示的新映射。
     pub(crate) fn set(
         &mut self,
-        table: u16,
-        variant: u16,
+        table: crate::entity::TableId,
+        variant: crate::entity::VariantId,
         plan: Option<u16>,
     ) -> Result<(), crate::error::EcsError> {
         Self::set_inner(self, table, variant, plan)

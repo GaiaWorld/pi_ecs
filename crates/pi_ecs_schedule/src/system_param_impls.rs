@@ -72,14 +72,14 @@ unsafe impl<C: Send + 'static> SystemParam for &CommandSender<C> {
 }
 
 #[cfg(feature = "rc")]
-impl<C: Send + 'static> Sealed for &mut CommandReceiver<C> {}
+impl<C: Send + 'static> Sealed for CommandRead<'_, C> {}
 // SAFETY: 仅借用本位置 State 中的句柄，RC 限所属线程；队列内部按操作短借，不取 World 业务引用。
 #[cfg(feature = "rc")]
-unsafe impl<C: Send + 'static> SystemParam for &mut CommandReceiver<C> {
+unsafe impl<C: Send + 'static> SystemParam for CommandRead<'_, C> {
     type Config = ();
     type State = CommandReceiverParamState<C>;
     type Pending = ();
-    type Item<'run> = &'run mut CommandReceiver<C>;
+    type Item<'run> = CommandRead<'run, C>;
     /// # 用途
     /// config 无额外配置；registration 仅领取预登记句柄，不创建队列或选择容量。
     /// Receiver 资格由 State 唯一拥有，组合失败 Drop 归还，不清 payload。
@@ -157,7 +157,7 @@ use crate::{
     system_param::{private::Sealed, ParamRegistration, SystemParam},
 };
 #[cfg(feature = "rc")]
-use pi_ecs_core::command::{CommandReceiver, CommandSender};
+use pi_ecs_core::command::{CommandRead, CommandSender};
 use pi_ecs_core::{
     alter::{QueryAlter, QueryAlterState},
     bundle::{Bundle, SystemBundle},

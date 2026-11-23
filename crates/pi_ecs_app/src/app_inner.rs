@@ -8,6 +8,92 @@ mod close_tests {
         Arc,
     };
     struct Child(Arc<AtomicUsize>);
+
+    #[test]
+    fn app_rejects_live_receiver_but_accepts_a_retained_sender() {
+        use pi_ecs_core::command::CommandCapacity;
+        let mut world = World::new().unwrap();
+        world
+            .register_command::<u32>(CommandCapacity::Unbounded)
+            .unwrap();
+        let sender = world.command_sender::<u32>().unwrap();
+        let receiver = world.command_receiver::<u32>().unwrap();
+        let rejected = match App::new(world) {
+            Ok(_) => panic!("持有外部接收资格时不能接管"),
+            Err(rejected) => rejected,
+        };
+        drop(receiver);
+        let mut app = App::new(rejected.value).unwrap();
+        assert!(sender.send(9).is_ok());
+        assert!(app.world().command_queue_status::<u32>().unwrap().ready);
+        app.close().unwrap();
+    }
+
+    #[test]
+    fn app_rejects_world_with_host_notice_and_returns_it_for_cleanup() {
+        use pi_ecs_core::{
+            component::{Component, PlainAccess, StoragePolicy},
+            notification::NoticeKind,
+        };
+        struct Tag;
+        impl Component for Tag {
+            type Access = PlainAccess;
+        }
+        let mut world = World::new().unwrap();
+        let component = world
+            .register_component::<Tag>(StoragePolicy::SparseOnly)
+            .unwrap();
+        let subscription = world
+            .subscribe_notice(component, NoticeKind::Changed)
+            .unwrap();
+        let mut world = match App::new(world) {
+            Ok(_) => panic!("未注销的宿主订阅不能移交给 App"),
+            Err(rejected) => rejected.value,
+        };
+        world.unsubscribe_notice(subscription).unwrap();
+        App::new(world).unwrap().close().unwrap();
+    }
+
+    #[test]
+    fn rejects_used_schedule_and_returns_its_receiver_responsibility() {
+        use crate::app::ScheduleLabel;
+        use pi_ecs_core::command::{CommandCapacity, CommandRead};
+        use pi_ecs_schedule::{
+            executor::{ExecutionMode, Executor},
+            schedule::Schedule,
+            stage::{Stage, StageId},
+            system::SystemId,
+            system_builder::SystemBuilder,
+        };
+        let mut source = World::new().unwrap();
+        source
+            .register_command::<u32>(CommandCapacity::Unbounded)
+            .unwrap();
+        source.finish_registration().unwrap();
+        let mut schedule = Schedule::new();
+        let executor = schedule
+            .add_executor(Executor::new(ExecutionMode::Serial).unwrap())
+            .unwrap();
+        let mut stage = Stage::new(StageId(0), executor);
+        stage
+            .add_system(
+                SystemBuilder::new(|_: CommandRead<'_, u32>| {})
+                    .build(SystemId(0))
+                    .unwrap(),
+            )
+            .unwrap();
+        schedule.add_stage(stage).unwrap();
+        schedule.run(&mut source).unwrap();
+        let mut app = App::new(World::new().unwrap()).unwrap();
+        let mut rejected = app
+            .add_schedule(ScheduleLabel::of::<Child>(), schedule)
+            .unwrap_err();
+        assert!(source.command_receiver::<u32>().is_err());
+        rejected.value.unregister(&mut source).unwrap();
+        assert!(source.command_receiver::<u32>().is_ok());
+        app.close().unwrap();
+        source.close().unwrap();
+    }
     impl crate::plugin::Plugin for Child {
         fn build(&self, app: &mut App) -> Result<(), pi_ecs_core::error::EcsError> {
             assert!(app.require_plugin::<Self>().is_err());
@@ -31,7 +117,7 @@ mod close_tests {
             system::SystemId,
             system_builder::SystemBuilder,
         };
-        let mut app = App::new(World::new().unwrap());
+        let mut app = App::new(World::new().unwrap()).unwrap();
         let finishes = Arc::new(AtomicUsize::new(0));
         app.add_plugin(Child(finishes.clone())).unwrap();
         assert!(app.add_plugin(Child(finishes.clone())).is_err());
@@ -83,7 +169,7 @@ mod close_tests {
             system::SystemId,
             system_builder::SystemBuilder,
         };
-        let mut app = App::new(World::new().unwrap());
+        let mut app = App::new(World::new().unwrap()).unwrap();
         let label = ScheduleLabel::of::<()>();
         let mut schedule = Schedule::new();
         let executor = schedule
@@ -121,7 +207,7 @@ mod close_tests {
             let mut world = World::new().unwrap();
             world.register_resource::<Payload>().unwrap();
             world.insert_resource(Payload(drops.clone())).unwrap();
-            let mut app = App::new(world);
+            let mut app = App::new(world).unwrap();
             let mut schedule = pi_ecs_schedule::schedule::Schedule::new();
             let executor = schedule
                 .add_executor(
@@ -178,13 +264,24 @@ impl crate::app::App {
         label: ScheduleLabel,
         stage: pi_ecs_schedule::stage::StageId,
         system: S,
-    ) -> Result<usize, EcsError> {
-        self.ready_idle()?;
-        let schedule = self.schedule_index(label)?;
-        self.schedules[schedule]
-            .1
-            .stage_mut(stage)?
-            .add_system(system)
+    ) -> Result<usize, pi_ecs_schedule::stage::InstallError<S>> {
+        use pi_ecs_schedule::stage::InstallError;
+        let schedule = match self.ready_idle().and_then(|()| self.schedule_index(label)) {
+            Ok(index) => index,
+            Err(error) => {
+                return Err(InstallError {
+                    value: system,
+                    error,
+                })
+            }
+        };
+        match self.schedules[schedule].1.stage_mut(stage) {
+            Ok(mut config) => config.add_system(system),
+            Err(error) => Err(InstallError {
+                value: system,
+                error,
+            }),
+        }
     }
     pub(super) fn unregister_system_inner(
         &mut self,
@@ -194,12 +291,13 @@ impl crate::app::App {
     ) -> Result<(), EcsError> {
         self.ready_idle()?;
         let schedule = self.schedule_index(label)?;
-        let stage = self.schedules[schedule].1.stage_mut(stage)?;
         let mut guard = crate::app::AppRunGuard {
             state: &mut self.state,
             completed: false,
         };
-        let result = stage.unregister_system(system, &mut self.world);
+        let result = self.schedules[schedule]
+            .1
+            .unregister_system(stage, system, &mut self.world);
         guard.complete(self.world.is_stopped());
         result
     }
@@ -226,7 +324,7 @@ impl crate::app::App {
         self.world.parameter_unregistration_scope(|_| Ok(()))?;
         self.state = AppState::Closing;
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let mut first = None;
+            let mut first = self.inter_frame.close(&mut self.world).err();
             for (_, schedule) in &mut self.schedules {
                 if let Err(error) = schedule.unregister(&mut self.world) {
                     if first.is_none() {
@@ -305,17 +403,94 @@ impl ScheduleLabel {
     }
 }
 impl App {
-    pub(crate) fn new_inner(_world: World) -> App {
-        App {
+    pub(crate) fn new_inner(
+        _world: World,
+    ) -> Result<App, pi_ecs_schedule::stage::InstallError<World>> {
+        if let Err(error) = _world.validate_building() {
+            return Err(pi_ecs_schedule::stage::InstallError {
+                error,
+                value: _world,
+            });
+        }
+        Ok(App {
             #[cfg(feature = "rc")]
             world: _world,
             #[cfg(not(feature = "rc"))]
             world: pi_share::Share::new(_world),
             schedules: Vec::new(),
+            #[cfg(feature = "rc")]
+            inter_frame: pi_ecs_schedule::inter_frame::SystemFlow::new(),
             plugins: Vec::new(),
             plugin_types: Default::default(),
             state: crate::app::AppState::Building,
+        })
+    }
+}
+#[cfg(feature = "rc")]
+impl App {
+    pub(super) fn inter_frame_mut_inner(
+        &mut self,
+    ) -> Result<pi_ecs_schedule::inter_frame::FlowConfig<'_>, EcsError> {
+        if !matches!(
+            self.state,
+            crate::app::AppState::Building | crate::app::AppState::Finishing
+        ) {
+            return Err(app_error("当前不能配置帧间图"));
         }
+        Ok(self.inter_frame.configuration())
+    }
+    pub(super) fn dispatch_inner<I: 'static>(
+        &mut self,
+        _target: &pi_ecs_schedule::inter_frame::InterFrameTarget<I>,
+        _input: I,
+    ) -> Result<(), EcsError> {
+        self.run_guarded(|world, flow, _| flow.dispatch(world, _target, _input))
+    }
+    pub(super) fn post_inner<C: Send + 'static>(
+        &mut self,
+        _command: C,
+    ) -> Result<(), pi_ecs_core::command::CommandSendError<C>> {
+        match self.ready_idle().and_then(|()| self.world.command_sender::<C>()) {
+            Ok(sender) => sender.send(_command),
+            Err(error) => Err(pi_ecs_core::command::CommandSendError {
+                error,
+                command: _command,
+            }),
+        }
+    }
+    pub(super) fn set_queue_priority_inner<C: Send + 'static>(
+        &mut self,
+        _priority: pi_ecs_schedule::inter_frame::QueuePriority,
+    ) -> Result<(), EcsError> {
+        if !matches!(self.state, crate::app::AppState::Building | crate::app::AppState::Finishing) {
+            self.ready_idle()?;
+        }
+        self.inter_frame.set_queue_priority::<C>(_priority)
+    }
+    pub(super) fn run_next_ready_inner(
+        &mut self,
+        _budget: pi_ecs_schedule::inter_frame::FrameBudget,
+    ) -> Result<pi_ecs_schedule::inter_frame::ReadyRun, EcsError> {
+        self.run_guarded(|world, flow, _| flow.run_next_ready(world, _budget))
+    }
+    pub(super) fn run_stages_inner(
+        &mut self,
+        _label: crate::app::ScheduleLabel,
+        _stages: &[pi_ecs_schedule::stage::StageId],
+    ) -> Result<(), EcsError> {
+        let index = self.schedule_index(_label)?;
+        self.run_guarded(|world, _, schedules| schedules[index].1.run_stages(world, _stages))
+    }
+
+    fn run_guarded<R>(
+        &mut self,
+        run: impl FnOnce(&mut World, &mut pi_ecs_schedule::inter_frame::SystemFlow, &mut [(ScheduleLabel, Schedule)]) -> Result<R, EcsError>,
+    ) -> Result<R, EcsError> {
+        self.ready_idle()?;
+        let mut guard = crate::app::AppRunGuard { state: &mut self.state, completed: false };
+        let result = run(&mut self.world, &mut self.inter_frame, &mut self.schedules);
+        guard.complete(self.world.is_stopped());
+        result
     }
 }
 impl App {
@@ -362,15 +537,28 @@ impl App {
         _app: &mut App,
         _label: ScheduleLabel,
         _schedule: Schedule,
-    ) -> Result<(), EcsError> {
+    ) -> Result<(), pi_ecs_schedule::stage::InstallError<Schedule>> {
+        use pi_ecs_schedule::stage::InstallError;
         if !matches!(
             _app.state,
             crate::app::AppState::Building | crate::app::AppState::Finishing
         ) {
-            return Err(app_error("当前不允许登记调度"));
+            return Err(InstallError {
+                value: _schedule,
+                error: app_error("当前不允许登记调度"),
+            });
         }
         if _app.schedules.iter().any(|(label, _)| *label == _label) {
-            return Err(app_error("调度标签重复"));
+            return Err(InstallError {
+                value: _schedule,
+                error: app_error("调度标签重复"),
+            });
+        }
+        if let Err(error) = _schedule.validate_install() {
+            return Err(InstallError {
+                value: _schedule,
+                error,
+            });
         }
         _app.schedules.push((_label, _schedule));
         Ok(())
@@ -380,7 +568,7 @@ impl App {
     pub(crate) fn schedule_mut_inner(
         app: &mut App,
         label: ScheduleLabel,
-    ) -> Result<&mut Schedule, EcsError> {
+    ) -> Result<pi_ecs_schedule::schedule::ScheduleConfig<'_>, EcsError> {
         if !matches!(
             app.state,
             crate::app::AppState::Building | crate::app::AppState::Finishing
@@ -388,7 +576,7 @@ impl App {
             return Err(app_error("当前不能配置调度"));
         }
         let index = app.schedule_index(label)?;
-        Ok(&mut app.schedules[index].1)
+        Ok(app.schedules[index].1.configuration())
     }
     fn schedule_index(&self, label: ScheduleLabel) -> Result<usize, EcsError> {
         self.schedules
@@ -408,23 +596,24 @@ impl App {
     }
 }
 impl App {
-    pub(crate) fn world_mut_inner(app: &mut App) -> Result<&mut World, EcsError> {
+    pub(crate) fn world_mut_inner(app: &mut App) -> Result<crate::app::WorldConfig<'_>, EcsError> {
         if !matches!(
             app.state,
             crate::app::AppState::Building | crate::app::AppState::Finishing
         ) {
             return Err(app_error("当前不能独占配置 World"));
         }
-        if app.world.table_layouts().is_ok() {
-            return Err(app_error("World 已发布冻结布局"));
-        }
+        app.world.validate_building()?;
         #[cfg(feature = "rc")]
         {
-            drop(app.world.pin()?);
-            Ok(&mut app.world)
+            Ok(crate::app::WorldConfig {
+                world: &mut app.world,
+            })
         }
         #[cfg(not(feature = "rc"))]
-        pi_share::Share::get_mut(&mut app.world).ok_or_else(|| app_error("World 并非独占所有"))
+        pi_share::Share::get_mut(&mut app.world)
+            .map(|world| crate::app::WorldConfig { world })
+            .ok_or_else(|| app_error("World 并非独占所有"))
     }
 }
 impl App {
@@ -457,6 +646,8 @@ impl App {
             for (_, schedule) in &app.schedules {
                 schedule.validate_configuration()?;
             }
+            #[cfg(feature = "rc")]
+            app.inter_frame.validate_configuration(false)?;
             #[cfg(feature = "rc")]
             app.world.finish_registration()?;
             #[cfg(not(feature = "rc"))]
@@ -496,14 +687,7 @@ impl App {
         let index = app.schedule_index(label)?;
         #[cfg(feature = "rc")]
         {
-            app.ready_idle()?;
-            let mut guard = crate::app::AppRunGuard {
-                state: &mut app.state,
-                completed: false,
-            };
-            let result = app.schedules[index].1.run(&mut app.world);
-            guard.complete(app.world.is_stopped());
-            result
+            app.run_guarded(|world, _, schedules| schedules[index].1.run(world))
         }
         #[cfg(not(feature = "rc"))]
         {

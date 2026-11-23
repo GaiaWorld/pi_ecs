@@ -55,32 +55,105 @@ impl Stage {
             id,
             executor,
             systems: Vec::new(),
+            #[cfg(feature = "rc")]
+            entry_flow: None,
             ordering_snapshot: None,
             ordering: None,
         }
     }
 }
+#[cfg(feature = "rc")]
 impl Stage {
-    pub(crate) fn add_system_inner(
-        stage: &mut Stage,
-        system: crate::stage::SystemObject,
-    ) -> Result<usize, EcsError> {
-        let id = system.id();
-        if stage.systems.iter().any(|slot| slot.id == id) {
+    pub(super) fn set_entry_flow_inner(
+        &mut self,
+        flow: crate::inter_frame::SystemFlow,
+    ) -> Result<(), crate::stage::StageFlowInstallError> {
+        if self.entry_flow.is_some() {
+            return Err(crate::stage::StageFlowInstallError {
+                flow,
+                error: pi_ecs_core::error::classified_error(
+                    pi_ecs_core::error::ErrorKind::AlreadyExists,
+                    "阶段已安装入口图",
+                ),
+            });
+        }
+        if let Err(error) = flow.validate_stage_install() {
+            return Err(crate::stage::StageFlowInstallError { flow, error });
+        }
+        self.entry_flow = Some(flow);
+        Ok(())
+    }
+}
+impl Stage {
+    pub(super) fn validate_install_inner(&self) -> Result<(), EcsError> {
+        if self
+            .systems
+            .iter()
+            .filter_map(|slot| slot.system.as_ref())
+            .any(|system| !system.is_uninitialized())
+        {
             return Err(pi_ecs_core::error::classified_error(
-                pi_ecs_core::error::ErrorKind::AlreadyExists,
-                "系统历史身份重复",
+                pi_ecs_core::error::ErrorKind::InvalidState,
+                "阶段包含已初始化或已消费配置的活动系统",
             ));
+        }
+        #[cfg(feature = "rc")]
+        if let Some(flow) = &self.entry_flow {
+            flow.validate_stage_install()?;
+        }
+        Ok(())
+    }
+    pub(crate) fn add_system_inner<S: crate::stage::StageSystemBound + 'static>(
+        stage: &mut Stage,
+        system: S,
+    ) -> Result<usize, crate::stage::InstallError<S>> {
+        use crate::stage::InstallError;
+        if !system.is_uninitialized() {
+            return Err(InstallError {
+                value: system,
+                error: pi_ecs_core::error::classified_error(
+                    pi_ecs_core::error::ErrorKind::InvalidState,
+                    "只接管未初始化系统",
+                ),
+            });
+        }
+        let id = system.id();
+        let ports = system.ports();
+        if ports.requires_flow
+            || ports.output.is_some()
+            || ports.input != crate::system::SystemInputKind::Unit
+        {
+            return Err(InstallError {
+                value: system,
+                error: pi_ecs_core::error::classified_error(
+                    pi_ecs_core::error::ErrorKind::InvalidInput,
+                    "带端口的系统须登记到阶段入口图或帧间图",
+                ),
+            });
+        }
+        if stage.systems.iter().any(|slot| slot.id == id) {
+            return Err(InstallError {
+                value: system,
+                error: pi_ecs_core::error::classified_error(
+                    pi_ecs_core::error::ErrorKind::AlreadyExists,
+                    "系统历史身份重复",
+                ),
+            });
         }
         let index = stage.systems.len();
         stage.systems.push(crate::stage::StageSystem {
             id,
-            system: Some(system),
+            system: Some(Box::new(system)),
             resolved: Vec::new(),
         });
         stage.ordering = None;
         stage.ordering_snapshot = None;
         Ok(index)
+    }
+}
+impl<T> crate::stage::InstallError<T> {
+    pub(super) fn fmt_install_error(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(&self.error, f)
     }
 }
 
@@ -162,6 +235,9 @@ impl Stage {
         world: WorldRef<'_>,
         executor: &mut Executor,
     ) -> Result<(), EcsError> {
+        if let Some(flow) = &mut stage.entry_flow {
+            flow.run_stage_entry(&mut *world)?;
+        }
         {
             let mut prepared = stage.prepare(&mut *world)?;
             executor.execute(&mut *world, &mut prepared)?;
@@ -216,11 +292,22 @@ impl crate::stage::Stage {
         &mut self,
         _world: &mut pi_ecs_core::world::World,
     ) -> Result<(), pi_ecs_core::error::EcsError> {
+        let first = self
+            .entry_flow
+            .as_mut()
+            .and_then(|flow| flow.close(_world).err());
+        if self
+            .entry_flow
+            .as_ref()
+            .is_some_and(crate::inter_frame::SystemFlow::is_closed)
+        {
+            self.entry_flow = None;
+        }
         _world.parameter_unregistration_scope(|access| {
             let mut registration = ParamRegistration::new(access);
             self.ordering = None;
             self.ordering_snapshot = None;
-            let mut first = None;
+            let mut first = first;
             for slot in &mut self.systems {
                 if let Some(system) = slot.system.as_mut() {
                     let result = system.unregister(&mut registration);
@@ -242,6 +329,10 @@ impl crate::stage::Stage {
 
 impl crate::stage::Stage {
     pub(super) fn validate_configuration_inner(&self) -> Result<(), pi_ecs_core::error::EcsError> {
+        #[cfg(feature = "rc")]
+        if let Some(flow) = &self.entry_flow {
+            flow.validate_configuration(true)?;
+        }
         let mut identities = std::collections::HashSet::new();
         for slot in &self.systems {
             if !identities.insert(slot.id) {

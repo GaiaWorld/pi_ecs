@@ -136,13 +136,20 @@ impl WorldStorage {
     /// # 用途
     /// table 为同源编号；返回连续已发布前缀尾后界，不含认领未发布行；未知为 NotFound。
     /// 只提供元数据，不授予组件访问；同一次无结构冲突的读取期内使用。
-    pub fn published_rows(&self, table: u16) -> Result<u32, pi_ecs_types::error::EcsError> {
+    pub fn published_rows(
+        &self,
+        table: pi_ecs_types::entity::TableId,
+    ) -> Result<u32, pi_ecs_types::error::EcsError> {
         self.published_rows_inner(table)
     }
     /// # 用途
     /// table/row 的 Live 身份副本；未知、未发布、越界或洞 None，不读组件字节。
     /// 结构修改后必须重新定位，不以此副本授予逻辑权限。
-    pub fn row_entity(&self, table: u16, row: TableRow) -> Option<pi_ecs_types::entity::Entity> {
+    pub fn row_entity(
+        &self,
+        table: pi_ecs_types::entity::TableId,
+        row: TableRow,
+    ) -> Option<pi_ecs_types::entity::Entity> {
         self.row_entity_inner(table, row)
     }
     /// # 用途
@@ -173,13 +180,13 @@ impl WorldStorage {
         Self::world_new_inner(tables, sparse)
     }
     /// 按 Table 编号取得只读物理表；越界返回 None。
-    pub fn table(&self, table: u16) -> Option<&Table> {
-        self.tables.get(table as usize)
+    pub fn table(&self, table: pi_ecs_types::entity::TableId) -> Option<&Table> {
+        self.tables.get(usize::from(table))
     }
     /// 按 Table 编号取得可变物理表；越界返回 None。
     #[cfg(not(feature = "rc"))]
-    pub fn table_mut(&mut self, table: u16) -> Option<&mut Table> {
-        self.tables.get_mut(table as usize)
+    pub fn table_mut(&mut self, table: pi_ecs_types::entity::TableId) -> Option<&mut Table> {
+        self.tables.get_mut(usize::from(table))
     }
     /// 按组件编号取得只读稀疏后端；未登记或编号越界返回 None。
     pub fn sparse(&self, component: ComponentId) -> Option<&SparseSetStorage> {
@@ -222,7 +229,10 @@ impl WorldStorage {
     /// # 用途
     /// 维护 table 的行和列；返回受限借用而非可替换 Table 的 &mut，不提供 DerefMut/解包。
     /// 越界 None；self 独占期排除所有运行视图和组件结果，缓存裸地址不构成活引用。
-    pub fn table_mut(&mut self, table: u16) -> Option<TableMaintenance<'_>> {
+    pub fn table_mut(
+        &mut self,
+        table: pi_ecs_types::entity::TableId,
+    ) -> Option<TableMaintenance<'_>> {
         self.table_maintenance_inner(table)
     }
 }

@@ -40,7 +40,13 @@ mod container_deque_batch {
                 .borrow_mut()
                 .allocate(
                     crate::entity::AllocationDomain(0),
-                    crate::entity::EntityLocation::from_parts(0, 0, 0, 0, 0),
+                    crate::entity::EntityLocation::from_parts(
+                        0,
+                        0,
+                        0,
+                        crate::entity::TableId(0),
+                        crate::entity::VariantId(0),
+                    ),
                 )
                 .unwrap();
             OwnedEntity {
@@ -136,7 +142,13 @@ mod container_deque_batch {
                         .borrow_mut()
                         .allocate(
                             crate::entity::AllocationDomain(0),
-                            crate::entity::EntityLocation::from_parts(0, 0, 0, 0, 0),
+                            crate::entity::EntityLocation::from_parts(
+                                0,
+                                0,
+                                0,
+                                crate::entity::TableId(0),
+                                crate::entity::VariantId(0),
+                            ),
                         )
                         .unwrap();
                     let owned = OwnedEntity {
@@ -378,7 +390,13 @@ mod container_deque_batch {
                     .borrow_mut()
                     .allocate(
                         crate::entity::AllocationDomain(0),
-                        crate::entity::EntityLocation::from_parts(0, 0, 0, 0, 0),
+                        crate::entity::EntityLocation::from_parts(
+                            0,
+                            0,
+                            0,
+                            crate::entity::TableId(0),
+                            crate::entity::VariantId(0),
+                        ),
                     )
                     .unwrap();
                 let owned = OwnedEntity {
@@ -956,7 +974,13 @@ mod container_link_batch {
                 .borrow_mut()
                 .allocate(
                     crate::entity::AllocationDomain(0),
-                    crate::entity::EntityLocation::from_parts(0, 0, 0, 0, 0),
+                    crate::entity::EntityLocation::from_parts(
+                        0,
+                        0,
+                        0,
+                        crate::entity::TableId(0),
+                        crate::entity::VariantId(0),
+                    ),
                 )
                 .unwrap();
             OwnedEntity {
@@ -1706,7 +1730,7 @@ impl<T: 'static> crate::entity_container::EntityListRef<'_, '_, T> {
         }
         #[cfg(not(feature = "rc"))]
         {
-            todo!("编号：T20，尚未实现， 非 RC 成员增持延期")
+            todo!("编号：T11，尚未实现， 非 RC 成员增持延期")
         }
     }
 }
@@ -1755,7 +1779,7 @@ impl<T: 'static> crate::entity_container::EntityListMut<'_, '_, T> {
         }
         #[cfg(not(feature = "rc"))]
         {
-            todo!("编号：T21，尚未实现， 非 RC 成员增持延期")
+            todo!("编号：T12，尚未实现， 非 RC 成员增持延期")
         }
     }
 }
@@ -1804,7 +1828,7 @@ impl<T: 'static> crate::entity_container::EntityQueueRef<'_, '_, T> {
         }
         #[cfg(not(feature = "rc"))]
         {
-            todo!("编号：T22，尚未实现， 非 RC 成员增持延期")
+            todo!("编号：T13，尚未实现， 非 RC 成员增持延期")
         }
     }
 }
@@ -1853,7 +1877,7 @@ impl<T: 'static> crate::entity_container::EntityQueueMut<'_, '_, T> {
         }
         #[cfg(not(feature = "rc"))]
         {
-            todo!("编号：T23，尚未实现， 非 RC 成员增持延期")
+            todo!("编号：T14，尚未实现， 非 RC 成员增持延期")
         }
     }
 }
@@ -1897,7 +1921,7 @@ impl<T: 'static> crate::entity_container::EntityDequeRef<'_, '_, T> {
         }
         #[cfg(not(feature = "rc"))]
         {
-            todo!("编号：T24，尚未实现， 非 RC Deque 增持延期")
+            todo!("编号：T15，尚未实现， 非 RC Deque 增持延期")
         }
     }
 }
@@ -1935,7 +1959,7 @@ impl<T: 'static> crate::entity_container::EntityDequeRef<'_, '_, T> {
         }
         #[cfg(not(feature = "rc"))]
         {
-            todo!("编号：T25，尚未实现， 非 RC Deque 增持延期")
+            todo!("编号：T16，尚未实现， 非 RC Deque 增持延期")
         }
     }
 }
@@ -1969,7 +1993,7 @@ impl<T: 'static> crate::entity_container::EntityDequeRef<'_, '_, T> {
         }
         #[cfg(not(feature = "rc"))]
         {
-            todo!("编号：T26，尚未实现， 非 RC Deque 增持延期")
+            todo!("编号：T17，尚未实现， 非 RC Deque 增持延期")
         }
     }
 }
@@ -1994,7 +2018,7 @@ impl<T: 'static> crate::entity_container::EntityDequeMut<'_, '_, T> {
         }
         #[cfg(not(feature = "rc"))]
         {
-            todo!("编号：T27，尚未实现， 非 RC Deque 增持延期")
+            todo!("编号：T18，尚未实现， 非 RC Deque 增持延期")
         }
     }
 }
@@ -2032,7 +2056,7 @@ impl<T: 'static> crate::entity_container::EntityDequeMut<'_, '_, T> {
         }
         #[cfg(not(feature = "rc"))]
         {
-            todo!("编号：T28，尚未实现， 非 RC Deque 增持延期")
+            todo!("编号：T19，尚未实现， 非 RC Deque 增持延期")
         }
     }
 }
@@ -2066,7 +2090,7 @@ impl<T: 'static> crate::entity_container::EntityDequeMut<'_, '_, T> {
         }
         #[cfg(not(feature = "rc"))]
         {
-            todo!("编号：T29，尚未实现， 非 RC Deque 增持延期")
+            todo!("编号：T20，尚未实现， 非 RC Deque 增持延期")
         }
     }
 }
@@ -2094,7 +2118,7 @@ impl crate::entity_container::EntityOwnedIter<'_, '_> {
         }
         #[cfg(not(feature = "rc"))]
         {
-            todo!("编号：T30，尚未实现， 非 RC 后端延期")
+            todo!("编号：T21，尚未实现， 非 RC 后端延期")
         }
     }
 }
@@ -2272,7 +2296,7 @@ impl crate::entity_container::EntityChainIter<'_> {
         }
         #[cfg(not(feature = "rc"))]
         {
-            todo!("编号：T31，尚未实现， 非 RC 后端延期")
+            todo!("编号：T22，尚未实现， 非 RC 后端延期")
         }
     }
 }
@@ -2328,7 +2352,7 @@ impl<T: 'static> crate::entity_container::EntityListMut<'_, '_, T> {
         }
         #[cfg(not(feature = "rc"))]
         {
-            todo!("编号：T32，尚未实现， 非 RC 后端延期")
+            todo!("编号：T23，尚未实现， 非 RC 后端延期")
         }
     }
 }
@@ -2355,7 +2379,7 @@ impl<T: 'static> crate::entity_container::EntityListMut<'_, '_, T> {
         }
         #[cfg(not(feature = "rc"))]
         {
-            todo!("编号：T33，尚未实现， 非 RC 后端延期")
+            todo!("编号：T24，尚未实现， 非 RC 后端延期")
         }
     }
 }
@@ -2410,7 +2434,7 @@ impl<T: 'static> crate::entity_container::EntityQueueMut<'_, '_, T> {
         }
         #[cfg(not(feature = "rc"))]
         {
-            todo!("编号：T34，尚未实现， 非 RC 后端延期")
+            todo!("编号：T25，尚未实现， 非 RC 后端延期")
         }
     }
 }
@@ -2437,7 +2461,7 @@ impl<T: 'static> crate::entity_container::EntityQueueMut<'_, '_, T> {
         }
         #[cfg(not(feature = "rc"))]
         {
-            todo!("编号：T35，尚未实现， 非 RC 后端延期")
+            todo!("编号：T26，尚未实现， 非 RC 后端延期")
         }
     }
 }
@@ -2475,7 +2499,7 @@ impl<T: 'static> crate::entity_container::EntityDequeMut<'_, '_, T> {
         }
         #[cfg(not(feature = "rc"))]
         {
-            todo!("编号：T36，尚未实现， 非 RC Deque 后端延期")
+            todo!("编号：T27，尚未实现， 非 RC Deque 后端延期")
         }
     }
 }
@@ -2491,7 +2515,7 @@ impl<T: 'static> crate::entity_container::EntityDequeMut<'_, '_, T> {
         }
         #[cfg(not(feature = "rc"))]
         {
-            todo!("编号：T37，尚未实现， 非 RC Deque 后端延期")
+            todo!("编号：T28，尚未实现， 非 RC Deque 后端延期")
         }
     }
 }
@@ -2505,7 +2529,7 @@ impl<T: 'static> crate::entity_container::EntityDequeMut<'_, '_, T> {
         }
         #[cfg(not(feature = "rc"))]
         {
-            todo!("编号：T38，尚未实现， 非 RC Deque 后端延期")
+            todo!("编号：T29，尚未实现， 非 RC Deque 后端延期")
         }
     }
 }
@@ -2519,7 +2543,7 @@ impl<T: 'static> crate::entity_container::EntityDequeMut<'_, '_, T> {
         }
         #[cfg(not(feature = "rc"))]
         {
-            todo!("编号：T39，尚未实现， 非 RC Deque 后端延期")
+            todo!("编号：T30，尚未实现， 非 RC Deque 后端延期")
         }
     }
 }
@@ -2536,7 +2560,7 @@ impl<T: 'static> crate::entity_container::EntityDequeMut<'_, '_, T> {
         }
         #[cfg(not(feature = "rc"))]
         {
-            todo!("编号：T40，尚未实现， 非 RC Deque 后端延期")
+            todo!("编号：T31，尚未实现， 非 RC Deque 后端延期")
         }
     }
 }
@@ -2553,7 +2577,7 @@ impl<T: 'static> crate::entity_container::EntityDequeMut<'_, '_, T> {
         }
         #[cfg(not(feature = "rc"))]
         {
-            todo!("编号：T41，尚未实现， 非 RC Deque 后端延期")
+            todo!("编号：T32，尚未实现， 非 RC Deque 后端延期")
         }
     }
 }
@@ -2569,7 +2593,7 @@ impl<T: 'static> crate::entity_container::EntityDequeMut<'_, '_, T> {
         }
         #[cfg(not(feature = "rc"))]
         {
-            todo!("编号：T42，尚未实现， 非 RC Deque 后端延期")
+            todo!("编号：T33，尚未实现， 非 RC Deque 后端延期")
         }
     }
 }
@@ -2627,7 +2651,7 @@ fn deque_iter<'a>(
     #[cfg(not(feature = "rc"))]
     {
         let _ = (nodes, head, access);
-        todo!("编号：T43，尚未实现， 非 RC Deque 后端延期")
+        todo!("编号：T34，尚未实现， 非 RC Deque 后端延期")
     }
 }
 fn deque_front_value(
@@ -2918,7 +2942,7 @@ pub(crate) unsafe fn release_list_inner<'a, 'w, T: 'static>(
     #[cfg(not(feature = "rc"))]
     {
         let _ = (_context, _head);
-        todo!("编号：T44，尚未实现， 非 RC 整头释放后端延期")
+        todo!("编号：T35，尚未实现， 非 RC 整头释放后端延期")
     }
 }
 pub(crate) unsafe fn release_queue_inner<'a, 'w, T: 'static>(
@@ -2958,7 +2982,7 @@ pub(crate) unsafe fn release_queue_inner<'a, 'w, T: 'static>(
     #[cfg(not(feature = "rc"))]
     {
         let _ = (_context, _head);
-        todo!("编号：T45，尚未实现， 非 RC 整头释放后端延期")
+        todo!("编号：T36，尚未实现， 非 RC 整头释放后端延期")
     }
 }
 pub(crate) unsafe fn release_deque_inner<'a, 'w, T: 'static>(
@@ -3015,7 +3039,7 @@ pub(crate) unsafe fn release_deque_inner<'a, 'w, T: 'static>(
     #[cfg(not(feature = "rc"))]
     {
         let _ = (_context, _head);
-        todo!("编号：T46，尚未实现， 非 RC 整头释放后端延期")
+        todo!("编号：T37，尚未实现， 非 RC 整头释放后端延期")
     }
 }
 
@@ -3104,7 +3128,7 @@ fn link_iter<'a>(
     #[cfg(not(feature = "rc"))]
     {
         let _ = (nodes, head, tail, len, access);
-        todo!("编号：T47，尚未实现， 非 RC 单链后端延期")
+        todo!("编号：T38，尚未实现， 非 RC 单链后端延期")
     }
 }
 fn link_front(

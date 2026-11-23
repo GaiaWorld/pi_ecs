@@ -55,12 +55,21 @@ mod tests {
     fn publish_empty(world: &mut World) -> Entity {
         let storage = world.storage.as_mut().unwrap();
         let id = ArchetypeId {
-            table: 0,
-            variant: 0,
+            table: crate::entity::TableId(0),
+            variant: crate::entity::VariantId(0),
         };
-        let row = storage.table_mut(0).unwrap().claim_row().unwrap();
-        let location =
-            EntityLocation::from_parts(0, storage.member_len(id).unwrap(), row.index(), 0, 0);
+        let row = storage
+            .table_mut(crate::entity::TableId(0))
+            .unwrap()
+            .claim_row()
+            .unwrap();
+        let location = EntityLocation::from_parts(
+            0,
+            storage.member_len(id).unwrap(),
+            row.index(),
+            crate::entity::TableId(0),
+            crate::entity::VariantId(0),
+        );
         let entity = world
             .entities
             .get_mut()
@@ -68,7 +77,7 @@ mod tests {
             .unwrap();
         storage.append_member(id, entity, row).unwrap();
         storage
-            .table_mut(0)
+            .table_mut(crate::entity::TableId(0))
             .unwrap()
             .publish_row(row, entity)
             .unwrap();
@@ -227,7 +236,7 @@ fn fill_cache(
                 let target = registry.plan_archetype(&target_components)?;
                 let target_table = ArchetypeId {
                     table: target.id.table,
-                    variant: 0,
+                    variant: crate::entity::VariantId(0),
                 };
                 let layout = registry.table(target_table).expect("Alter 目标 Table 缺失");
                 let retained = retained
@@ -300,19 +309,19 @@ impl<Q: crate::query::QueryData, F: crate::query::QueryFilter> super::QueryAlter
         self.query.refresh_cache(registry, storage, identity)?;
         let mut order = Vec::new();
         for (offset, table) in self.query.cache.tables.iter().enumerate() {
-            let table_id = self.query.cache.first_table as usize + offset;
+            let table_id = usize::from(self.query.cache.first_table) + offset;
             match table {
                 QueryTable::Excluded => {}
                 QueryTable::Uniform { .. } => order.extend(
                     registry
                         .archetypes
                         .iter()
-                        .filter(|entry| entry.id.table as usize == table_id)
+                        .filter(|entry| usize::from(entry.id.table) == table_id)
                         .map(|entry| entry.id),
                 ),
                 QueryTable::Variants { entries, .. } => order.extend(entries.iter().map(
                     |(variant, _)| crate::entity::ArchetypeId {
-                        table: table_id as u16,
+                        table: crate::entity::TableId(table_id as u16),
                         variant: *variant,
                     },
                 )),
@@ -327,7 +336,7 @@ impl<Q: crate::query::QueryData, F: crate::query::QueryFilter> super::QueryAlter
         let mut tables = Vec::new();
         let mut table_positions = vec![None; registry.tables.len()];
         let merges = order.iter().all(|id| {
-            let offset = usize::from(id.table - self.query.cache.first_table);
+            let offset = usize::from(id.table) - usize::from(self.query.cache.first_table);
             if !matches!(self.query.cache.tables[offset], QueryTable::Uniform { .. }) {
                 return false;
             }

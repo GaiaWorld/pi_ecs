@@ -195,7 +195,7 @@ fn query_tuple_runs_with_optional_data_and_or_filter() {
 
 #[test]
 fn failed_tuple_registration_returns_the_receiver_without_consuming_commands() {
-    use pi_ecs_core::command::{CommandCapacity, CommandReceiver};
+    use pi_ecs_core::command::{CommandCapacity, CommandRead};
     let mut world = World::new().unwrap();
     world
         .register_command::<u32>(CommandCapacity::Unbounded)
@@ -203,11 +203,9 @@ fn failed_tuple_registration_returns_the_receiver_without_consuming_commands() {
     world.finish_registration().unwrap();
     assert!(world.command_sender::<u32>().unwrap().send(37).is_ok());
     let mut schedule = schedule_for(
-        SystemBuilder::new(
-            |_: &mut CommandReceiver<u32>, _: &mut CommandReceiver<u32>| {
-                panic!("a system with two consumers of one queue must not run")
-            },
-        )
+        SystemBuilder::new(|_: CommandRead<'_, u32>, _: CommandRead<'_, u32>| {
+            panic!("a system with two consumers of one queue must not run")
+        })
         .build(SystemId(1))
         .unwrap(),
     );

@@ -230,6 +230,14 @@ impl Notifications {
     pub fn is_empty(&self, reader: &NoticeSubscription) -> Result<bool, EcsError> {
         Self::is_empty_inner(self, reader)
     }
+    /// # 用途
+    /// 在无活批次的同步边界，原子于本次调用地比较 reader 的 next 与其流的已发布尾界，随后确认到该尾界。
+    /// 返回是否有未确认通知；所有种类均适用，不读取旧值或操作其他游标，不执行回收。
+    /// reader 必须来自本管理器；订阅已失效或同流动态借用冲突时返回错误，游标不变。
+    #[cfg(feature = "rc")]
+    pub fn acknowledge_published(&self, reader: &mut NoticeSubscription) -> Result<bool, EcsError> {
+        Self::acknowledge_published_inner(self, reader)
+    }
     /// 取出所有读者已通过且无借用的 Removed 旧值裸地址；调用方必须按登记能力释放。
     /// 头/值成对移出并推进 first，不在这里执行任何业务析构。
     /// 返回结果按 ComponentId/NoticeSequence 顺序；释放前结束队列借用，Raw 指针责任只能移交一次。

@@ -11,7 +11,92 @@ pub struct Schedule {
     pub(crate) executors: Vec<crate::executor::Executor>,
     // RC 运行门禁单源为 World::schedule_scope；不在 Schedule 再存一份 World 运行状态。
 }
+/// 只允许追加调度配置，不交出已安装的 Schedule。
+pub struct ScheduleConfig<'a> {
+    /// 原调度保持在宿主的登记槽中。
+    pub(crate) schedule: &'a mut Schedule,
+}
+impl ScheduleConfig<'_> {
+    /// # 用途
+    /// 追加执行器，返回同一调度内的编号。
+    pub fn add_executor(
+        &mut self,
+        executor: crate::executor::Executor,
+    ) -> Result<crate::executor::ExecutorId, EcsError> {
+        self.schedule.add_executor(executor)
+    }
+    /// # 用途
+    /// 追加一个阶段，保持已有阶段的身份和登记责任。
+    pub fn add_stage(
+        &mut self,
+        stage: crate::stage::Stage,
+    ) -> Result<(), crate::stage::InstallError<crate::stage::Stage>> {
+        self.schedule.add_stage(stage)
+    }
+    /// # 用途
+    /// 查找已登记阶段的受限配置视图。
+    pub fn stage_mut(&mut self, id: crate::stage::StageId) -> Result<StageConfig<'_>, EcsError> {
+        self.schedule.stage_mut(id)
+    }
+}
+/// 只开放单阶段追加配置，不允许替换阶段或注销系统。
+pub struct StageConfig<'a> {
+    /// 由 Schedule 保持原槽所有权。
+    pub(crate) stage: &'a mut crate::stage::Stage,
+}
+impl StageConfig<'_> {
+    /// # 用途
+    /// 在原阶段中追加普通系统。
+    pub fn add_system<S: crate::stage::StageSystemBound + 'static>(
+        &mut self,
+        system: S,
+    ) -> Result<usize, crate::stage::InstallError<S>> {
+        self.stage.add_system(system)
+    }
+    /// # 用途
+    /// 安装阶段入口图；拒绝时连同错误归还原图。
+    #[cfg(feature = "rc")]
+    pub fn set_entry_flow(
+        &mut self,
+        flow: crate::inter_frame::SystemFlow,
+    ) -> Result<(), crate::stage::StageFlowInstallError> {
+        self.stage.set_entry_flow(flow)
+    }
+}
 impl Schedule {
+    /// # 用途
+    /// 按 stage 与 id 在给定的所属 World 注销，配置视图不提供此操作。
+    #[cfg(feature = "rc")]
+    pub fn unregister_system(
+        &mut self,
+        stage: crate::stage::StageId,
+        id: crate::system::SystemId,
+        world: &mut pi_ecs_core::world::World,
+    ) -> Result<(), EcsError> {
+        self.unregister_system_inner(stage, id, world)
+    }
+    /// # 用途
+    /// 接管前检查所有阶段与活动实例均不持有已登记责任，同时校验结构。
+    pub fn validate_install(&self) -> Result<(), EcsError> {
+        self.validate_install_inner()
+    }
+    /// # 用途
+    /// 借出受限配置视图，不允许替换整个调度。
+    pub fn configuration(&mut self) -> ScheduleConfig<'_> {
+        self.configuration_inner()
+    }
+    /// # 用途
+    /// 按 stages 显式指定的阶段序列运行，允许重复同一阶段；进根授权前校验全部阶段编号与执行器。
+    /// 每次访问都运行阶段入口图及主体，复用原实例与长期参数；不推进应用模拟时间。
+    /// 同 run 一样首个阶段错误停止，退出同一根授权，不重放前序阶段。
+    #[cfg(feature = "rc")]
+    pub fn run_stages(
+        &mut self,
+        world: &mut pi_ecs_core::world::World,
+        stages: &[crate::stage::StageId],
+    ) -> Result<(), EcsError> {
+        self.run_stages_inner(world, stages)
+    }
     /// # 用途
     /// 只读检查组装身份/索引：阶段/执行器归属、重复阶段身份与 RC 执行模式，并遍历阶段验证。
     /// 不访问 World，不 initialize/prepare、消费初值或构图；返回首个错误，不修改对象。
@@ -23,10 +108,7 @@ impl Schedule {
     /// # 用途
     /// 宿主在两次运行之间按 id 借用现有阶段，用于登记系统；缺失 Err，不创建或替换阶段。
     /// 借用期间不能运行 Schedule，不授予 World，不允许重排/删除已登记阶段。
-    pub fn stage_mut(
-        &mut self,
-        id: crate::stage::StageId,
-    ) -> Result<&mut crate::stage::Stage, EcsError> {
+    pub fn stage_mut(&mut self, id: crate::stage::StageId) -> Result<StageConfig<'_>, EcsError> {
         self.stage_mut_inner(id)
     }
     /// # 用途
@@ -34,6 +116,8 @@ impl Schedule {
     /// 正常诊断继续其他阶段并返回首个错误，已注销不重试；不关闭 World、不执行维护或调度。
     /// panic/内部故障停止 World，不承诺剩余注销已完成。
     #[cfg(feature = "rc")]
+    /// 清偿后保留阶段与历史系统槽，已关闭的入口图解除关联；允许再次运行或追加新系统。
+    /// 未完成清偿的入口图留在原阶段，以保留原 World 的清偿责任。
     pub fn unregister(&mut self, world: &mut pi_ecs_core::world::World) -> Result<(), EcsError> {
         self.unregister_inner(world)
     }
@@ -49,7 +133,11 @@ impl Schedule {
         Self::add_executor_inner(self, executor)
     }
     /// stage 按登记顺序追加；阶段 id 重复或执行器不属于本调度时返回错误且不追加。
-    pub fn add_stage(&mut self, stage: crate::stage::Stage) -> Result<(), EcsError> {
+    /// 已持有登记责任的阶段不接管；任何拒绝都归还原 stage。
+    pub fn add_stage(
+        &mut self,
+        stage: crate::stage::Stage,
+    ) -> Result<(), crate::stage::InstallError<crate::stage::Stage>> {
         Self::add_stage_inner(self, stage)
     }
     /// 在 world 上按登记顺序运行阶段；rc 为 &mut World，非 rc 为共享 &World。

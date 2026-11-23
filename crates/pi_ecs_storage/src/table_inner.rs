@@ -14,8 +14,8 @@ mod capacity_tests {
         let component = ComponentId(0);
         let layout = TableLayout::new(
             ArchetypeId {
-                table: 0,
-                variant: 0,
+                table: pi_ecs_types::entity::TableId(0),
+                variant: pi_ecs_types::entity::VariantId(0),
             },
             Box::new([component]),
         )
@@ -45,8 +45,8 @@ mod capacity_tests {
     fn exhausted_claim_is_rejected_before_any_slot_change() {
         let layout = TableLayout::new(
             ArchetypeId {
-                table: 0,
-                variant: 0,
+                table: pi_ecs_types::entity::TableId(0),
+                variant: pi_ecs_types::entity::VariantId(0),
             },
             Box::new([]),
         )
@@ -117,10 +117,10 @@ impl TableLayout {
         id: ArchetypeId,
         columns: Box<[ComponentId]>,
     ) -> Result<TableLayout, EcsError> {
-        if id.variant != 0 {
+        if pi_null::Null::is_null(&id.table) || id.variant.0 != 0 {
             return Err(pi_ecs_types::error::classified_error(
                 pi_ecs_types::error::ErrorKind::InvalidInput,
-                "TableLayout 必须绑定基础原型 variant=0",
+                "TableLayout 必须绑定非空 Table 的基础原型 variant=0",
             ));
         }
         if !columns.windows(2).all(|pair| pair[0] < pair[1]) {

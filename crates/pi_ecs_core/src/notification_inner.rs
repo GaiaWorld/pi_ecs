@@ -181,7 +181,13 @@ mod removed_lifecycle_batch {
             .borrow_mut()
             .allocate(
                 crate::entity::AllocationDomain(0),
-                crate::entity::EntityLocation::from_parts(0, 0, 0, 0, 0),
+                crate::entity::EntityLocation::from_parts(
+                    0,
+                    0,
+                    0,
+                    crate::entity::TableId(0),
+                    crate::entity::VariantId(0),
+                ),
             )
             .unwrap();
         let owner = crate::owned_entity::OwnedEntity {
@@ -509,7 +515,7 @@ impl Notifications {
         _entity: crate::entity::Entity,
         _tick: crate::change_detection::ChangeTick,
     ) {
-        todo!("编号：T48，尚未实现， 每流内部可变通知协议：append_change_inner")
+        todo!("编号：T39，尚未实现， 每流内部可变通知协议：append_change_inner")
     }
 }
 
@@ -549,7 +555,7 @@ impl RemovedNoticeStream {
         _tick: crate::change_detection::ChangeTick,
         _value: crate::ptr::OwningPtr<'a>,
     ) -> NoticeSequence {
-        todo!("编号：T49，尚未实现， 非 rc Removed 通知追加尚未实现")
+        todo!("编号：T40，尚未实现， 非 rc Removed 通知追加尚未实现")
     }
 }
 
@@ -565,7 +571,7 @@ impl Notifications {
         _notifications: &Notifications,
         _component: ComponentId,
     ) -> bool {
-        todo!("编号：T50，尚未实现， 非 rc Removed 订阅判断尚未实现")
+        todo!("编号：T41，尚未实现， 非 rc Removed 订阅判断尚未实现")
     }
 }
 
@@ -600,7 +606,7 @@ impl Notifications {
         _tick: crate::change_detection::ChangeTick,
         _value: crate::ptr::OwningPtr<'a>,
     ) -> Result<NoticeSequence, crate::ptr::OwningPtr<'a>> {
-        todo!("编号：T51，尚未实现， 每流内部可变通知协议：append_removed_component_inner")
+        todo!("编号：T42，尚未实现， 每流内部可变通知协议：append_removed_component_inner")
     }
 }
 
@@ -688,7 +694,7 @@ impl Notifications {
         _component: ComponentId,
         _kind: NoticeKind,
     ) -> Result<NoticeSubscription, EcsError> {
-        todo!("编号：T52，尚未实现， 每流内部可变通知协议：subscribe_inner")
+        todo!("编号：T43，尚未实现， 每流内部可变通知协议：subscribe_inner")
     }
 }
 
@@ -739,7 +745,7 @@ impl Notifications {
         _notifications: &'a Notifications,
         _reader: &'a mut NoticeSubscription,
     ) -> Result<NoticeBatch<'a>, EcsError> {
-        todo!("编号：T53，尚未实现， 每流内部可变通知协议：read_inner")
+        todo!("编号：T44，尚未实现， 每流内部可变通知协议：read_inner")
     }
 }
 
@@ -767,7 +773,7 @@ impl Notifications {
         _notifications: &mut Notifications,
         _reader: NoticeSubscription,
     ) -> Result<(), EcsError> {
-        todo!("编号：T54，尚未实现， 非 rc 通知注销尚未实现")
+        todo!("编号：T45，尚未实现， 非 rc 通知注销尚未实现")
     }
 }
 
@@ -794,7 +800,7 @@ impl NoticeBatch<'_> {
 #[cfg(not(feature = "rc"))]
 impl NoticeBatch<'_> {
     pub(crate) fn next_inner(_batch: &mut NoticeBatch<'_>) -> Option<NoticeHeader> {
-        todo!("编号：T55，尚未实现， 每流内部可变通知协议：next_inner")
+        todo!("编号：T46，尚未实现， 每流内部可变通知协议：next_inner")
     }
 }
 
@@ -851,7 +857,7 @@ impl Notifications {
         _world: &'a crate::world::World,
         _reader: &'a mut NoticeSubscription,
     ) -> Result<RemovedBatch<'a, T>, EcsError> {
-        todo!("编号：T56，尚未实现， 每流内部可变通知协议：read_removed_inner")
+        todo!("编号：T47，尚未实现， 每流内部可变通知协议：read_removed_inner")
     }
 }
 
@@ -895,7 +901,7 @@ impl<T: crate::component::Component> RemovedBatch<'_, T> {
     pub(crate) fn removed_next_inner<'a>(
         _batch: &'a mut RemovedBatch<'_, T>,
     ) -> Option<RemovedNotice<'a, T>> {
-        todo!("编号：T57，尚未实现， 每流内部可变通知协议：removed_next_inner")
+        todo!("编号：T48，尚未实现， 每流内部可变通知协议：removed_next_inner")
     }
 }
 
@@ -919,7 +925,7 @@ impl Notifications {
 #[cfg(not(feature = "rc"))]
 impl Notifications {
     pub(crate) fn reclaim_inner(_notifications: &mut Notifications) {
-        todo!("编号：T58，尚未实现， 每流内部可变通知协议：reclaim_inner")
+        todo!("编号：T49，尚未实现， 每流内部可变通知协议：reclaim_inner")
     }
 }
 
@@ -958,13 +964,18 @@ impl Notifications {
         notifications: &Notifications,
         reader: &NoticeSubscription,
     ) -> Result<bool, EcsError> {
-        let state = notifications.subscriptions.get(reader.id).ok_or_else(|| {
+        let (state, end) = notifications.published_tail(reader)?;
+        Ok(state.next.get() >= end)
+    }
+
+    fn published_tail(&self, reader: &NoticeSubscription) -> Result<(&SubscriptionState, u64), EcsError> {
+        let state = self.subscriptions.get(reader.id).ok_or_else(|| {
             error(
                 pi_ecs_types::error::ErrorKind::InvalidState,
                 "通知订阅已失效",
             )
         })?;
-        let streams = &notifications.components[state.stream.0 .0 as usize];
+        let streams = &self.components[state.stream.0 .0 as usize];
         let end = match state.stream.1 {
             NoticeKind::Added => streams
                 .added
@@ -991,7 +1002,7 @@ impl Notifications {
                 "通知流借用冲突",
             )
         })?;
-        Ok(state.next.get() >= end)
+        Ok((state, end))
     }
 }
 #[cfg(not(feature = "rc"))]
@@ -1000,7 +1011,7 @@ impl Notifications {
         _notifications: &Notifications,
         _reader: &NoticeSubscription,
     ) -> Result<bool, EcsError> {
-        todo!("编号：T59，尚未实现， 每流内部可变通知协议：is_empty_inner")
+        todo!("编号：T50，尚未实现， 每流内部可变通知协议：is_empty_inner")
     }
 }
 #[cfg(not(feature = "rc"))]
@@ -1008,7 +1019,7 @@ impl Notifications {
     pub(crate) fn reclaim_removed_raw_inner(
         _notifications: &mut Notifications,
     ) -> Vec<(ComponentId, *mut u8)> {
-        todo!("编号：T60，尚未实现， 每流内部可变通知协议：reclaim_removed_raw_inner")
+        todo!("编号：T51，尚未实现， 每流内部可变通知协议：reclaim_removed_raw_inner")
     }
 }
 #[cfg(feature = "rc")]
@@ -1045,5 +1056,19 @@ impl Notifications {
             }
         }
         released
+    }
+}
+#[cfg(feature = "rc")]
+impl Notifications {
+    pub(super) fn acknowledge_published_inner(
+        &self,
+        _reader: &mut NoticeSubscription,
+    ) -> Result<bool, EcsError> {
+        let (state, end) = self.published_tail(_reader)?;
+        if state.next.get() >= end {
+            return Ok(false);
+        }
+        state.next.set(end);
+        Ok(true)
     }
 }

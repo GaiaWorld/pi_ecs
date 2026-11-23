@@ -99,6 +99,7 @@ impl World {
     /// 唯一 Schedule 根边界；self 须登记冻结且 Idle，拒绝 Pinning/Running/Maintaining/Stopped/关闭态。
     /// 成功进入 Running 后调用 run，短借 World 仅用于阶段准备、系统会话及阶段末维护。
     /// run 正常返回含 Err，先确认全部借用结束，再退出自有 Running 到 Idle；Stopped 保持并返回错误。
+    /// 根收束始终执行；run 已返回原始诊断时优先保留，只有 run 成功才由收束错误覆盖结果。
     /// panic 根守卫标停后原样展开，不补 finish/flush，不回滚；返回不能携带本次 World 借用。
     /// 不初始化系统、不分配 tick；前置拒绝不调用 run。与 system_scope 不同，本入口拥有根运行态。
     pub fn schedule_scope<R>(
@@ -112,6 +113,13 @@ impl World {
     /// 供 App 在调度返回后判断是否进入 Failed；普通 EcsError 文本不承担严重性分类。
     pub fn is_stopped(&self) -> bool {
         self.is_stopped_inner()
+    }
+    /// # 用途
+    /// RC 根执行器在无活参数的 Running 边界因时钟耗尽或运行协议故障单向标停。
+    /// 已停止时幂等；不改变 Idle、维护或关闭状态，不执行清理。
+    #[cfg(feature = "rc")]
+    pub fn stop_in_run(&mut self) -> Result<(), crate::error::EcsError> {
+        self.stop_in_run_inner()
     }
     /// # 用途
     /// RC 运行入口在系统准备/权限校验成功后、构造参数前分配一次非零 tick。

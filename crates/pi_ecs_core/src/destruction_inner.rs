@@ -285,8 +285,8 @@ mod destruction_lifecycle_batch {
             let target = install(
                 &mut w.0,
                 crate::entity::ArchetypeId {
-                    table: 0,
-                    variant: 0,
+                    table: crate::entity::TableId(0),
+                    variant: crate::entity::VariantId(0),
                 },
             );
             if list {
@@ -491,8 +491,8 @@ mod destruction_lifecycle_batch {
         let mut w = TestWorld::new();
         w.0.finish_registration().unwrap();
         let empty = crate::entity::ArchetypeId {
-            table: 0,
-            variant: 0,
+            table: crate::entity::TableId(0),
+            variant: crate::entity::VariantId(0),
         };
         let entity = install(&mut w.0, empty);
         assert!(unsafe { w.0.despawn(entity) }.unwrap());
@@ -503,6 +503,28 @@ mod destruction_lifecycle_batch {
         assert!(w.0.entities.borrow().locate(entity).is_some());
         assert_eq!(w.0.entities.borrow().counts(entity), Some((0, 0)));
     }
+    #[test]
+    fn running_destruction_barrier_keeps_clock_exhaustion_diagnostic() {
+        let mut w = TestWorld::new();
+        w.0.finish_registration().unwrap();
+        let empty = crate::entity::ArchetypeId {
+            table: crate::entity::TableId(0),
+            variant: crate::entity::VariantId(0),
+        };
+        let entity = install(&mut w.0, empty);
+        assert!(unsafe { w.0.despawn(entity) }.unwrap());
+        w.0.change_tick = u64::MAX;
+        let error = w
+            .0
+            .schedule_scope(|world| {
+                // SAFETY: the root holds unique Running access with no live system borrows.
+                unsafe { world.flush_destruction_in_run() }
+            })
+            .unwrap_err();
+        assert!(format!("{error:?}").contains("销毁变化时间耗尽"));
+        assert!(stopped(&w.0));
+    }
+
     struct Panics(std::sync::Arc<std::sync::atomic::AtomicUsize>);
     impl crate::component::Component for Panics {
         type Access = crate::component::PlainAccess;
@@ -526,8 +548,8 @@ mod destruction_lifecycle_batch {
         let b = install(
             &mut w.0,
             crate::entity::ArchetypeId {
-                table: 0,
-                variant: 0,
+                table: crate::entity::TableId(0),
+                variant: crate::entity::VariantId(0),
             },
         );
         let count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -736,8 +758,8 @@ mod destruction_lifecycle_batch {
             let target = install(
                 &mut w.0,
                 crate::entity::ArchetypeId {
-                    table: 0,
-                    variant: 0,
+                    table: crate::entity::TableId(0),
+                    variant: crate::entity::VariantId(0),
                 },
             );
             let row = w.0.locate(entity).unwrap().table_row();
@@ -935,7 +957,7 @@ impl World {
 #[cfg(not(feature = "rc"))]
 impl World {
     pub(crate) fn flush_inner(_world: WorldRef<'_>) -> Result<(), EcsError> {
-        todo!("编号：T19，尚未实现， 非 rc 销毁收束尚未实现")
+        todo!("编号：T10，尚未实现， 非 rc 销毁收束尚未实现")
     }
 }
 

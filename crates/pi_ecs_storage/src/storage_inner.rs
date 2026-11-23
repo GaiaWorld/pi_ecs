@@ -219,8 +219,8 @@ mod capacity_tests {
     #[test]
     fn member_limit_rejects_before_allocating_or_reusing_holes() {
         let id = ArchetypeId {
-            table: 0,
-            variant: 0,
+            table: pi_ecs_types::entity::TableId(0),
+            variant: pi_ecs_types::entity::VariantId(0),
         };
         let layout = crate::table::TableLayout::new(id, Box::new([])).unwrap();
         let mut world = WorldStorage::new(
@@ -418,10 +418,13 @@ fn error(kind: pi_ecs_types::error::ErrorKind, message: &str) -> EcsError {
 }
 
 impl WorldStorage {
-    pub(super) fn published_rows_inner(&self, table: u16) -> Result<u32, EcsError> {
+    pub(super) fn published_rows_inner(
+        &self,
+        table: pi_ecs_types::entity::TableId,
+    ) -> Result<u32, EcsError> {
         let table = self
             .tables
-            .get(table as usize)
+            .get(usize::from(table))
             .ok_or_else(|| error(pi_ecs_types::error::ErrorKind::NotFound, "Table 未登记"))?;
         #[cfg(feature = "rc")]
         {
@@ -436,7 +439,7 @@ impl WorldStorage {
     }
     pub(super) fn row_entity_inner(
         &self,
-        table: u16,
+        table: pi_ecs_types::entity::TableId,
         row: TableRow,
     ) -> Option<pi_ecs_types::entity::Entity> {
         if row.index() >= self.published_rows(table).ok()? {
@@ -444,7 +447,7 @@ impl WorldStorage {
         }
         let cell = self
             .tables
-            .get(table as usize)?
+            .get(usize::from(table))?
             .rows
             .get(row.index() as usize)?;
         #[cfg(feature = "rc")]
@@ -465,8 +468,8 @@ impl WorldStorage {
     pub(super) fn member_len_inner(&self, id: ArchetypeId) -> Result<u32, EcsError> {
         let variant = self
             .archetypes
-            .get(id.table as usize)
-            .and_then(|table| table.variants.get(id.variant as usize))
+            .get(usize::from(id.table))
+            .and_then(|table| table.variants.get(usize::from(id.variant)))
             .ok_or_else(|| error(pi_ecs_types::error::ErrorKind::NotFound, "原型未登记"))?;
         Ok(variant.len as u32)
     }
@@ -477,9 +480,9 @@ impl WorldStorage {
     ) -> Option<crate::storage::MemberLocation> {
         let variant = self
             .archetypes
-            .get(id.table as usize)?
+            .get(usize::from(id.table))?
             .variants
-            .get(id.variant as usize)?;
+            .get(usize::from(id.variant))?;
         if row as usize >= variant.len {
             return None;
         }
@@ -806,7 +809,7 @@ impl WorldStorage {
         tables: Box<[Table]>,
         sparse: Box<[Option<SparseSetStorage>]>,
     ) -> Result<WorldStorage, EcsError> {
-        if tables.len() > u16::MAX as usize + 1 {
+        if tables.len() > usize::from(u16::MAX) {
             return Err(error(
                 pi_ecs_types::error::ErrorKind::ResourceExhausted,
                 "Table 数量超出 16 位编号容量",
@@ -815,8 +818,8 @@ impl WorldStorage {
         let mut archetypes = Vec::with_capacity(tables.len());
         for table in 0..tables.len() {
             let id = ArchetypeId {
-                table: table as u16,
-                variant: 0,
+                table: pi_ecs_types::entity::TableId(table as u16),
+                variant: pi_ecs_types::entity::VariantId(0),
             };
             archetypes.push(TableArchetypes {
                 variants: vec![ArchetypeStorage::new(id)],
@@ -868,16 +871,22 @@ impl WorldStorage {
         storage: &mut WorldStorage,
         id: ArchetypeId,
     ) -> Result<(), EcsError> {
+        if pi_null::Null::is_null(&id.table) || pi_null::Null::is_null(&id.variant) {
+            return Err(error(
+                pi_ecs_types::error::ErrorKind::InvalidInput,
+                "原型不可使用空 Table 或变体编号",
+            ));
+        }
         let table = storage
             .archetypes
-            .get_mut(id.table as usize)
+            .get_mut(usize::from(id.table))
             .ok_or_else(|| {
                 error(
                     pi_ecs_types::error::ErrorKind::Internal,
                     "原型 Table 编号超出已准备存储",
                 )
             })?;
-        let variant = id.variant as usize;
+        let variant = usize::from(id.variant);
         if variant < table.variants.len() {
             return Ok(());
         }
@@ -901,8 +910,8 @@ impl WorldStorage {
     ) -> Result<u32, EcsError> {
         let variant = storage
             .archetypes
-            .get_mut(id.table as usize)
-            .and_then(|table| table.variants.get_mut(id.variant as usize))
+            .get_mut(usize::from(id.table))
+            .and_then(|table| table.variants.get_mut(usize::from(id.variant)))
             .ok_or_else(|| error(pi_ecs_types::error::ErrorKind::NotFound, "原型未登记"))?;
         if variant.len >= 1 << 20 {
             return Err(error(
@@ -919,10 +928,10 @@ impl WorldStorage {
 
 impl WorldStorage {
     pub(super) fn remove_member_inner(storage: &mut WorldStorage, id: ArchetypeId, row: u32) {
-        let Some(table) = storage.archetypes.get_mut(id.table as usize) else {
+        let Some(table) = storage.archetypes.get_mut(usize::from(id.table)) else {
             return;
         };
-        let Some(variant) = table.variants.get_mut(id.variant as usize) else {
+        let Some(variant) = table.variants.get_mut(usize::from(id.variant)) else {
             return;
         };
         if let Some(slot) = variant.members.get_mut(row as usize) {
@@ -944,10 +953,10 @@ impl WorldStorage {
     }
     pub(super) fn table_maintenance_inner(
         &mut self,
-        table: u16,
+        table: pi_ecs_types::entity::TableId,
     ) -> Option<super::TableMaintenance<'_>> {
         self.tables
-            .get_mut(table as usize)
+            .get_mut(usize::from(table))
             .map(|table| super::TableMaintenance { table })
     }
 }

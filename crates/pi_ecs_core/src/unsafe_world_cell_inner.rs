@@ -239,14 +239,31 @@ impl crate::world::World {
             completed: false,
         };
         let result = run(session.world());
-        session.complete()?;
-        result
+        let completed = session.complete();
+        match result {
+            Err(error) => Err(error),
+            Ok(value) => completed.map(|()| value),
+        }
     }
     pub(super) fn is_stopped_inner(&self) -> bool {
         let mode = self.access.mode.replace(crate::world::AccessMode::Stopped);
         let stopped = matches!(mode, crate::world::AccessMode::Stopped);
         self.access.mode.set(mode);
         stopped
+    }
+    pub(super) fn stop_in_run_inner(&mut self) -> Result<(), crate::error::EcsError> {
+        if self.is_stopped() {
+            return Ok(());
+        }
+        let mode = self.access.mode.replace(crate::world::AccessMode::Stopped);
+        if matches!(mode, crate::world::AccessMode::Running) {
+            return Ok(());
+        }
+        self.access.mode.set(mode);
+        Err(pi_ecs_types::error::classified_error(
+            pi_ecs_types::error::ErrorKind::InvalidState,
+            "停止执行要求根 Running",
+        ))
     }
     pub(super) fn next_system_tick_inner(
         &mut self,
@@ -376,7 +393,7 @@ impl SystemSession<'_> {
         }
         #[cfg(not(feature = "rc"))]
         {
-            todo!("编号：T84，尚未实现， 非 RC 系统完成检查延期")
+            todo!("编号：T76，尚未实现， 非 RC 系统完成检查延期")
         }
     }
     pub(super) fn drop_inner(&mut self) {
@@ -384,7 +401,7 @@ impl SystemSession<'_> {
             #[cfg(feature = "rc")]
             self.access.mode.set(crate::world::AccessMode::Stopped);
             #[cfg(not(feature = "rc"))]
-            todo!("编号：T85，尚未实现， 非 RC 失败标停守卫延期");
+            todo!("编号：T77，尚未实现， 非 RC 失败标停守卫延期");
         }
     }
 }

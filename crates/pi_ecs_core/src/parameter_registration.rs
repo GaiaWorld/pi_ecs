@@ -16,6 +16,35 @@ pub struct ParameterRegistration<'a> {
     pub(crate) world: &'a mut World,
     /// 阶段初始化或静止点清偿；清偿模式禁止新增任何责任。
     pub(crate) mode: RegistrationMode,
+    /// 数据流系统初始化时安装的 Receiver 白名单及本次领取记录；普通 Stage 保持原协议。
+    #[cfg(feature = "rc")]
+    pub(crate) receiver_policy: Option<ReceiverRegistration>,
+    /// 首个致命故障；退出登记作用域后标停，期间保留清偿授权。
+    #[cfg(feature = "rc")]
+    pub(crate) fatal: &'a std::cell::Cell<Option<RegistrationFault>>,
+}
+
+/// 可在不复制错误报告的情况下还原的登记故障。
+#[cfg(feature = "rc")]
+#[derive(Clone, Copy)]
+pub(crate) enum RegistrationFault {
+    /// 新生产者未发布，因为变化时钟耗尽。
+    ClockExhausted,
+    /// 生产者已撤销，结构版本不能继续增长。
+    StructureVersionExhausted,
+}
+/// 一次数据流系统参数登记的消费约束。
+#[cfg(feature = "rc")]
+pub enum ReceiverRegistration {
+    /// 本系统没有消费队列的资格。
+    Denied,
+    /// 仅准领取一个绑定类型。
+    Bound {
+        /// 登记时指定的命令负载类型。
+        command: std::any::TypeId,
+        /// 成功领取后记录不可复用的资格编号。
+        claim: Option<u64>,
+    },
 }
 /// # 用途
 /// core 内部的允许操作集合，不改变根 World 运行态。
@@ -43,6 +72,22 @@ impl ProducerRegistration {
     }
 }
 impl ParameterRegistration<'_> {
+    /// # 用途
+    /// 在专用于单系统的登记作用域中收紧 Receiver 权限；不得撤销、放宽或重设。
+    #[cfg(feature = "rc")]
+    pub fn restrict_receivers(
+        &mut self,
+        command: Option<std::any::TypeId>,
+    ) -> Result<(), EcsError> {
+        self.restrict_receivers_inner(command)
+    }
+
+    /// # 用途
+    /// 返回本作用域为绑定类型实际领取的资格编号，不转移资格或访问消息。
+    #[cfg(feature = "rc")]
+    pub fn receiver_claim(&self) -> Option<u64> {
+        self.receiver_claim_inner()
+    }
     /// # 用途
     /// C 为宿主已登记命令类型；仅初始化模式创建捕获当前 epoch 的发送端。
     /// 未登记、关闭或清偿模式返回错误，不隐式登记队列/容量，不取得消费资格。
@@ -203,6 +248,9 @@ impl World {
     /// 唯一根 Running 的阶段首遍入口，须冻结、无活系统参数/通知批次，前置拒绝不调用 initialize。
     /// 保持 Running，不切 Idle/Maintaining；栈上能力覆盖全部活动系统初始化及本次失败清理。
     /// initialize 正常 Err 保留此前成功登记，不应用追踪/不派发；panic 由根守卫标停并传播。
+    /// 生产者时钟耗尽或回滚结构版本耗尽，使作用域退出时标停；回滚期间仍保持原授权。
+    /// 首个故障为时钟耗尽时优先报告该原因；若只在回滚时耗尽结构版本，保留 initialize 已返回的原错。
+    /// initialize 不得吞掉错误后交出新责任；即使误报成功，仍返回记录的致命诊断。
     /// 返回不携带能力借用；全部成功后调用者结束作用域，再 apply_tracking 和 prepare。
     pub fn parameter_registration_scope<R>(
         &mut self,
@@ -214,6 +262,7 @@ impl World {
     /// 系统注销/关闭入口；Idle/Stopped 且无活参数，关闭中的责任收束允许，Closed 拒绝。
     /// 只交付清偿能力，禁止新增责任；不恢复停止态，不执行 flush/settle 或运行系统。
     /// unregister 普通诊断由上层继续清偿其余系统，panic/内部故障停止并传播。
+    /// 结构版本耗尽时继续本作用域的清偿，退出后标停；保留回调已返回的首错。
     pub fn parameter_unregistration_scope<R>(
         &mut self,
         unregister: impl for<'a> FnOnce(ParameterRegistration<'a>) -> Result<R, EcsError>,

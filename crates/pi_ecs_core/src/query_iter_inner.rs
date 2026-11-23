@@ -55,9 +55,10 @@ impl<'w, Q: QueryData, F: QueryFilter> QueryIter<'w, Q, F> {
             };
             loop {
                 let entry = iter.state.cache.tables.get(iter.table_cursor)?;
-                let table =
+                let table = crate::entity::TableId(
                     u16::try_from(usize::from(iter.state.cache.first_table) + iter.table_cursor)
-                        .expect("查询 Table 编号越界");
+                        .expect("查询 Table 编号越界"),
+                );
                 let (scope, plan, len) = match entry {
                     QueryTable::Uniform { fetch } => (
                         FetchScope::Table { table },
